@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ def test_cartridge_doc_exists() -> None:
     authoring surface; a missing file means the API docstrings
     point at nothing."""
 
-    doc = Path(__file__).resolve().parent.parent / "audit-docs" / "reference_cartridge.md"
+    doc = paths.repo_root() / "audit-docs" / "reference_cartridge.md"
     assert doc.is_file(), f"docs/reference_cartridge.md is missing at {doc}"
     text = doc.read_text(encoding="utf-8")
     # Sanity-check the four planes are all named in the doc.

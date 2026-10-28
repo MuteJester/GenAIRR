@@ -24,10 +24,11 @@ from GenAIRR.dataconfig.data_config import (
     DataConfigError,
     SCHEMA_VERSION,
 )
+from tests.support import paths
 
 
 BUILTIN_DIR = (
-    Path(__file__).resolve().parent.parent
+    paths.repo_root()
     / "src" / "GenAIRR" / "data" / "builtin_dataconfigs"
 )
 
