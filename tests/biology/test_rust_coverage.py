@@ -43,15 +43,13 @@ def test_recorded_fields_are_owned_by_the_mechanism_claimed():
     assert wrong == [], f"Rust records claiming fields a mechanism does not own: {wrong}"
 
 
-def test_rust_coverage_lifts_mechanisms_off_unverified():
-    covered = {}
-    for source in all_rust_sources():
-        for mechanism_id, fields in source.fields.items():
-            covered.setdefault(mechanism_id, set()).update(fields)
-    rows = coverage_rows({}, rust_by_mechanism=rust_coverage(),
-                         covered_by_mechanism={k: tuple(v) for k, v in covered.items()})
-    lifted = [r.mechanism_id for r in rows if r.status != "unverified"]
-    assert lifted, "the Rust suite covers nothing, which cannot be right"
+def test_rust_records_attach_to_mechanisms_and_are_visible():
+    """They are recorded and shown; what they must not do is set a status --
+    that is pinned by test_rust_assertions_do_not_set_a_mechanism_status."""
+    rows = {r.mechanism_id: r for r in coverage_rows({}, rust_by_mechanism=rust_coverage())}
+    attached = {mid for mid, row in rows.items() if row.rust_asserted}
+    assert attached == set(rust_coverage()), (
+        "every recorded Rust claim should appear against its mechanism")
 
 
 def test_the_projection_concern_is_recorded_separately():
@@ -63,3 +61,39 @@ def test_the_projection_concern_is_recorded_separately():
     for source in catalog.PROJECTION_SOURCES:
         assert (paths.repo_root() / source.path).is_file(), source.path
         assert source.mechanism_ids == (), "the projection is not one mechanism's"
+
+
+def test_rust_assertions_do_not_set_a_mechanism_status():
+    """Rust credit is hand-transcribed from module docstrings and is not
+    audited, so it must not move the status.
+
+    The transcription is demonstrably loose: indel_effects.rs references
+    n_v_indels and n_d_indels zero times, corruption_stack.rs references
+    end_loss zero times, and cross_segment.rs references v_germline_start and
+    j_germline_end zero times -- yet all three were credited as covering those
+    fields, and corruption_stack.rs's own heading reads "Invariants this module
+    SHOULD test". A green row sourced from prose is worse than a red one,
+    because it gets quoted.
+    """
+    rows = {r.mechanism_id: r for r in coverage_rows({}, rust_by_mechanism=rust_coverage())}
+    credited = [r for r in rows.values() if r.rust_asserted]
+    assert credited, "the Rust records credit nothing, which cannot be right"
+    assert all(r.status == "unverified" for r in credited), (
+        "Rust assertions must not set a status: "
+        f"{[r.mechanism_id for r in credited if r.status != 'unverified']}")
+
+
+def test_the_python_column_reports_only_what_registered():
+    """With no product test registered, the honest Python number is zero."""
+    rows = coverage_rows({}, rust_by_mechanism=rust_coverage())
+    assert all(r.python_tests == () for r in rows)
+    assert all(r.status == "unverified" for r in rows)
+
+
+def test_a_python_registration_is_what_moves_a_status():
+    mechanism = catalog.by_id("junction.n_addition")
+    rows = {r.mechanism_id: r for r in coverage_rows(
+        {"junction.n_addition": ("x::y",)},
+        rust_by_mechanism=rust_coverage(),
+        covered_by_mechanism={"junction.n_addition": mechanism.truth_fields})}
+    assert rows["junction.n_addition"].status == "verified"

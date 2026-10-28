@@ -27,12 +27,6 @@ INFRASTRUCTURE = {
     "SampleBasePass": "the engine's sampling reference, not a biological step",
 }
 
-#: Truth fields that a plain single-end record does not carry, so the
-#: field-existence check knows they are real rather than typos.
-FIELDS_NOT_IN_A_PLAIN_RECORD = frozenset({
-    "duplicate_count", "clone_id", "lineage_parent_id", "generation",
-})
-
 MECHANISMS = (
     # ── germline: what the locus inherited ────────────────────────────────
     Mechanism(
@@ -149,14 +143,40 @@ MECHANISMS = (
     ),
 
     # ── clonality: one cell's descendants ─────────────────────────────────
+    # Split three ways because the exported truth is three different claims,
+    # and one mechanism owning `clone_id` left the five lineage fields -- the
+    # ground truth for clonal-inference benchmarking -- owned by nobody.
     Mechanism(
-        id="clonality.expansion",
+        id="clonality.founder",
         stage="clonality",
-        summary="A clone's descendants sharing a rearrangement and diverging "
-                "only by what maturation did to each.",
-        truth_fields=("sequence_id", "duplicate_count", "clone_id"),
+        summary="Which rearrangement a clone descends from: every member of a "
+                "clone shares one founder, and members of different clones "
+                "never do.",
+        truth_fields=("clone_id", "sequence_id"),
         notes="Driven by the lineage and family-replay machinery rather than "
               "by a scheduled pass.",
+    ),
+    Mechanism(
+        id="clonality.tree_topology",
+        stage="clonality",
+        summary="The genealogy within a clone: who descends from whom, and at "
+                "which generation. This is the truth a clonal-inference tool "
+                "is scored against.",
+        truth_fields=("lineage_node_id", "lineage_parent_id", "lineage_generation"),
+    ),
+    Mechanism(
+        id="clonality.selection",
+        stage="clonality",
+        summary="Affinity-driven survival across generations, which decides "
+                "which lineages expand rather than die out.",
+        truth_fields=("lineage_affinity",),
+    ),
+    Mechanism(
+        id="clonality.sampling",
+        stage="clonality",
+        summary="How many times a given sequence was observed, as distinct "
+                "from how many cells carried it.",
+        truth_fields=("duplicate_count", "lineage_abundance"),
     ),
 
     # ── assay: what the protocol did to the molecule ──────────────────────

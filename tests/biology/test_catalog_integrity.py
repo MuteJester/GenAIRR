@@ -67,17 +67,29 @@ def test_every_mechanism_states_a_summary_and_owns_truth_fields():
     assert thin == [], f"mechanisms with no summary or no truth fields: {thin}"
 
 
-def test_every_truth_field_is_a_field_a_record_carries():
-    """A typo here would make the catalog claim a mechanism owns a field that
-    does not exist, and no test would notice."""
-    import GenAIRR as ga
-    exp = (ga.Experiment.on("human_igh").recombine().mutate(model="uniform", count=2)
-           .polymerase_indels(count=1).sequencing_errors(count=1))
-    record = exp.run(n=1, seed=11)[0].airr_record(exp.refdata)
-    known = set(record) | catalog.FIELDS_NOT_IN_A_PLAIN_RECORD
+def test_every_truth_field_is_a_field_some_mode_actually_produces():
+    """Measured across every run mode, not checked against a hand-written list.
+
+    The earlier version exempted a list of fields "not in a plain record", and
+    that list named `generation` -- which exists nowhere in GenAIRR; the field
+    is `lineage_generation`. An invented name in the one place the check stops
+    looking is the exact failure this test exists to prevent, so the exemption
+    is gone and the known set is taken from real records.
+    """
+    from tests.support.fixtures.record_modes import every_known_field
+    known = every_known_field()
     unknown = sorted({f for m in catalog.all_mechanisms() for f in m.truth_fields
                       if f not in known})
-    assert unknown == [], f"truth fields no record carries: {unknown}"
+    assert unknown == [], f"truth fields no run mode produces: {unknown}"
+
+
+def test_the_lineage_truth_fields_have_owners():
+    """These are what a clonal-inference tool is scored against, and a single
+    clonality mechanism owning `clone_id` left all five unowned."""
+    from tests.support.fixtures.record_modes import fields_by_mode
+    lineage_fields = {f for f in fields_by_mode()["clonal_lineage"] if f.startswith("lineage_")}
+    owned = {f for m in catalog.all_mechanisms() for f in m.truth_fields}
+    assert lineage_fields <= owned, f"unowned lineage truth: {sorted(lineage_fields - owned)}"
 
 
 def test_infrastructure_passes_each_state_why_they_are_not_biology():

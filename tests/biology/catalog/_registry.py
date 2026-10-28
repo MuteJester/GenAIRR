@@ -66,7 +66,7 @@ class CoverageRow:
     status: str                       # verified | partial | unverified
     truth_fields: tuple[str, ...]
     python_tests: tuple[str, ...] = ()
-    rust_sources: tuple[str, ...] = ()
+    rust_asserted: tuple[str, ...] = ()
     covered_fields: tuple[str, ...] = ()
 
     @property
@@ -81,10 +81,17 @@ def coverage_rows(python_by_mechanism: dict[str, tuple[str, ...]],
                   ) -> tuple[CoverageRow, ...]:
     """A row per declared mechanism, in developmental order.
 
-    ``partial`` means verification exists but does not reach every truth field
-    the mechanism owns. The distinction matters: one test against a mechanism
-    answerable for twelve fields is a much weaker claim than "verified", and a
-    report that could not say so would be the comfortable kind of lie.
+    Status is set by registered Python tests only. Rust credit rides alongside
+    in ``rust_asserted`` and deliberately cannot move it: those records are
+    transcribed by hand from the category files' module docstrings, several of
+    which are headed "Invariants this module SHOULD test", and spot-checking
+    found fields credited to files that never mention them. Until a Rust test
+    can declare its own mechanism, that is an assertion by a reader, not a
+    measurement, and must not read as green.
+
+    ``partial`` means registered tests exist but do not reach every truth field
+    the mechanism owns -- one test against a mechanism answerable for twelve
+    fields is a much weaker claim than "verified".
     """
     from . import all_mechanisms
     rust_by_mechanism = rust_by_mechanism or {}
@@ -95,7 +102,7 @@ def coverage_rows(python_by_mechanism: dict[str, tuple[str, ...]],
         rust = tuple(rust_by_mechanism.get(mechanism.id, ()))
         covered = tuple(f for f in mechanism.truth_fields
                         if f in set(covered_by_mechanism.get(mechanism.id, ())))
-        if not python and not rust:
+        if not python:
             status = "unverified"
         elif set(covered) >= set(mechanism.truth_fields):
             status = "verified"
@@ -103,6 +110,6 @@ def coverage_rows(python_by_mechanism: dict[str, tuple[str, ...]],
             status = "partial"
         rows.append(CoverageRow(mechanism_id=mechanism.id, stage=mechanism.stage,
                                 status=status, truth_fields=mechanism.truth_fields,
-                                python_tests=python, rust_sources=rust,
+                                python_tests=python, rust_asserted=rust,
                                 covered_fields=covered))
     return tuple(rows)
