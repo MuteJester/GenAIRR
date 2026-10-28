@@ -2,9 +2,9 @@
 implementation slice.
 
 Companion to
-[`docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md)
+[`audit-docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md)
 and the contract pin file
-[`tests/components/estimators/np_markov/test_pins.py`](test_np_markov_base_generator_contract.py).
+[`tests/components/estimators/np_markov/test_pins.py`](tests/components/estimators/np_markov/test_pins.py).
 
 Mirrors the user's greenlight test surface:
 

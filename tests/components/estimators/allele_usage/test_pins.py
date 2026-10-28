@@ -1,7 +1,7 @@
 """Contract pins for the Allele Usage Estimation audit.
 
 Companion to
-[`docs/allele_usage_estimation_design.md`](audit-docs/allele_usage_estimation_design.md).
+[`audit-docs/allele_usage_estimation_design.md`](audit-docs/allele_usage_estimation_design.md).
 
 Pin set:
 

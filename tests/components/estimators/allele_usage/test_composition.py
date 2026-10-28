@@ -14,7 +14,7 @@ under a release-tier workflow:
    kwarg still overrides the cartridge plane.
 
 Companion to
-[`docs/allele_usage_estimation_design.md`](audit-docs/allele_usage_estimation_design.md).
+[`audit-docs/allele_usage_estimation_design.md`](audit-docs/allele_usage_estimation_design.md).
 """
 from __future__ import annotations
 

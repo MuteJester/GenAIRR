@@ -1,7 +1,7 @@
 """Contract pins for the Reference Cartridge Completeness audit.
 
 Companion to
-[`docs/reference_cartridge_completeness_audit.md`](audit-docs/reference_cartridge_completeness_audit.md).
+[`audit-docs/reference_cartridge_completeness_audit.md`](audit-docs/reference_cartridge_completeness_audit.md).
 The audit is pre-implementation: it freezes today's cartridge
 contract (``pin_scaffold_*``) and the inspectability gaps a future
 ``cartridge_manifest()``-style slice will close (``pin_absence_*``).
@@ -482,7 +482,7 @@ def test_pin_present_cartridge_manifest_method() -> None:
     identity / curation / hashes / documented gap lists. Pin the
     positive surface here as the audit-doc lockstep counterpart;
     spec-driven behavioural coverage lives in
-    [`tests/components/cartridge/test_cartridge_manifest.py`](test_cartridge_manifest.py).
+    [`tests/components/cartridge/test_cartridge_manifest.py`](tests/components/cartridge/test_cartridge_manifest.py).
 
     Flipped from ``pin_absence_no_cartridge_manifest_method``
     when Slice 1 landed."""

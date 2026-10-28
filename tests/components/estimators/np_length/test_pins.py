@@ -2,7 +2,7 @@
 audit.
 
 Companion to
-[`docs/np_length_estimation_design.md`](audit-docs/np_length_estimation_design.md).
+[`audit-docs/np_length_estimation_design.md`](audit-docs/np_length_estimation_design.md).
 
 Pin set:
 

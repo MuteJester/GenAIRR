@@ -2,7 +2,7 @@
 implementation.
 
 Companion to
-[`docs/d_inversion_extension_design.md`](audit-docs/d_inversion_extension_design.md).
+[`audit-docs/d_inversion_extension_design.md`](audit-docs/d_inversion_extension_design.md).
 The orientation-aware NP-region extension walks landed in the
 implementation slice: under `ReverseComplement`, pool-left maps
 to allele-right (consumes `trim_3`) and pool-right maps to

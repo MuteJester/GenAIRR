@@ -1,7 +1,7 @@
 """Contract pins for the V-Subregion Mutation Counters audit.
 
 Companion to
-[`docs/v_subregion_mutation_counters_audit.md`](audit-docs/v_subregion_mutation_counters_audit.md).
+[`audit-docs/v_subregion_mutation_counters_audit.md`](audit-docs/v_subregion_mutation_counters_audit.md).
 The audit is pre-implementation: it freezes today's surfaces
 (``pin_scaffold_*``) and the gaps a future implementation slice
 would close (``pin_absence_*``).

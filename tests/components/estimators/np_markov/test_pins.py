@@ -1,7 +1,7 @@
 """Contract pins for the Markov NP Base Generator slice.
 
 Companion to
-[`docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md).
+[`audit-docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md).
 The audit's implementation slice has shipped; pins below freeze
 the **post-implementation** state:
 

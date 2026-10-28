@@ -49,21 +49,37 @@ def test_registry_is_a_tuple_of_str():
 def _declared_passes():
     """Every pass type the engine defines, read from its own source.
 
-    ``impl Pass for X`` at column zero under ``engine_rs/src/passes`` is the
-    definition of a production pass. Test doubles are either in a ``tests``
-    module, in ``test_support.rs``, or indented inside a ``#[cfg(test)]``
-    block, and all three are excluded.
+    Scanned over the whole of ``engine_rs/src``, not just ``src/passes``. The
+    narrower root made the reverse assertion below perverse: a pass defined
+    anywhere else and *correctly* registered failed the test, so the only way
+    to keep the suite green was to leave it out of the registry -- pressure
+    toward exactly the drift this exists to catch.
+
+    ``impl Pass for X`` at column zero is the definition of a production pass.
+    Test doubles are either indented inside a ``#[cfg(test)]`` block, or in a
+    file the exclusions below name -- ``tests.rs``, ``test_support.rs``,
+    anything ending ``_tests.rs``, and anything under a ``tests`` directory.
+    ``duplex_tests.rs`` is why the suffix form is needed.
+
+    The pattern allows a generic impl and a fully-qualified trait path, since
+    ``impl<T> Pass for X`` and ``impl crate::pass::Pass for X`` are both a
+    pass being defined.
     """
     import re
 
     from tests.support import paths
 
-    root = paths.repo_root() / "engine_rs" / "src" / "passes"
-    pattern = re.compile(r"^impl Pass for ([A-Za-z0-9_]+)", re.MULTILINE)
+    root = paths.repo_root() / "engine_rs" / "src"
+    pattern = re.compile(
+        r"^impl(?:<[^>]*>)?\s+(?:crate::pass::)?Pass\s+for\s+([A-Za-z0-9_]+)",
+        re.MULTILINE)
     found = {}
     for source in sorted(root.rglob("*.rs")):
         parts = source.parts
-        if source.name in ("test_support.rs", "tests.rs") or "tests" in parts:
+        if (source.name in ("tests.rs", "test_support.rs")
+                or source.name.endswith("_tests.rs")
+                or source.name.startswith("test_")
+                or "tests" in parts):
             continue
         for name in pattern.findall(source.read_text(encoding="utf-8")):
             found[name] = str(source.relative_to(paths.repo_root()))
@@ -79,6 +95,10 @@ def test_the_registry_names_every_pass_the_engine_defines():
     the crate and forgotten here is invisible to the catalog's completeness
     test, which would stay green while a whole mechanism went unclassified --
     the precise drift that test exists to catch.
+
+    The floor is deliberately well below the real count: it guards against the
+    scan silently reading nothing, not against deletions, which the equality
+    below reports by name.
     """
     declared = _declared_passes()
     registered = set(pass_registry())

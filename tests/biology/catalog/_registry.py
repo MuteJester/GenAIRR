@@ -49,6 +49,18 @@ def verifies(mechanism_id: str, *, claim: str, fields: tuple[str, ...]):
         raise ValueError(
             f"{mechanism_id!r} does not own {unknown}; it owns "
             f"{list(mechanism.truth_fields)}")
+    # Validated against the denominator the report actually uses. Against
+    # truth_fields a registration could claim a field excluded from coverage
+    # and print a numerator above its denominator -- "6/3 fields of 6".
+    excluded = sorted(set(fields) - set(mechanism.verifiable_fields))
+    if excluded:
+        raise ValueError(
+            f"{mechanism_id!r} cannot be verified on {excluded}: the catalog "
+            f"records {'them' if len(excluded) > 1 else 'it'} as not being any "
+            "mechanism's truth, so a test cannot establish it. If that "
+            "judgement is wrong, remove the entry from UNCLAIMED_FIELDS and "
+            "update the pin in test_catalog_integrity -- which is what "
+            "productivity_reasons and insert_size needed.")
 
     def decorate(function):
         function.genairr_verifies = (mechanism_id, claim.strip(), tuple(fields))
@@ -105,7 +117,7 @@ def coverage_rows(python_by_mechanism: dict[str, tuple[str, ...]],
     for mechanism in all_mechanisms():
         python = tuple(python_by_mechanism.get(mechanism.id, ()))
         rust = tuple(rust_by_mechanism.get(mechanism.id, ()))
-        covered = tuple(f for f in mechanism.truth_fields
+        covered = tuple(f for f in mechanism.verifiable_fields
                         if f in set(covered_by_mechanism.get(mechanism.id, ())))
         verifiable = mechanism.verifiable_fields
         if mechanism.truth_gap and not python:

@@ -2,9 +2,9 @@
 slice.
 
 Companion to
-[`docs/p_nucleotide_design.md`](audit-docs/p_nucleotide_design.md)
+[`audit-docs/p_nucleotide_design.md`](audit-docs/p_nucleotide_design.md)
 and the contract pins in
-[`tests/components/engine/junction/p_nucleotide/test_pins.py`](test_p_nucleotide_contract.py).
+[`tests/components/engine/junction/p_nucleotide/test_pins.py`](tests/components/engine/junction/p_nucleotide/test_pins.py).
 
 Covers the user brief's ten-test surface:
 

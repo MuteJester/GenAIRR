@@ -1,7 +1,7 @@
 """Contract pins for the Trim Distribution Estimation audit.
 
 Companion to
-[`docs/trim_distribution_estimation_design.md`](audit-docs/trim_distribution_estimation_design.md).
+[`audit-docs/trim_distribution_estimation_design.md`](audit-docs/trim_distribution_estimation_design.md).
 
 Pin set:
 

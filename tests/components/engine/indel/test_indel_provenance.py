@@ -1,6 +1,6 @@
 """Indel provenance golden tests.
 
-Companion to [docs/indel_provenance_audit.md](audit-docs/indel_provenance_audit.md).
+Companion to [`audit-docs/indel_provenance_audit.md`](audit-docs/indel_provenance_audit.md).
 Pins **current** behaviour of `polymerase_indels` on the AIRR
 projection, the trace, and the per-pass `EventRecord` ledger.
 

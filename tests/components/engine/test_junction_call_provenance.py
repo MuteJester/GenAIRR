@@ -1,6 +1,6 @@
 """Junction-call provenance golden tests.
 
-Companion to [docs/junction_call_audit.md](audit-docs/junction_call_audit.md).
+Companion to [`audit-docs/junction_call_audit.md`](audit-docs/junction_call_audit.md).
 Pins the derivation rules for the AIRR junction-related fields
 (`junction`, `junction_aa`, `junction_length`, `junction_start`,
 `junction_end`, `vj_in_frame`, `stop_codon`, `productive`) under

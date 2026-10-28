@@ -7,6 +7,7 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
+from tests.biology.catalog import verifies
 
 pytestmark = pytest.mark.behavior
 
@@ -48,6 +49,13 @@ def _experiment(cfg):
     )
 
 
+@verifies("expression.productivity",
+          claim="productivity_reasons names which assessment actually failed, "
+                "not merely that one did: a rejected anchor residue reports "
+                "anchor_residue_rejected and specifically not "
+                "reference_anchor_unresolved, so a consumer can tell a "
+                "noncanonical landmark from an unresolvable one",
+          fields=("productive", "vj_in_frame", "stop_codon", "productivity_reasons"))
 @pytest.mark.parametrize("segment", ["V", "J"])
 def test_verified_noncanonical_landmark_has_defined_junction_and_rejected_productivity(segment):
     cfg = _reference(segment)

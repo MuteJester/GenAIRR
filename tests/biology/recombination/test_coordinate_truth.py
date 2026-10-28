@@ -73,11 +73,14 @@ def _coordinate_fields_present(record):
 
 @verifies("recombination.trimming",
           claim="every segment's recorded germline span starts at its own trim_5 "
-                "and ends at the reference allele's length minus its trim_3, so "
-                "the trim each coding end reports is the germline actually "
-                "missing -- a trim that removed a different number of bases than "
-                "it recorded breaks this even though the bases it did keep are "
-                "the allele's own",
+                "and ends at the reference allele's length minus its trim_3, and "
+                "that span equals the span the segment occupies in the read. The "
+                "reference length is read from the reference table, so a trim "
+                "recorded against an allele of a different length is caught; a "
+                "trim that removed a different number of bases than it recorded "
+                "is caught by the read-span identity and NOT by the germline "
+                "bounds, which the record builder derives from these same trim "
+                "fields",
           fields=("v_trim_5", "v_trim_3", "d_trim_5", "d_trim_3",
                   "j_trim_5", "j_trim_3"))
 @pytest.mark.parametrize("locus", LOCI)
@@ -88,7 +91,12 @@ def test_recorded_trims_balance_against_the_reference_allele_length(locus):
         found = coordinates.disagreements(record, lengths)
         assert found == (), f"{locus}: {len(found)} coordinate disagreement(s); first: {found[0]}"
         _trim_fields_present(record)
-        segments_seen.update(lengths)
+        # The oracle skips a segment with no read coordinates, so counting one
+        # as checked merely because its allele id resolved would report
+        # coverage the check did not have -- the same shape as an oracle that
+        # compared nothing and reported clean.
+        segments_seen.update(s for s in lengths
+                             if record.get(f"{s}_sequence_start") is not None)
     expected = {"v", "d", "j"} if locus != "human_igk" else {"v", "j"}
     assert segments_seen == expected, (
         f"{locus}: checked {sorted(segments_seen)}, expected {sorted(expected)}")
@@ -105,9 +113,14 @@ def _germline_coordinate_fields_present(record):
 @verifies("recombination.assembly",
           claim="each segment's germline coordinates bound exactly the span the "
                 "trim amounts and end loss account for, against the reference "
-                "allele's own length -- so the coordinates say which germline "
-                "bases are present, not merely how many. sequence_length is "
-                "checked against the sequence it measures",
+                "allele's own length, and the segment sits at the absolute read "
+                "position the untemplated lengths leave for it. sequence_length "
+                "is checked against the sequence it measures. These are "
+                "consistency claims across the record's own coordinate books "
+                "and the reference table -- which germline bases the pool "
+                "actually holds is not established here, because the record "
+                "builder back-fills a missing coordinate as a deletion rather "
+                "than narrowing the reported range",
           fields=("v_germline_start", "v_germline_end", "d_germline_start",
                   "d_germline_end", "j_germline_start", "j_germline_end",
                   "sequence_length"))
@@ -219,10 +232,11 @@ def test_the_identities_hold_for_any_locus_and_seed(drawn):
     """The parametrized tests above fix the seed, so they establish the
     identities for the records those seeds happen to produce.
 
-    What makes a coordinate identity worth having is that it holds for every
-    rearrangement, not for twelve of them. A drawn locus and seed reach allele
-    pairings and trim combinations a fixed seed never will -- which is the
-    difference between an identity and a hundred and twenty observations.
+    Drawing the seed reaches allele pairings and trim combinations the fixed
+    seeds never will, which is worth having. It is not unbounded coverage: the
+    strategy draws from the same three loci, at most two records per example
+    and 25 examples, with no pass-stack variation -- so this adds seeds, not
+    stacks.
     """
     locus, seed, count = drawn
     exp = experiment_builder.recombined(locus=locus)

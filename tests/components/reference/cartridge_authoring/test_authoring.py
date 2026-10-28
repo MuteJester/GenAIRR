@@ -2,9 +2,9 @@
 **ReferenceCartridgeBuilder v1** slice.
 
 Companion to
-[`docs/reference_cartridge_authoring_audit.md`](audit-docs/reference_cartridge_authoring_audit.md)
+[`audit-docs/reference_cartridge_authoring_audit.md`](audit-docs/reference_cartridge_authoring_audit.md)
 and the contract pins in
-[`tests/components/reference/cartridge_authoring/test_pins.py`](test_reference_cartridge_authoring_contract.py).
+[`tests/components/reference/cartridge_authoring/test_pins.py`](tests/components/reference/cartridge_authoring/test_pins.py).
 
 Covers the 12 behaviours the implementation slice promised:
 

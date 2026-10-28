@@ -109,11 +109,21 @@ class TemplatedCheck:
     mismatches: tuple[Mismatch, ...]
     checked: int
     skipped_inverted: int
+    #: Positions whose segment names an allele the reference does not have.
+    unresolved_allele: int = 0
+    #: Positions whose germline coordinate falls outside the allele it names.
+    #: Either is a defect in its own right, and both used to be a bare
+    #: ``continue`` -- not compared, not counted, not reported. A reference
+    #: truncated by thirty bases produced 0 mismatches, a lower ``checked``,
+    #: and ``clean``; nothing asserted on ``checked``'s absolute value, so the
+    #: count added here did not close this on its own.
+    out_of_range: int = 0
 
     @property
     def clean(self) -> bool:
-        """No mismatches **and** something was actually compared."""
-        return not self.mismatches and self.checked > 0
+        """Something was compared, it all agreed, and nothing was unexaminable."""
+        return (not self.mismatches and self.checked > 0
+                and self.unresolved_allele == 0 and self.out_of_range == 0)
 
 
 def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> TemplatedCheck:
@@ -136,7 +146,7 @@ def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> Templ
     segments = segments_by_position(simulation)
     cache: dict[str, bytes | None] = {}
     out: list[Mismatch] = []
-    checked = skipped = 0
+    checked = skipped = unresolved = out_of_range = 0
     for index in range(len(germline)):
         position = simulation.germline_position(index)
         if position is None:
@@ -150,7 +160,11 @@ def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> Templ
         if segment not in cache:
             cache[segment] = _allele_sequence(refdata, simulation, segment)
         reference = cache[segment]
-        if reference is None or not 0 <= position < len(reference):
+        if reference is None:
+            unresolved += 1
+            continue
+        if not 0 <= position < len(reference):
+            out_of_range += 1
             continue
         checked += 1
         recorded = chr(germline[index]).upper()
@@ -158,7 +172,8 @@ def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> Templ
         if recorded != expected:
             out.append(Mismatch(index=index, germline_position=position, segment=segment,
                                 recorded=recorded, reference=expected))
-    return TemplatedCheck(mismatches=tuple(out), checked=checked, skipped_inverted=skipped)
+    return TemplatedCheck(mismatches=tuple(out), checked=checked, skipped_inverted=skipped,
+                          unresolved_allele=unresolved, out_of_range=out_of_range)
 
 
 def _is_inverted(simulation) -> bool:
@@ -244,9 +259,21 @@ def p_tip_disagreement(sequence: str, boundary: int, p_length: int) -> tuple[str
     Written as a function over the sequence rather than over a ``Simulation``
     so the same comparison serves the truth test and its mutant: the mutant
     hands it a sequence with the P run overwritten and must see it fire.
+
+    Raises on input it cannot compare rather than returning ``None``. Returning
+    ``None`` for both "agreed" and "there was nothing to compare" is the
+    ambiguity ``templated_check`` exists to remove; re-introducing it in a
+    helper written during that same fix would be the defect, not an exception
+    to it. The caller decides whether a record has a P run to check.
     """
-    if p_length <= 0 or boundary - p_length < 0 or boundary + p_length > len(sequence):
-        return None
+    if p_length <= 0:
+        raise ValueError(
+            f"p_length is {p_length}; there is no P run here to compare. Gate "
+            "on the recorded p_*_length before calling.")
+    if boundary - p_length < 0 or boundary + p_length > len(sequence):
+        raise ValueError(
+            f"a {p_length}-base P run at {boundary} needs {p_length} bases "
+            f"either side, and the sequence is {len(sequence)} long")
     found = sequence[boundary:boundary + p_length].upper()
     expected = reverse_complement(sequence[boundary - p_length:boundary])
     return None if found == expected else (found, expected)

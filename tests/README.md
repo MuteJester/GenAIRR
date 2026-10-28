@@ -141,12 +141,16 @@ Two rules, both enforced:
   relocate, and it broke silently when this tree was reorganised — in one case
   as an empty `parametrize` set that collected zero tests and reported nothing.
 
-  Three uses are legitimate and are listed, with their reasons, in
-  `FILE_ANCHOR_ALLOWED` in `support/meta/test_structure.py`: `paths.py` itself,
-  the two guards that audit the support layer and so cannot be positioned by
-  it, and a pin that reads its own source to check its own docstring. Anything
-  else fails. The list is the rule — a new exception is argued for there rather
-  than added by precedent.
+  A handful of uses are legitimate and every one is listed, with its reason,
+  in `FILE_ANCHOR_ALLOWED` in `support/meta/test_structure.py`. Five kinds:
+  `paths.py` itself (it is the anchor); the two guards that audit the support
+  layer and so cannot be positioned by it; pins that read their own source to
+  check their own docstring; a test that excludes its own source from a scan;
+  a test that reads the `__file__` of the module under test; and a fixture
+  generator, which is not a test module. Anything else fails. The list is the
+  rule — a new exception is argued for there rather than added by precedent,
+  and the guard also fails on a stale entry, so the list stays a statement
+  about the suite as it is.
 
 ## Reproducibility fixtures
 

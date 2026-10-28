@@ -182,15 +182,25 @@ def test_a_truth_gap_stays_visible_even_when_the_mechanism_verifies():
 
 
 def test_a_field_the_catalog_calls_unclaimed_does_not_count_toward_coverage():
-    """Nine fields are in both UNCLAIMED_FIELDS and some mechanism's truth
+    """Seven fields are in both UNCLAIMED_FIELDS and some mechanism's truth
     fields, and the entries say why: each is a configuration echo, a harness
     label or a derived ratio, listed beside the mechanism it belongs to but not
     something that mechanism can be held to as truth.
 
-    Counting them in the denominator makes their owners permanently partial --
-    expression.productivity could reach 3 of 6 and assay.paired_end 6 of 8, no
-    matter how thoroughly either was tested. The coverage denominator is
-    therefore the verifiable fields, not every field listed.
+    Counting them in the denominator would make their owners permanently
+    partial however thoroughly either was tested, so the denominator is the
+    verifiable fields rather than every field listed.
+
+    Two fields were wrongly in this set and are not any more. Both were the
+    only reason their mechanism read verified, which is exactly the hazard the
+    pin below exists to catch:
+
+    - productivity_reasons is a per-record outcome -- which assessment failed
+      -- and the suite asserts specific codes in 22 places. Calling it
+      diagnostic text let expression.productivity read verified while a
+      different tier silently covered the field.
+    - insert_size is drawn from a distribution per record, and r2 is positioned
+      by it. It looked like an echo because the fixture pinned it to a constant.
     """
     overlapping = {f for m in catalog.all_mechanisms() for f in m.truth_fields
                    if f in catalog.UNCLAIMED_FIELDS}
@@ -218,10 +228,8 @@ def test_the_fields_excluded_from_coverage_are_pinned():
         "sequence_id",             # clonality.founder
         "locus",                   # germline.genotype
         "productivity_policy",     # expression.productivity
-        "productivity_reasons",    # expression.productivity
         "productivity_scope",      # expression.productivity
         "read_layout",             # assay.paired_end
-        "insert_size",             # assay.paired_end
         "mutation_rate",           # maturation.hypermutation
         "c_call",                  # maturation.class_switching
     }, (

@@ -1,7 +1,7 @@
 """Contract pins for the SHM Model / Context-Mutation audit.
 
 Companion to
-[`docs/shm_model_audit.md`](audit-docs/shm_model_audit.md). The audit
+[`audit-docs/shm_model_audit.md`](audit-docs/shm_model_audit.md). The audit
 freezes the biological-vs-artefact split between SHM and the
 corruption family, the IR-sourced `n_mutations` counter, the S5F
 kernel's bundled-but-not-cartridge-owned status, the productive-
@@ -384,7 +384,7 @@ def test_pin_present_shm_metadata_in_cartridge_manifest() -> None:
 
     Flipped from ``pin_absence_no_shm_model_in_cartridge_manifest``
     when the Slice landed. Spec-driven behavioural coverage lives
-    in [`tests/components/cartridge/test_cartridge_manifest_shm.py`](test_cartridge_manifest_shm.py);
+    in [`tests/components/cartridge/test_cartridge_manifest_shm.py`](tests/components/cartridge/test_cartridge_manifest_shm.py);
     this pin is the audit-doc lockstep counterpart.
 
     The companion ``pin_absence_no_s5f_kernel_in_content_hash``

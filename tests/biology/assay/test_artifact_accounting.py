@@ -106,8 +106,9 @@ def test_orientation_is_recorded_and_discriminates():
 @verifies("assay.contamination",
           claim="is_contaminant discriminates: False on an uncontaminated run "
                 "and on one with the pass configured off, True when every read "
-                "is contaminated, and both occur in a mixed run -- so a "
-                "benchmark excluding flagged reads excludes the right ones",
+                "is contaminated, and both occur in a mixed run. Which read "
+                "carries the flag in a mixed run is not established here -- the "
+                "body reads the boolean, not the read's provenance",
           fields=("is_contaminant",))
 def test_contamination_is_flagged_and_discriminates():
     """Both sides, for the same reason as orientation above: at prob=1.0 alone,
@@ -134,16 +135,27 @@ def test_contamination_is_flagged_and_discriminates():
 
 
 @verifies("assay.paired_end",
-          claim="each read's recorded span is the length of the read, and lies "
-                "within the molecule, so a tool reconstructing the fragment from "
-                "R1 and R2 is scored against coordinates that hold",
+          claim="each read's recorded span is the length of the read and lies "
+                "within the molecule, and R2 is positioned by the fragment "
+                "length actually drawn for that record -- r2_end == insert_size "
+                "and r2_start == insert_size - r2_length -- so a tool "
+                "reconstructing the fragment from R1 and R2 is scored against "
+                "coordinates that hold",
           fields=("r1_sequence", "r1_start", "r1_end", "r2_sequence",
-                  "r2_start", "r2_end"))
+                  "r2_start", "r2_end", "insert_size"))
 def test_each_read_is_the_stretch_its_offsets_claim():
     """Fields are read by name rather than through an f-string, so a static
-    check can confirm the claim matches what the body actually inspects."""
-    exp = experiment_builder.recombined().paired_end(r1_length=120, insert_size=260)
+    check can confirm the claim matches what the body actually inspects.
+
+    insert_size is drawn from a distribution, not pinned. Fixed at a constant
+    the relation below is satisfied by a field echoing the configuration back,
+    which is how insert_size came to be filed as an echo in the first place --
+    so the fixture draws over a range and the test requires it to have varied.
+    """
+    exp = (experiment_builder.recombined()
+           .paired_end(r1_length=120, insert_size=(200, 320)))
     checked = 0
+    drawn = set()
     for outcome in exp.run(n=25, seed=7):
         record = outcome.airr_record(exp.refdata)
         molecule = len(record["sequence"])
@@ -159,7 +171,21 @@ def test_each_read_is_the_stretch_its_offsets_claim():
                 f"{which}: offsets {start}..{end} fall outside a "
                 f"{molecule}-base molecule")
             checked += 1
+        # The relation the mechanism's own summary names: the insert size is
+        # what places R2. Every assertion above holds with R2 sampled from a
+        # different fragment length entirely.
+        size = record["insert_size"]
+        drawn.add(size)
+        assert record["r2_end"] == size, (
+            f"r2 ends at {record['r2_end']} but the fragment drawn for this "
+            f"record is {size} bases")
+        assert record["r2_start"] == size - len(record["r2_sequence"]), (
+            f"r2 starts at {record['r2_start']}, not {size} minus its own "
+            f"{len(record['r2_sequence'])} bases")
     assert checked, "no paired read was produced; the fixture establishes nothing"
+    assert len(drawn) > 1, (
+        f"insert_size took one value ({drawn}); the relation above would be "
+        "satisfied by a field echoing the configuration back")
 
 
 @verifies("assay.end_loss",

@@ -1,7 +1,7 @@
 """Contract pins for the NP Base Model Estimation audit.
 
 Companion to
-[`docs/np_base_model_estimation_design.md`](audit-docs/np_base_model_estimation_design.md).
+[`audit-docs/np_base_model_estimation_design.md`](audit-docs/np_base_model_estimation_design.md).
 
 Pin set:
 

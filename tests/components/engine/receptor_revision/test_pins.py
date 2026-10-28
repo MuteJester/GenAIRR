@@ -1,12 +1,12 @@
 """Pre-implementation contract for receptor revision.
 
-Companion to [`docs/receptor_revision_design.md`](audit-docs/receptor_revision_design.md).
+Companion to [`audit-docs/receptor_revision_design.md`](audit-docs/receptor_revision_design.md).
 Receptor revision (V replacement after initial V(D)J recombination)
 isn't implemented yet; this file pins today's absence + the
 existing scaffolding the design relies on. When the implementation
 slice(s) land, the absence assertions flip to presence assertions
 in lockstep — same convention as
-[`test_d_inversion_contract.py`](test_d_inversion_contract.py).
+[`tests/components/engine/d_inversion/test_pins.py`](tests/components/engine/d_inversion/test_pins.py).
 
 The split:
 

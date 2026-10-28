@@ -2,7 +2,7 @@
 audit.
 
 Companion to
-[`docs/p_nucleotide_length_estimation_design.md`](audit-docs/p_nucleotide_length_estimation_design.md).
+[`audit-docs/p_nucleotide_length_estimation_design.md`](audit-docs/p_nucleotide_length_estimation_design.md).
 
 Pin set:
 

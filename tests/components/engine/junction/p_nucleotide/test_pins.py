@@ -1,7 +1,7 @@
 """Contract pins for the P-nucleotide / palindromic addition audit.
 
 Companion to
-[`docs/p_nucleotide_design.md`](audit-docs/p_nucleotide_design.md).
+[`audit-docs/p_nucleotide_design.md`](audit-docs/p_nucleotide_design.md).
 The audit is **pre-implementation**: pins below freeze today's
 surfaces (``pin_scaffold_*``), the documented-orphan status of
 the legacy ``DataConfig.p_nucleotide_length_probs`` field

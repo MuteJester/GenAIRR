@@ -117,13 +117,26 @@ separate counters - they're library/sequencing-stage noise, not
 biological mutation.
 
 It counts substitution **events**, which is not the same as visible
-differences from the germline: a replacement base is drawn without
-excluding the base already there, so some events change nothing. The
-share that leaves no evidence is 28.1% for `model="uniform"` and 4.9%
-for `model="s5f"` at one mutation per record, rising with the count as
-repeat hits on a position can restore the germline base. When scoring a
-mutation caller, compare the sequence against its germline rather than
-against `n_mutations`.
+differences from the germline. Some events leave no evidence, and no
+mutation caller can recover those. Measured at one mutation per record
+over 6,000 records (seed 101, human IGH):
+
+| model | leaves no evidence | on an untemplated base | drew the same base |
+|-------|-------------------|------------------------|--------------------|
+| `uniform` | 28.7% | 3.0% | 25.7% |
+| `s5f` | 5.0% | 5.0% | 0.0% |
+
+The two causes are different. `uniform` draws from A/C/G/T without
+excluding the base already present, so about a quarter of its events
+change nothing; `s5f` never does this. What remains for both is an
+event landing on an N or P addition, which has no germline base to
+differ from — and that is the whole of `s5f`'s shortfall, so switching
+models removes one cause and not the other. At higher counts a third
+cause appears, as repeat hits on one position can restore the germline
+base: at 20 mutations per record the totals are 29.2% and 8.6%.
+
+When scoring a mutation caller, compare the sequence against its
+germline rather than against `n_mutations`.
 
 ## Paired-end fields (when requested)
 

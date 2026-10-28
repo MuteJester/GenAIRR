@@ -474,7 +474,20 @@ def test_every_recorded_file_anchor_states_why():
 # at ../docs/ while the documents live in audit-docs/ -- every one of them dead,
 # some since before this tree was reorganised.
 
-_DOC_LINK = re.compile(r"\[[^\]]*\]\((?!https?://)([^)]+\.md)\)")
+_DOC_LINK = re.compile(r"\[[^\]]*\]\((?!https?://)([^)]+\.(?:md|py))\)")
+
+#: Linked paths the repository deliberately does not contain, with the reason.
+#: A link to one of these is recorded rather than broken -- but the guard also
+#: asserts each is genuinely excluded by .gitignore, so an entry here cannot be
+#: used to hide a file that is merely missing.
+REPOSITORY_EXCLUDED_LINKS = {
+    "docs/docs_mkdocs_migration_plan.md":
+        "`.gitignore` excludes /docs/, so the migration plan is not in the "
+        "repository. The module that links to it is already recorded in "
+        "CONDITIONALLY_SKIPPED for the same reason: its 26 tests skip wherever "
+        "the document is absent, which is everywhere but a local tree that "
+        "has it.",
+}
 
 
 def _doc_links():
@@ -500,13 +513,40 @@ def test_every_document_a_test_points_at_exists():
         checked += 1
         if link.startswith(("./", "../")):
             relative.append(f"{module.relative_to(TESTS_ROOT)} -> {link}")
+        elif link in REPOSITORY_EXCLUDED_LINKS:
+            continue
         elif not (repo_root / link).exists():
             broken.append(f"{module.relative_to(TESTS_ROOT)} -> {link}")
-    assert checked > 40, f"only {checked} doc links found; the scan is not reading the suite"
+    assert checked > 60, f"only {checked} doc links found; the scan is not reading the suite"
     assert broken == [], (
-        f"{len(broken)} link(s) to a document that does not exist:\n  "
+        f"{len(broken)} link(s) to a file that does not exist:\n  "
         + "\n  ".join(broken[:12]))
     assert relative == [], (
         f"{len(relative)} module-relative link(s); write them from the "
         f"repository root so a move cannot break them:\n  "
         + "\n  ".join(relative[:12]))
+
+
+def test_every_link_recorded_as_excluded_is_really_excluded_from_the_repository():
+    """Otherwise the record becomes a way to carry a dead link.
+
+    Checked against git, not against the filesystem: the file is present in a
+    working tree that has it, which is exactly how the guard above came to pass
+    locally while failing on a clean checkout.
+    """
+    import subprocess
+
+    repo_root = TESTS_ROOT.parent
+    assert REPOSITORY_EXCLUDED_LINKS, "the record is empty, so this checks nothing"
+    for link, reason in REPOSITORY_EXCLUDED_LINKS.items():
+        assert reason.strip(), f"{link} is recorded with no reason"
+        tracked = subprocess.run(["git", "ls-files", "--error-unmatch", link],
+                                 cwd=repo_root, capture_output=True, text=True)
+        assert tracked.returncode != 0, (
+            f"{link} IS tracked by git, so it is not repository-excluded. "
+            "Remove it from REPOSITORY_EXCLUDED_LINKS; the link resolves.")
+        ignored = subprocess.run(["git", "check-ignore", "-q", link],
+                                 cwd=repo_root, capture_output=True, text=True)
+        assert ignored.returncode == 0, (
+            f"{link} is neither tracked nor ignored by git -- it is simply "
+            "missing, which is a broken link and not an exclusion.")

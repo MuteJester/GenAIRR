@@ -294,14 +294,128 @@ def test_a_reference_table_the_engine_disagrees_with_is_caught():
     assert {disagreement.segment for disagreement in found} == {"v"}
 
 
-def test_an_indel_count_cannot_excuse_an_arbitrary_coordinate_shift():
-    """The indel tolerance is per recorded edit, so it must not become a blanket
-    licence: a shift larger than the recorded indel count is still a defect."""
+def test_an_indel_count_does_not_excuse_a_germline_bound_with_no_end_loss():
+    """The first version of this test pinned the slack it warned against.
+
+    It asserted that "two recorded indels should tolerate a two-base
+    displacement" of v_germline_end -- granting exactly the licence its own
+    docstring said must not exist. Measured, the germline bounds deviate only
+    at an end where read truncation also applies; with no end loss they are
+    exact however many indels the segment carries. So the tolerance is now
+    conditioned on the end loss rather than on the indel count alone, and a
+    one-base error here is a finding.
+    """
     record, lengths = _coordinate_case()
-    excused = {**record, "n_v_indels": 2, "n_indels": 2,
-               "v_germline_end": record["v_germline_end"] - 2}
-    assert coordinates.disagreements(excused, lengths) == (), (
-        "two recorded indels should tolerate a two-base displacement")
-    unexcused = {**excused, "v_germline_end": record["v_germline_end"] - 3}
-    assert coordinates.disagreements(unexcused, lengths), (
-        "a three-base displacement with two recorded indels went undetected")
+    assert (record.get("end_loss_3_length") or 0) == 0, "the fixture must have no 3' end loss"
+    excused = {**record, "n_v_indels": 3, "n_indels": 3,
+               "v_germline_end": record["v_germline_end"] - 1}
+    found = coordinates.disagreements(excused, lengths)
+    assert found, (
+        "a one-base error in v_germline_end was excused by three indels, on a "
+        "record with no end loss at that end")
+    assert any("germline_end ==" in d.identity for d in found)
+
+
+def test_the_read_span_tolerance_is_bounded_by_the_recorded_indel_count():
+    """The read span is the identity an indel genuinely displaces, so it does
+    carry a tolerance -- and that tolerance must stay bounded."""
+    record, lengths = _coordinate_case()
+    within = {**record, "n_v_indels": 2, "n_indels": 2,
+              "v_sequence_end": record["v_sequence_end"] + 2,
+              "v_alignment_end": record["v_alignment_end"] + 2}
+    assert any("span" in d.identity for d in coordinates.disagreements(within, lengths)) is False, (
+        "two recorded indels should tolerate a two-base read-span displacement")
+    beyond = {**within, "v_sequence_end": record["v_sequence_end"] + 3,
+              "v_alignment_end": record["v_alignment_end"] + 3}
+    assert coordinates.disagreements(beyond, lengths), (
+        "a three-base read-span displacement with two recorded indels went undetected")
+
+
+@pytest.mark.parametrize("segment, delta", [("v", 7), ("d", -4), ("j", 3)])
+def test_a_segment_displaced_as_a_whole_is_caught(segment, delta):
+    """The defect the difference-based identities cannot see.
+
+    Shift a segment's read and alignment coordinates by the same amount and
+    every span, every gap-free difference and every alignment-equals-read pair
+    is preserved. Nothing anchored an absolute position, so this returned no
+    disagreements -- while the twelve coordinates an aligner benchmark is
+    scored on were all wrong by the same offset.
+
+    The six per-field mutants above cannot reach this shape, because each of
+    them moves exactly one field and is therefore caught by a difference.
+    """
+    record, lengths = _coordinate_case()
+    displaced = dict(record)
+    for suffix in ("sequence_start", "sequence_end", "alignment_start", "alignment_end"):
+        displaced[f"{segment}_{suffix}"] = record[f"{segment}_{suffix}"] + delta
+    found = coordinates.disagreements(displaced, lengths)
+    assert found, (
+        f"{segment.upper()} displaced by {delta:+d} as a whole went undetected")
+
+
+def test_the_whole_rearrangement_displaced_is_caught():
+    """Every segment moved together, which preserves even the inter-segment
+    gaps. Only the two outer anchors can see this one."""
+    record, lengths = _coordinate_case()
+    displaced = dict(record)
+    for segment in ("v", "d", "j"):
+        for suffix in ("sequence_start", "sequence_end", "alignment_start", "alignment_end"):
+            key = f"{segment}_{suffix}"
+            if record.get(key) is not None:
+                displaced[key] = record[key] + 5
+    found = coordinates.disagreements(displaced, lengths)
+    assert found, "the whole rearrangement displaced by five bases went undetected"
+    identities = {d.identity for d in found}
+    assert "the first segment starts at read position 0" in identities, (
+        f"caught, but not by the leading anchor; got {sorted(identities)}")
+
+
+def test_an_unaccounted_gap_between_segments_is_caught():
+    """Models np1 being recorded shorter than the untemplated stretch actually
+    present -- read positions that belong to nothing."""
+    record, lengths = _coordinate_case()
+    assert record["np1_length"] > 0, "the fixture has no np1 to shorten"
+    shortened = {**record, "np1_length": record["np1_length"] - 1}
+    found = coordinates.disagreements(shortened, lengths)
+    assert found, "an np1 length one short of the gap it describes went undetected"
+
+
+def test_a_reference_too_short_for_the_coordinates_is_not_reported_clean():
+    """The third silent route to a passing verdict.
+
+    `reference is None or not 0 <= position < len(reference)` was a bare
+    `continue`: not compared, not counted, not reported. A reference truncated
+    by thirty bases gave 0 mismatches and `clean`, and the comparison count
+    added alongside it did not close this -- nothing asserted on the count's
+    absolute value, only that it was non-zero.
+
+    Models a packaging change shipping a truncated or renumbered allele.
+    """
+    exp = experiment_builder.recombined()
+    outcome = exp.run(n=1, seed=0)[0]
+    simulation = outcome.final_simulation()
+    control = reconstruction.templated_check(simulation, exp.refdata)
+    assert control.clean and control.out_of_range == 0
+
+    class _Truncated:
+        """The reference, with the V allele short of what was assembled from it."""
+
+        def __init__(self, real, missing):
+            self._real, self._missing = real, missing
+
+        def v_allele(self, identifier):
+            allele = self._real.v_allele(identifier)
+            sequence = allele.seq() if callable(allele.seq) else allele.seq
+            return type("_Allele", (), {"seq": sequence[:-self._missing]})
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    for missing in (3, 30):
+        check = reconstruction.templated_check(simulation, _Truncated(exp.refdata, missing))
+        assert check.mismatches == (), "a short reference has no base to disagree with"
+        assert check.out_of_range == missing, (
+            f"{missing} positions fall outside the truncated allele but "
+            f"{check.out_of_range} were reported")
+        assert not check.clean, (
+            f"a reference {missing} bases short of the assembly reported clean")

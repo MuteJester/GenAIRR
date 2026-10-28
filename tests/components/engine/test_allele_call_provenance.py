@@ -1,6 +1,6 @@
 """Allele-call disambiguation golden tests.
 
-Companion to [docs/allele_call_audit.md](audit-docs/allele_call_audit.md).
+Companion to [`audit-docs/allele_call_audit.md`](audit-docs/allele_call_audit.md).
 Pins the live walker's evidence-based `recalled_*_call` fields under
 SHM, PCR errors, sequencing errors, and N substitution. Standard
 `v_call`/`d_call`/`j_call` and alignment fields keep the generating

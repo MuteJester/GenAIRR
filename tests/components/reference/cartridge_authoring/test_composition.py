@@ -24,7 +24,7 @@ Pinned invariants:
   trail is observable on the resulting cartridge.
 
 Companion to
-[`docs/reference_cartridge_authoring_audit.md`](audit-docs/reference_cartridge_authoring_audit.md).
+[`audit-docs/reference_cartridge_authoring_audit.md`](audit-docs/reference_cartridge_authoring_audit.md).
 """
 from __future__ import annotations
 

@@ -1,13 +1,13 @@
 """Pre-implementation contract for paired-end / read-layout output.
 
-Companion to [`docs/paired_end_design.md`](audit-docs/paired_end_design.md).
+Companion to [`audit-docs/paired_end_design.md`](audit-docs/paired_end_design.md).
 Paired-end read-layout projection (one AIRR row per molecule with
 R1 / R2 windows carved out of ``rec.sequence``) isn't implemented
 yet; this file pins today's absence + the existing scaffolding the
 design relies on. When the implementation slices land, the
 absence assertions flip to presence assertions in lockstep — same
-convention as [`test_d_inversion_contract.py`](test_d_inversion_contract.py)
-and [`test_receptor_revision_contract.py`](test_receptor_revision_contract.py).
+convention as [`tests/components/engine/d_inversion/test_pins.py`](tests/components/engine/d_inversion/test_pins.py)
+and [`tests/components/engine/receptor_revision/test_pins.py`](tests/components/engine/receptor_revision/test_pins.py).
 
 The split:
 
@@ -131,8 +131,8 @@ def test_pin_present_to_paired_fastq_and_absence_of_single_end_alias() -> None:
     """The paired-end design's §11 deferred ``to_paired_fastq``
     to a follow-up slice; that slice has now landed via
     ``docs/fastq_export_design.md`` and is enforced by
-    [`tests/components/result/test_fastq_export_contract.py`](test_fastq_export_contract.py)
-    and [`tests/components/result/test_to_paired_fastq.py`](test_to_paired_fastq.py).
+    [`tests/components/result/test_fastq_export_contract.py`](tests/components/result/test_fastq_export_contract.py)
+    and [`tests/components/result/test_to_paired_fastq.py`](tests/components/result/test_to_paired_fastq.py).
     This pin captures the cross-audit lockstep: the
     paired-end-design absence pin flips to present, and the
     sibling ``.single_end`` DSL alias stays absent (the design

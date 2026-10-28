@@ -2,7 +2,7 @@
 Architecture audit.
 
 Companion to
-[`docs/docs_website_audit.md`](audit-docs/docs_website_audit.md).
+[`audit-docs/docs_website_audit.md`](audit-docs/docs_website_audit.md).
 
 Pin set:
 

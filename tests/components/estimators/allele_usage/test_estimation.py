@@ -2,9 +2,9 @@
 Estimation v1** slice.
 
 Companion to
-[`docs/allele_usage_estimation_design.md`](audit-docs/allele_usage_estimation_design.md)
+[`audit-docs/allele_usage_estimation_design.md`](audit-docs/allele_usage_estimation_design.md)
 and the contract pins in
-[`tests/components/estimators/allele_usage/test_pins.py`](test_allele_usage_estimation_contract.py).
+[`tests/components/estimators/allele_usage/test_pins.py`](tests/components/estimators/allele_usage/test_pins.py).
 
 Covers the 15-test surface from the user brief:
 

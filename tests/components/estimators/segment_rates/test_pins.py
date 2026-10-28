@@ -1,7 +1,7 @@
 """Contract pins for the Per-Segment SHM Rate Scalars audit.
 
 Companion to
-[`docs/shm_segment_rate_design.md`](audit-docs/shm_segment_rate_design.md).
+[`audit-docs/shm_segment_rate_design.md`](audit-docs/shm_segment_rate_design.md).
 The audit is pre-implementation: it pins today's full-pool SHM
 targeting and the architectural feasibility of the proposed slice
 (`pin_scaffold_*`) plus the surfaces the slice will add
@@ -154,7 +154,7 @@ def test_pin_present_mutate_accepts_segment_rates() -> None:
     ``segment_rates: Optional[Dict[str, float]] = None`` kwarg.
     Flipped from ``pin_scaffold_mutate_signature_lacks_segment_rates_today``
     when the implementation slice landed. Spec-driven behavioural
-    coverage lives in [`tests/components/estimators/segment_rates/test_estimation.py`](test_segment_rates_implementation.py)."""
+    coverage lives in [`tests/components/estimators/segment_rates/test_estimation.py`](tests/components/estimators/segment_rates/test_estimation.py)."""
     sig = inspect.signature(ga.Experiment.mutate)
     assert "segment_rates" in sig.parameters, (
         "Experiment.mutate.segment_rates regressed; Slice 1 backed out."

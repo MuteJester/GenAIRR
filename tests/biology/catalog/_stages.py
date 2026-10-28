@@ -44,12 +44,11 @@ UNCLAIMED_FIELDS = {
              "see that mechanism's truth_gap",
     "productivity_policy": "configuration echoed back, not an outcome",
     "productivity_scope": "configuration echoed back, not an outcome",
-    "productivity_reasons": "diagnostic text explaining the productive flag, "
-                            "not an independent truth",
-    "read_layout": "configuration echoed back; assay.paired_end owns the "
-                   "sampled coordinates",
-    "insert_size": "configuration echoed back; assay.paired_end owns the "
-                   "sampled coordinates",
+    "read_layout": "the configured layout name echoed back -- 'paired_end' "
+                   "whenever the pass runs, with no per-record outcome in it. "
+                   "insert_size is NOT in this category: it is drawn from a "
+                   "distribution per record, and assay.paired_end is "
+                   "answerable for it",
     "mutation_rate": "a derived ratio of n_mutations to length, owned via "
                      "maturation.hypermutation rather than separately",
     "c_call": "always empty: no isotype or class-switch recombination is "
