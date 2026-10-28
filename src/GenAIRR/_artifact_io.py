@@ -30,7 +30,13 @@ def canonical_json(value) -> str:
 
 
 def typed_digest(value, domain: str) -> str:
-    return _engine._family_replay_digest(canonical_json(value), domain)
+    return typed_digest_of_canonical(canonical_json(value), domain)
+
+
+def typed_digest_of_canonical(text: str, domain: str) -> str:
+    """The typed digest of a value given as its canonical JSON ``text`` (``canonical_json(value)``):
+    ``typed_digest`` is exactly this over that text, so a caller holding it need not serialise again."""
+    return _engine._family_replay_digest(text, domain)
 
 
 def strict_loads(text: str, *, max_bytes: int) -> Any:

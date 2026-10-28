@@ -61,7 +61,9 @@ from GenAIRR._reference.sidecar import (
     MAX_BYTES as SIDECAR_MAX_BYTES, SCHEMA_NAME as SIDECAR_SCHEMA, SCHEMA_VERSION as SIDECAR_VERSION,
 )
 from GenAIRR._reference_sources import evidence, ogrdb
-from GenAIRR._reference_sources._fields import MAX_TEXT, bad, digest, private_directory, ptr, require_type
+from GenAIRR._reference_sources._fields import (
+    MAX_TEXT, bad, digest, document_bytes, private_directory, ptr, require_type,
+)
 from GenAIRR._reference_sources.common import RECORD_EXPORT_FORMATS, Generator, Locator, RuntimeHashes
 from GenAIRR._reference_sources.consistency import (
     check_decisions, check_inventory, check_profile_scope, check_recipe, check_selection,
@@ -659,7 +661,7 @@ class _Build:
         document = {"schema": SIDECAR_SCHEMA, "schema_version": SIDECAR_VERSION,
                     "reference": self.recipe.reference.to_dict(), "conventions": dict(SIDECAR_CONVENTIONS),
                     "alleles": alleles, "relationships": relationships}
-        return (canonical_json(document) + "\n").encode("utf-8")
+        return document_bytes(document)
 
 
 # ── the runtime reference ────────────────────────────────────────────

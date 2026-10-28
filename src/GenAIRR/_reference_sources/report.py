@@ -673,14 +673,32 @@ def _wrapped(items, indent: str) -> list:
                          break_long_words=False, break_on_hyphens=False)
 
 
+def terms_text(terms: dict) -> str:
+    """A lock's data terms (``Terms.to_dict()``): ``<status>: <reason>`` or ``recorded (<assets>): <licence>``."""
+    return terms["status"] + (f": {terms['reason']}" if terms["reason"] else
+                              f" ({', '.join(terms['assets'])}): {terms['licence']}")
+
+
+def asset_lines(assets: list, missing: list, indent: str) -> list:
+    """One line per locked asset (``Asset.to_dict()``) and per missing asset (``MissingAsset.to_dict()``)."""
+    out = [f"{indent}{a['asset_id']:<18} {a['role']:<18} {a['sha256']}  {a['bytes']} bytes  {a['origin_kind']}"
+           + (f"  {a['declared_url']}" if a["declared_url"] else "") for a in assets]
+    out += [f"{indent}{m['format']:<18} {m['role']:<18} missing: {m['reason']}"
+            + (f" ({m['detail']})" if m["detail"] else "") for m in missing]
+    return out
+
+
+def segment_counts_text(counts: dict) -> str:
+    """``V n, D n, J n, unassigned n`` of per-segment counts."""
+    return ", ".join(f"{segment} {counts[segment]}" for segment in _SEGMENT_KEYS)
+
+
 def _terms_line(terms) -> str:
-    """``data terms: <status>: <reason>`` or ``data terms: recorded (<assets>): <licence>``."""
-    return f"data terms: {terms.status}" + (f": {terms.reason}" if terms.reason else
-                                            f" ({', '.join(terms.assets)}): {terms.licence}")
+    return "data terms: " + terms_text(terms.to_dict())
 
 
 def _segment_counts(counts: SegmentCounts) -> str:
-    return ", ".join(f"{segment} {getattr(counts, segment)}" for segment in _SEGMENT_KEYS)
+    return segment_counts_text(counts.to_dict())
 
 
 class _Text:
@@ -750,12 +768,7 @@ class _Text:
                f"  adapter {adapter.id} v{adapter.version}, interpretation profile {profile.id} v{profile.version}, "
                f"projection {recipe.projection.id} v{recipe.projection.version}, defaults {recipe.defaults_profile}",
                "  assets:"]
-        for asset in lock.assets:
-            out.append(f"    {asset.asset_id:<18} {asset.role:<18} {asset.sha256}  {asset.bytes} bytes  "
-                       f"{asset.origin_kind}" + (f"  {asset.declared_url}" if asset.declared_url else ""))
-        for missing in lock.missing_assets:
-            out.append(f"    {missing.format:<18} {missing.role:<18} unavailable: {missing.reason}"
-                       + (f" ({missing.detail})" if missing.detail else ""))
+        out += asset_lines([a.to_dict() for a in lock.assets], [m.to_dict() for m in lock.missing_assets], "    ")
         out.append("  the asset origins, declared URLs and data terms are the lock writer's statements; the asset "
                    "bytes are what is verified")
         out.append("  " + _terms_line(lock.terms))

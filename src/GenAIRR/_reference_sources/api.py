@@ -30,6 +30,7 @@ from GenAIRR._reference_sources.inventory import (
 from GenAIRR._reference_sources.lock import SourceLock
 from GenAIRR._reference_sources.projection import project
 from GenAIRR._reference_sources.recipe import MAX_RECIPE_BYTES, Recipe
+from GenAIRR._reference_sources.report import asset_lines, segment_counts_text, terms_text
 
 # The receipt clock: ``None`` records the current UTC time.  A test may substitute a callable
 # returning a fixed timezone-aware datetime; receipts never enter an identity.
@@ -78,10 +79,6 @@ def _relocated(exc: ReferenceSourceError, old: str, new: str) -> ReferenceSource
 
 
 # ── inspection ───────────────────────────────────────────────────────
-
-
-def _segments(counts: dict) -> str:
-    return ", ".join(f"{segment} {counts[segment]}" for segment in ("V", "D", "J", "unassigned"))
 
 
 @dataclass(frozen=True)
@@ -171,15 +168,9 @@ class SourceInspection:
                       f"  No coordinate claim is accepted ({d['accepted_coordinate_claims']} accepted anchor, phase or "
                       "interval claims): their values stay candidates, and a build from this source is refused"]
         lines.append("Assets:")
-        lines += [f"  {a['asset_id']:<18} {a['role']:<18} {a['sha256']}  {a['bytes']} bytes  {a['origin_kind']}"
-                  + (f"  {a['declared_url']}" if a["declared_url"] else "") for a in d["assets"]]
-        for missing in d["missing_assets"]:
-            lines.append(f"  {missing['format']:<18} {missing['role']:<18} missing: {missing['reason']}"
-                         + (f" ({missing['detail']})" if missing["detail"] else ""))
+        lines += asset_lines(d["assets"], d["missing_assets"], "  ")
         terms = d["terms"]
-        lines.append(f"Data terms: {terms['status']}"
-                     + (f": {terms['reason']}" if terms["reason"] else
-                        f" ({', '.join(terms['assets'])}): {terms['licence']}"))
+        lines.append("Data terms: " + terms_text(terms))
         if terms["citation"]:
             lines.append(f"Citation: {terms['citation']}")
         comparison = d["comparison"]
@@ -192,9 +183,9 @@ class SourceInspection:
                          "the record exports are not compared")
         lines.append("Exports:")
         for counts in d["exports"]:
-            lines.append(f"  {counts['asset']}: records {_segments(counts['record_occurrences'])}; sequence candidates "
-                         f"{_segments(counts['sequence_candidates'])}; mentioned-only identities "
-                         f"{_segments(counts['mentioned_identities'])}")
+            lines.append(f"  {counts['asset']}: records {segment_counts_text(counts['record_occurrences'])}; sequence "
+                         f"candidates {segment_counts_text(counts['sequence_candidates'])}; mentioned-only identities "
+                         f"{segment_counts_text(counts['mentioned_identities'])}")
         lines.append("Findings (code, severity: count):")
         lines += [f"  {f['code']}, {f['severity']}: {f['count']}" for f in d["findings"]] or ["  none"]
         lines.append("Claims (predicate, status: count):")

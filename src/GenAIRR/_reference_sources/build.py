@@ -18,14 +18,14 @@ import threading
 from types import MappingProxyType
 from typing import Callable, Mapping, Optional
 
-from GenAIRR._artifact_io import ArtifactIOError, canonical_json, read_bounded, write_atomic
+from GenAIRR._artifact_io import ArtifactIOError, read_bounded, write_atomic
 from GenAIRR._reference.artifact import MAX_BYTES as REFERENCE_MAX_BYTES, Reference
 from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference.importer import FASTA_MAX_BYTES
 from GenAIRR._reference.sidecar import MAX_BYTES as SIDECAR_MAX_BYTES
 from GenAIRR._reference_sources import bundled
 from GenAIRR._reference_sources._fields import (
-    MAX_ASSET_BYTES, MAX_ASSETS, bad, parse_json, ptr, require_type, short_digest, show,
+    MAX_ASSET_BYTES, MAX_ASSETS, bad, document_bytes, parse_json, ptr, require_type, short_digest, show,
 )
 from GenAIRR._reference_sources.digests import manifest_hash, recipe_hash, remember_report_hash, report_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
@@ -66,11 +66,6 @@ _ARTIFACT_KINDS = {"io": "io", "unsupported_schema": "unsupported_schema", "inte
 _BUNDLED: dict = {}
 _BUNDLED_LOCKS: dict = {}
 _BUNDLED_LOCK = threading.Lock()
-
-
-def document_bytes(document: dict) -> bytes:
-    """A generated JSON member: canonical JSON, one LF, UTF-8."""
-    return (canonical_json(document) + "\n").encode("utf-8")
 
 
 def _sha256(data: bytes) -> str:

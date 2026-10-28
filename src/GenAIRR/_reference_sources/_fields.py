@@ -19,8 +19,9 @@ import unicodedata
 from typing import Any, Callable, Iterable, Iterator, Optional
 from urllib.parse import urlsplit
 
-from GenAIRR import _engine
-from GenAIRR._artifact_io import ArtifactIOError, canonical_json, read_text_bounded, strict_loads, typed_digest
+from GenAIRR._artifact_io import (
+    ArtifactIOError, canonical_json, read_text_bounded, strict_loads, typed_digest, typed_digest_of_canonical,
+)
 from GenAIRR._reference.model import check_label as _runtime_label_problem
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 
@@ -499,11 +500,16 @@ def digest(value: Any, domain: str) -> str:
         raise bad("", f"cannot compute the {domain} digest: {exc}", kind) from exc
 
 
+def document_bytes(document: dict) -> bytes:
+    """A generated JSON document's bytes: canonical JSON, one LF, UTF-8."""
+    return (canonical_json(document) + "\n").encode("utf-8")
+
+
 def digest_of_canonical(text: str, domain: str) -> str:
     """:func:`digest` of a value given as its canonical JSON ``text`` (``canonical_json(value)``),
     without serialising it again: ``typed_digest`` is the same native digest over that text."""
     try:
-        return _engine._family_replay_digest(text, domain)
+        return typed_digest_of_canonical(text, domain)
     except (ValueError, TypeError, RuntimeError) as exc:
         kind = "resource_limit" if "resource limit" in str(exc).lower() else "malformed"
         raise bad("", f"cannot compute the {domain} digest: {exc}", kind) from exc
