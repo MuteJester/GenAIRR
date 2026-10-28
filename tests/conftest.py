@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -59,3 +60,25 @@ def igl_two_allele_session(tmp_path_factory) -> tuple:
     root = tmp_path_factory.mktemp("igl-two-alleles")
     source = from_files(root)
     return source, source.build(full_recipe(root, source))
+
+
+# ── Hypothesis profiles ──────────────────────────────────────────────────────
+# Registered centrally so property-based tests get workable limits without
+# repeating settings at each call site. Guarded on the import: the suite must
+# still collect when the optional `test` extra is not installed.
+try:
+    from hypothesis import HealthCheck, settings
+except ImportError:  # the extra is optional
+    pass
+else:
+    _COMMON = {
+        # Building a simulated repertoire is orders of magnitude slower than
+        # Hypothesis's default deadline, which would flake rather than inform.
+        "deadline": None,
+        "suppress_health_check": [HealthCheck.too_slow],
+    }
+    settings.register_profile("dev", max_examples=25, **_COMMON)
+    # derandomize so a CI failure reproduces from the commit alone, with no
+    # seed to hunt for in the log.
+    settings.register_profile("ci", max_examples=100, derandomize=True, **_COMMON)
+    settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "dev"))

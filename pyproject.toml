@@ -47,6 +47,14 @@ classifiers = [
 dataconfig = ["numpy>=1.24", "scipy>=1.10"]
 viz = ["graphviz>=0.20"]
 mcp = ["fastmcp>=2.0,<4.0"]
+# Test-only. Not part of `all`: installing GenAIRR to use it should not
+# pull in a test runner.
+test = [
+    "pytest>=7.0",
+    "pandas",
+    "hypothesis>=6.100",
+    "pytest-xdist>=3.5",
+]
 all = [
     "numpy>=1.24",
     "scipy>=1.10",
@@ -101,6 +109,13 @@ filterwarnings = [
 # Custom markers registered to silence PytestUnknownMarkWarning.
 # `performance` marks the budget tests in tests/test_performance_budgets.py;
 # skip with `pytest -m "not performance"` for fast CI.
+# Tier markers classify every test module. They are orthogonal to the
+# directory tree, so `-m pin` selects across the whole suite.
 markers = [
     "performance: regression-guard wall-time budgets (see docs/performance_baseline.md)",
+    "pin: pins a live surface a feature reuses; fails when that surface shifts",
+    "behavior: exercises a feature's own behavior",
+    "composition: runs the feature against the full release stack",
+    "slow: excluded from the fast path; run with the full suite",
+    "biology: verifies a declared biological mechanism (see tests/biology)",
 ]
