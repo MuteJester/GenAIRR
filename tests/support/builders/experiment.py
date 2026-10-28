@@ -35,3 +35,19 @@ def recombined(locus: str = DEFAULT_LOCUS, *, allow_curatable: bool | None = Non
     if allow_curatable or (allow_curatable is None and locus in NEEDS_CURATABLE):
         experiment = experiment.allow_curatable_refdata()
     return experiment.recombine(**recombine)
+
+
+def with_p_nucleotides(locus: str = DEFAULT_LOCUS, **recombine: Any):
+    """A recombined experiment that reliably produces P nucleotides.
+
+    P addition only happens at a coding end that was *not* trimmed, so the
+    coding-end distributions are pinned to negative values -- the convention
+    for "extend rather than trim" -- at the V 3' and J 5' ends.
+
+    Shared because a P fixture is needed both to assert the palindrome truth
+    and to corrupt it: two fixtures would let the mutant drift away from the
+    thing it is supposed to be a mutant of.
+    """
+    return (recombined(locus=locus, **recombine)
+            .process_coding_ends(v_3=[(-3, 1.0)], j_5=[(-2, 1.0)],
+                                 reference_ends_are_coding_ends=True))

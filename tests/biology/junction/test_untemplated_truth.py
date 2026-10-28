@@ -10,12 +10,6 @@ from tests.support.oracles import reconstruction
 pytestmark = pytest.mark.behavior
 
 
-def _with_p_nucleotides():
-    return (experiment_builder.recombined()
-            .process_coding_ends(v_3=[(-3, 1.0)], j_5=[(-2, 1.0)],
-                                 reference_ends_are_coding_ends=True))
-
-
 @verifies("junction.n_addition",
           claim="np1 and np2 are exactly the bases carrying no germline coordinate, "
                 "in order, and their recorded lengths match",
@@ -29,13 +23,9 @@ def test_np_fields_are_the_bases_with_no_germline_coordinate():
     for outcome in exp.run(n=50, seed=0):
         record = outcome.airr_record(exp.refdata)
         runs = reconstruction.untemplated_runs(outcome.final_simulation())
-        pairs = [(record["np1"], record["np1_length"]), (record["np2"], record["np2_length"])]
-        saw_empty |= any(length == 0 for _, length in pairs)
-        expected = [(bases, length) for bases, length in pairs if length]
-        assert [(r.bases, len(r.bases)) for r in runs] == expected, (
-            f"untemplated runs {[r.bases for r in runs]} do not match "
-            f"np1={record['np1']!r}/{record['np1_length']} "
-            f"np2={record['np2']!r}/{record['np2_length']}")
+        saw_empty |= record["np1_length"] == 0 or record["np2_length"] == 0
+        disagreement = reconstruction.np_fields_disagreement(record, runs)
+        assert disagreement is None, disagreement
     assert saw_empty, "no record had a zero-length NP region; widen the sample"
 
 
@@ -51,7 +41,7 @@ def test_p_nucleotides_are_palindromes_of_the_segment_tip():
     it cannot verify this on its own: the distinction between P and N survives
     only in letter case.
     """
-    exp = _with_p_nucleotides()
+    exp = experiment_builder.with_p_nucleotides()
     checked = 0
     for outcome in exp.run(n=25, seed=1):
         simulation = outcome.final_simulation()
@@ -61,10 +51,10 @@ def test_p_nucleotides_are_palindromes_of_the_segment_tip():
         p_length = record["p_v_3_length"]
         if not p_length or v_end is None:
             continue
-        p_bases = bases[v_end:v_end + p_length]
-        tip = bases[v_end - p_length:v_end]
-        assert p_bases.upper() == reconstruction.reverse_complement(tip), (
-            f"P bases {p_bases!r} are not the reverse complement of the V tip {tip!r}")
+        disagreement = reconstruction.p_tip_disagreement(bases, v_end, p_length)
+        assert disagreement is None, (
+            f"the V 3' P run is {disagreement[0]!r} but its tip's reverse "
+            f"complement is {disagreement[1]!r}")
         checked += 1
     assert checked, "no record carried a V 3' P nucleotide; the fixture is wrong"
 
@@ -74,7 +64,7 @@ def test_p_nucleotides_are_palindromes_of_the_segment_tip():
                 "templated palindromic bases from untemplated ones",
           fields=("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length"))
 def test_p_and_n_are_distinguishable_in_the_untemplated_runs():
-    exp = _with_p_nucleotides()
+    exp = experiment_builder.with_p_nucleotides()
     seen = set()
     for outcome in exp.run(n=25, seed=1):
         record = outcome.airr_record(exp.refdata)

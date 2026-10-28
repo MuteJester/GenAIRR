@@ -31,10 +31,16 @@ def test_every_templated_base_matches_the_reference_at_its_claimed_coordinate(lo
     checked = 0
     for outcome in exp.run(n=25, seed=0):
         simulation = outcome.final_simulation()
-        mismatches = reconstruction.templated_mismatches(simulation, exp.refdata)
-        assert mismatches == (), (
+        check = reconstruction.templated_check(simulation, exp.refdata)
+        assert check.mismatches == (), (
             f"{locus}: recorded germline disagrees with the reference at "
-            f"{len(mismatches)} position(s); first: {mismatches[0]}")
+            f"{len(check.mismatches)} position(s); first: {check.mismatches[0]}")
+        # An empty mismatch tuple also describes a record where nothing was
+        # compared, so the count is asserted rather than assumed.
+        assert check.clean, f"{locus}: no templated position was compared"
+        assert check.checked > 50, (
+            f"{locus}: only {check.checked} positions compared; a rearrangement "
+            "carries hundreds of templated bases")
         # Tie the IR-level check to the exported field, so the claim on
         # `sequence` is something the body establishes rather than implies.
         record = outcome.airr_record(exp.refdata)

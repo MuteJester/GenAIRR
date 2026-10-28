@@ -36,6 +36,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from . import provenance
+
 COMPLEMENT = {"A": "T", "T": "A", "C": "G", "G": "C", "N": "N"}
 
 
@@ -91,9 +93,31 @@ def _allele_sequence(refdata, simulation, segment: str) -> bytes | None:
     return seq
 
 
-def templated_mismatches(simulation, refdata, *, skip_inverted: bool = True
-                         ) -> tuple[Mismatch, ...]:
-    """Positions where the recorded germline base is not the reference's base.
+@dataclass(frozen=True)
+class TemplatedCheck:
+    """The result of comparing recorded germline bases to the reference.
+
+    ``mismatches`` alone is ambiguous: an empty tuple means either "every
+    position agreed" or "no position was examined". The second happens whenever
+    a simulation carries no germline coordinates at all, or whose regions are
+    empty, or whose only templated segment is an inverted D -- and a test that
+    reads only the emptiness would report such a case as verified.
+
+    So the count travels with the verdict, and callers assert on both.
+    """
+
+    mismatches: tuple[Mismatch, ...]
+    checked: int
+    skipped_inverted: int
+
+    @property
+    def clean(self) -> bool:
+        """No mismatches **and** something was actually compared."""
+        return not self.mismatches and self.checked > 0
+
+
+def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> TemplatedCheck:
+    """Compare every recorded germline base to the reference's base.
 
     This catches a wrong allele assembled with internally consistent
     provenance -- a failure the engine's own record cannot reveal, because its
@@ -112,6 +136,7 @@ def templated_mismatches(simulation, refdata, *, skip_inverted: bool = True
     segments = segments_by_position(simulation)
     cache: dict[str, bytes | None] = {}
     out: list[Mismatch] = []
+    checked = skipped = 0
     for index in range(len(germline)):
         position = simulation.germline_position(index)
         if position is None:
@@ -120,18 +145,20 @@ def templated_mismatches(simulation, refdata, *, skip_inverted: bool = True
         if segment not in ("V", "D", "J"):
             continue
         if skip_inverted and segment == "D" and _is_inverted(simulation):
+            skipped += 1
             continue
         if segment not in cache:
             cache[segment] = _allele_sequence(refdata, simulation, segment)
         reference = cache[segment]
         if reference is None or not 0 <= position < len(reference):
             continue
+        checked += 1
         recorded = chr(germline[index]).upper()
         expected = chr(reference[position]).upper()
         if recorded != expected:
             out.append(Mismatch(index=index, germline_position=position, segment=segment,
                                 recorded=recorded, reference=expected))
-    return tuple(out)
+    return TemplatedCheck(mismatches=tuple(out), checked=checked, skipped_inverted=skipped)
 
 
 def _is_inverted(simulation) -> bool:
@@ -149,30 +176,17 @@ def untemplated_runs(simulation) -> tuple[UntemplatedRun, ...]:
 
     Case is the channel: lowercase is a P nucleotide, uppercase an N addition.
     A run reported as ``mixed`` spans both, which happens where a P abuts an N.
+
+    The splitting itself lives in ``provenance``, which owns per-base origin.
+    This adds only the P/N classification, so there is one definition of what
+    a run is rather than two that could drift apart.
     """
-    bases = simulation.bases()
-    runs: list[UntemplatedRun] = []
-    current: list[tuple[int, str]] = []
-
-    def flush() -> None:
-        if not current:
-            return
-        text = "".join(ch for _, ch in current)
-        lower = sum(1 for ch in text if ch.islower())
+    runs = []
+    for run in provenance.untemplated_runs(simulation):
+        text = run.bases.decode()
+        lower = sum(1 for character in text if character.islower())
         kind = "P" if lower == len(text) else "N" if lower == 0 else "mixed"
-        runs.append(UntemplatedRun(start=current[0][0], bases=text, kind=kind))
-
-    for index in range(len(bases)):
-        if simulation.germline_position(index) is None:
-            char = chr(bases[index])
-            if current and index != current[-1][0] + 1:
-                flush()
-                current = []
-            current.append((index, char))
-        elif current:
-            flush()
-            current = []
-    flush()
+        runs.append(UntemplatedRun(start=run.start, bases=text, kind=kind))
     return tuple(runs)
 
 
@@ -197,3 +211,42 @@ def observable_substitutions(simulation) -> tuple[int, ...]:
 
 def reverse_complement(sequence: str) -> str:
     return "".join(COMPLEMENT.get(base.upper(), "N") for base in reversed(sequence))
+
+
+def np_fields_disagreement(record, runs) -> str | None:
+    """How the recorded np fields differ from the untemplated runs, or ``None``.
+
+    A zero-length NP region contributes no run, so the comparison is against
+    the non-empty ones: records with ``np1_length == 0`` do occur, which is why
+    this is not a positional comparison.
+
+    Shared between the truth test and its mutant deliberately. A sensitivity
+    test that reimplements the comparison it is testing proves only that two
+    pieces of test code agree.
+    """
+    pairs = [(record["np1"], record["np1_length"]), (record["np2"], record["np2_length"])]
+    expected = [(bases, length) for bases, length in pairs if length]
+    found = [(run.bases, len(run.bases)) for run in runs]
+    if found == expected:
+        return None
+    return (f"untemplated runs {[bases for bases, _ in found]} do not match "
+            f"np1={record['np1']!r}/{record['np1_length']} "
+            f"np2={record['np2']!r}/{record['np2_length']}")
+
+
+def p_tip_disagreement(sequence: str, boundary: int, p_length: int) -> tuple[str, str] | None:
+    """``(found, expected)`` if the P run at ``boundary`` is not a tip palindrome.
+
+    A P addition of length ``n`` sitting at ``boundary`` must be the reverse
+    complement of the ``n`` bases immediately before it -- the segment's own
+    post-trim tip, copied back across the break. ``None`` means it is.
+
+    Written as a function over the sequence rather than over a ``Simulation``
+    so the same comparison serves the truth test and its mutant: the mutant
+    hands it a sequence with the P run overwritten and must see it fire.
+    """
+    if p_length <= 0 or boundary - p_length < 0 or boundary + p_length > len(sequence):
+        return None
+    found = sequence[boundary:boundary + p_length].upper()
+    expected = reverse_complement(sequence[boundary - p_length:boundary])
+    return None if found == expected else (found, expected)
