@@ -7,7 +7,7 @@ This audit catalogues how the engine currently handles
 recombination trim, primer trim, and end-loss, what AIRR fields
 each one affects, and where biological provenance is collapsed.
 The companion test file
-[`tests/test_primer_trim_end_loss_provenance.py`](../tests/test_primer_trim_end_loss_provenance.py)
+[`tests/components/engine/corruption/test_primer_trim_end_loss_provenance.py`](../tests/components/engine/corruption/test_primer_trim_end_loss_provenance.py)
 pins current behaviour so a future fix doesn't silently change
 observable semantics.
 
@@ -218,7 +218,7 @@ when no end-loss pass ran. Test coverage:
 `test_end_loss_3_length_field_equals_trace_value`,
 `test_end_loss_fields_default_to_zero_when_no_end_loss_pass_ran`,
 and `test_combined_end_loss_fields_match_per_end_trace_values` in
-[`test_primer_trim_end_loss_provenance.py`](../tests/test_primer_trim_end_loss_provenance.py).
+[`test_primer_trim_end_loss_provenance.py`](../tests/components/engine/corruption/test_primer_trim_end_loss_provenance.py).
 
 ### 6.2 DSL surface naming — **✅ Resolved**
 
@@ -277,7 +277,7 @@ DSL still exposes `primer_trim_*` methods per §6.2 deferral).
 
 ## 7. Test coverage in this slice
 
-[`tests/test_primer_trim_end_loss_provenance.py`](../tests/test_primer_trim_end_loss_provenance.py)
+[`tests/components/engine/corruption/test_primer_trim_end_loss_provenance.py`](../tests/components/engine/corruption/test_primer_trim_end_loss_provenance.py)
 pins the **current** behaviour with golden tests, including the
 known drift items above. When a future slice fixes the drift,
 the relevant assertions will need to be flipped from "documents

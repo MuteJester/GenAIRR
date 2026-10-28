@@ -272,7 +272,7 @@ Both modes succeed.
   FrameNeutral, etc. Contract permits.
 
 The productive-contract stress matrix
-([`tests/test_productive_stress_matrix.py`](../tests/test_productive_stress_matrix.py))
+([`tests/components/engine/productivity/test_productive_stress_matrix.py`](../tests/components/engine/productivity/test_productive_stress_matrix.py))
 exercises `indel_count_0/2/3` under both `productive_only` and
 unconstrained, and confirms records stay productive under the
 contract. ✅

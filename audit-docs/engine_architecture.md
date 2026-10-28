@@ -273,7 +273,7 @@ Three layers of test coverage:
   pins the declared/emitted relationship.
 - **Biological coverage** — if the pass mutates anything that
   could break the productive contract, add a stack to
-  [`tests/test_productive_stress_matrix.py`](../tests/test_productive_stress_matrix.py)
+  [`tests/components/engine/productivity/test_productive_stress_matrix.py`](../tests/components/engine/productivity/test_productive_stress_matrix.py)
   exercising it under `productive_only` and as a negative
   control.
 
@@ -392,7 +392,7 @@ Quick navigation for new contributors:
 | Compiled execution loop          | [`engine_rs/src/compiled/execute.rs`](../engine_rs/src/compiled/execute.rs)     |
 | Production passes                | [`engine_rs/src/passes/`](../engine_rs/src/passes/)                             |
 | AIRR record projection           | [`engine_rs/src/airr_record/`](../engine_rs/src/airr_record/)                   |
-| Productive-contract stress matrix| [`tests/test_productive_stress_matrix.py`](../tests/test_productive_stress_matrix.py) |
+| Productive-contract stress matrix| [`tests/components/engine/productivity/test_productive_stress_matrix.py`](../tests/components/engine/productivity/test_productive_stress_matrix.py) |
 
 ---
 

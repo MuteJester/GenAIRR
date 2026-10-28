@@ -34,7 +34,7 @@ For each new mutating pass:
   to keep boilerplate low.
 - [ ] **Biological coverage** (if the pass can break productivity).
   Add an entry to
-  [`tests/test_productive_stress_matrix.py`](../tests/test_productive_stress_matrix.py).
+  [`tests/components/engine/productivity/test_productive_stress_matrix.py`](../tests/components/engine/productivity/test_productive_stress_matrix.py).
 
 ---
 
@@ -274,7 +274,7 @@ matches record-for-record.
 ## Biological coverage (if relevant)
 
 If your pass can break productivity, add a stack to
-[`tests/test_productive_stress_matrix.py`](../tests/test_productive_stress_matrix.py):
+[`tests/components/engine/productivity/test_productive_stress_matrix.py`](../tests/components/engine/productivity/test_productive_stress_matrix.py):
 
 ```python
 def stack_my_mechanism(config: str, *, productive: bool) -> ga.Experiment:

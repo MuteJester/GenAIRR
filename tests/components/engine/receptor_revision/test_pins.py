@@ -34,6 +34,7 @@ from pathlib import Path
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -143,7 +144,7 @@ def test_pin_scaffold_receptor_revision_addresses_in_engine_source() -> None:
     forever, so pin them here as a second line of defence beyond
     the engine's own ``frozen_address_spellings_*`` test."""
     addr_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "address.rs"
@@ -206,7 +207,7 @@ def test_pin_scaffold_region_replaced_event_variant_exists() -> None:
     with the expected `(old, new): Region` payload — a rename or
     payload reshape would break §5's plan."""
     sim_event_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "ir"
@@ -234,7 +235,7 @@ def test_pin_scaffold_segment_replaced_event_variant_is_defined() -> None:
     add producers and consumers don't accidentally rename or
     restructure the payload."""
     sim_event_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "ir"
@@ -265,7 +266,7 @@ def test_pin_scaffold_builder_replace_region_exists() -> None:
     body — a refactor that drops the `RegionReplaced` broadcast
     would break the audit's IR-commit-path plan."""
     builder_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "ir"
@@ -294,7 +295,7 @@ def test_pin_scaffold_builder_replace_segment_method_exists() -> None:
     (c) returns the `(old, new)` region pair the future
     `ReceptorRevisionPass` will record."""
     builder_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "ir"
@@ -327,7 +328,7 @@ def test_pin_scaffold_multiple_regions_for_segment_issue_exists() -> None:
     relies on (§4 + §10). A revision pass that preserves this
     invariant inherits the existing check for free."""
     validate_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "airr_record"
@@ -355,7 +356,7 @@ def test_pin_scaffold_receptor_revision_validator_issues_exist() -> None:
     issue kinds now carry the SAME source string because both
     expected values are derived from the same IR slot."""
     validate_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "airr_record"
@@ -365,7 +366,7 @@ def test_pin_scaffold_receptor_revision_validator_issues_exist() -> None:
     assert "OriginalVCallMismatch" in validate_src
 
     outcome_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "python"
@@ -406,7 +407,7 @@ def test_pin_scaffold_region_replaced_is_currently_a_refresh_plan_noop() -> None
     (Slice B). Pin the current no-op so an accidental refresh-plan
     edit that adds a non-no-op arm surfaces the dependency."""
     refresh_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -432,7 +433,7 @@ def test_pin_scaffold_segment_replaced_refresh_step_is_defined() -> None:
     refresh path.
     """
     refresh_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "live_call"
@@ -494,7 +495,7 @@ def test_pin_absence_pass_compile_effect_replace_region_not_defined_yet() -> Non
     ``PassCompileEffect::ReplaceRegion(Segment)``. Slice A lands
     it. Pin its absence today."""
     metadata_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "pass"
@@ -519,7 +520,7 @@ def test_pin_design_doc_lists_all_fourteen_audit_sections() -> None:
     Pin every section header so a refactor that drops one
     surfaces here."""
     doc = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "receptor_revision_design.md"
     )
@@ -554,7 +555,7 @@ def test_pin_design_doc_summary_table_carries_every_decision() -> None:
     surfaces here in the same lockstep style as the D-inversion
     test."""
     doc = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "receptor_revision_design.md"
     )

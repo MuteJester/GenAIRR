@@ -3,7 +3,7 @@
 **Status:** audit + golden tests. Drift items in §6.
 
 Counterpart to
-[`tests/test_productive_stress_matrix.py`](../tests/test_productive_stress_matrix.py),
+[`tests/components/engine/productivity/test_productive_stress_matrix.py`](../tests/components/engine/productivity/test_productive_stress_matrix.py),
 which proves "valid stacks stay productive." This audit proves the
 *other half*: invalid choices fail predictably, surface diagnoses
 that name the offending pass/address/reason, and never silently
@@ -111,7 +111,7 @@ This works identically in strict and permissive modes — neither
 raises, both produce records where the chosen value is always
 admissible.
 
-Examples (pinned by `tests/test_productive_failure_modes.py`):
+Examples (pinned by `tests/components/engine/productivity/test_productive_failure_modes.py`):
 
 - `recombine(np1_lengths=[(1, 1.0), (3, 1.0)])` under
   `productive_only` — only length 3 ever lands in the trace.
@@ -144,7 +144,7 @@ Pinned in [`indel_provenance_audit.md`](indel_provenance_audit.md)
 The following matrix catalogues each detectable failure mode by
 mechanism, detection time, and the exact diagnostic surface.
 "Pinned" entries cite the test in
-[`tests/test_productive_failure_modes.py`](../tests/test_productive_failure_modes.py).
+[`tests/components/engine/productivity/test_productive_failure_modes.py`](../tests/components/engine/productivity/test_productive_failure_modes.py).
 
 | #  | Contract                    | Mechanism            | When             | Strict mode                                                                              | Permissive mode                  | Pinned by                                                              |
 |----|-----------------------------|----------------------|------------------|------------------------------------------------------------------------------------------|----------------------------------|------------------------------------------------------------------------|
@@ -277,7 +277,7 @@ verifies the `N` sentinel emission. Out of scope here.
 
 ## 7. Test coverage in this slice
 
-[`tests/test_productive_failure_modes.py`](../tests/test_productive_failure_modes.py)
+[`tests/components/engine/productivity/test_productive_failure_modes.py`](../tests/components/engine/productivity/test_productive_failure_modes.py)
 pins the failure matrix from §4 with golden tests. Coverage:
 
 - **Compile-time precondition fail-fast** (F1, F2, F3): three

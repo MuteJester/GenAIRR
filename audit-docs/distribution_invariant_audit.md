@@ -4,7 +4,7 @@
 
 This audit proves the engine isn't merely producing **legal** sequences
 (the [productive_failure_mode](productive_failure_mode_audit.md) and
-[productive_stress_matrix](../tests/test_productive_stress_matrix.py)
+[productive_stress_matrix](../tests/components/engine/productivity/test_productive_stress_matrix.py)
 audits cover that), but sampling legal sequences with the **intended
 conditional distribution**.
 

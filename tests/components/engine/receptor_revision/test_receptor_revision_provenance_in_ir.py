@@ -47,6 +47,7 @@ from __future__ import annotations
 import pytest
 
 import GenAIRR as ga
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -330,7 +331,7 @@ def test_validator_source_string_flipped_to_ir() -> None:
     from pathlib import Path
 
     bindings = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "python"
