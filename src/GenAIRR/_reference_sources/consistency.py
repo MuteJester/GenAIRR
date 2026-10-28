@@ -247,8 +247,26 @@ def check_decisions(recipe: Recipe, inventory: SourceInventory) -> None:
             subjects = {s.id for f in findings for s in f.subjects}
             if not any(e.record.id in subjects or (e.record.id in chosen and chosen[e.record.id].id in subjects)
                        for e in by_digest.get(decision.sequence_sha256, ())):
-                raise bad(ptr(path, "sequence_sha256"), f"no selected record with digest {decision.sequence_sha256} "
-                                                        "is a subject of the decision's findings", "stale_decision")
+                names = _subject_names(inventory, (s for f in findings for s in f.subjects))
+                raise bad(ptr(path, "sequence_sha256"), (
+                    f"decision {i} (select_alternative) chooses the sequence {decision.sequence_sha256} of {names}, but "
+                    f"the recipe selects no record of {names} with that sequence; remove decision {i}, or update it "
+                    "to the sequence the recipe now selects"), "stale_decision")
+
+
+def _subject_names(inventory: SourceInventory, subjects) -> str:
+    """The segment:label names of the records behind some record or candidate locators."""
+    names = set()
+    for subject in subjects:
+        try:
+            record = inventory.record(subject)
+        except KeyError:
+            try:
+                record = inventory.record(inventory.candidate(subject).record)
+            except KeyError:
+                continue
+        names.add(f"{record.segment}:{record.label}" if record.segment and record.label else record.id)
+    return ", ".join(sorted(names)) or "its findings' subjects"
 
 
 def check_build_inputs(lock: SourceLock, inventory: SourceInventory, recipe: Recipe) -> None:

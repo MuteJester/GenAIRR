@@ -713,6 +713,27 @@ def interpret(lock: SourceLock, assets: Mapping[str, bytes], inventory: SourceIn
     if inventory.source_lock_hash != lock_hash(lock):
         raise bad("/source_lock_hash", f"the inventory was built under lock {inventory.source_lock_hash}, not this "
                                        f"lock {lock_hash(lock)}", "digest_mismatch")
+    profile = _implemented_profile(lock)
+    if build_inventory(lock, assets) != inventory:
+        raise bad("/inventory", "the inventory is not the uninterpreted inventory of these locked bytes",
+                  "identity_mismatch")
+    return _interpreted(lock, inventory, profile)
+
+
+def _interpret_locked(lock: SourceLock, assets: Mapping[str, bytes]) -> SourceInventory:
+    """The interpreted inventory of exactly these locked bytes, read once.
+
+    The projection's route: it takes no inventory, so it never trusts one; it builds the
+    uninterpreted inventory itself (with every byte check of ``build_inventory``) and
+    interprets it, as :func:`interpret` does after its rebuild.
+    """
+    require_type(lock, SourceLock, "lock")
+    profile = _implemented_profile(lock)
+    return _interpreted(lock, build_inventory(lock, assets), profile)
+
+
+def _implemented_profile(lock: SourceLock):
+    """The lock's interpretation profile, if this interpretation implements its conventions."""
     profile = profiles.profile_for(lock.adapter.coordinate_profile)
     for name, implemented in IMPLEMENTED_CONVENTIONS.items():
         declared = getattr(profile, name)
@@ -721,9 +742,11 @@ def interpret(lock: SourceLock, assets: Mapping[str, bytes], inventory: SourceIn
                                              f"{show(dict(declared) if isinstance(declared, Mapping) else declared)}; "
                                              f"this interpretation implements {show(implemented)}",
                       "unsupported_profile")
-    if build_inventory(lock, assets) != inventory:
-        raise bad("/inventory", "the inventory is not the uninterpreted inventory of these locked bytes",
-                  "identity_mismatch")
+    return profile
+
+
+def _interpreted(lock: SourceLock, inventory: SourceInventory, profile) -> SourceInventory:
+    """Claims, mappings and findings added to an uninterpreted inventory of ``lock``'s bytes."""
     work = _Interpretation(lock, inventory, profile)
     work.run()
     fields = {name: getattr(inventory, name) for name in ("records", "candidates", "mentioned_identities",

@@ -79,6 +79,8 @@ include = [
     { path = "src/GenAIRR/data/builtin_dataconfigs/*.json", format = ["sdist", "wheel"] },
     { path = "src/GenAIRR/data/mutation_model_parameters/*.pkl", format = ["sdist", "wheel"] },
     { path = "src/GenAIRR/data/mutation_model_parameters/*.json", format = ["sdist", "wheel"] },
+    # The packaged reference build: one zip archive of its dossier members.
+    { path = "src/GenAIRR/data/published_references/human_igh_ogrdb_10_observed_v1.zip", format = ["sdist", "wheel"] },
     { path = "engine_rs/**/*", format = "sdist" },
     { path = "README.md", format = "sdist" },
     { path = "LICENSE", format = "sdist" },

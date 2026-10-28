@@ -16,11 +16,13 @@ The report hash is computed externally and never stored inside the report.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import textwrap
 from typing import Optional
 
+from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference.capabilities import CAPABILITIES
 from GenAIRR._reference_sources._fields import (
-    closed, digest, MAX_NAME, MAX_TEXT, bad, check_bool, check_canonical_order, check_digest, check_enum, check_instance,
+    short_digest, closed, digest, MAX_NAME, MAX_TEXT, bad, check_bool, check_canonical_order, check_digest, check_enum, check_instance,
     check_int, check_text, check_token, check_tuple, construct, parse_array, parse_json, ptr, read_json,
     require_object, check_header,
 )
@@ -594,7 +596,29 @@ class BuildReport:
                 raise bad(ptr(path, "satisfied"), f"{requirement.capability} at evidence {requirement.evidence} is "
                                                   f"{'satisfied' if satisfied else 'not satisfied'}")
 
+    # -- rendering -----------------------------------------------------
+
+    def __str__(self) -> str:
+        """The complete report as readable text: source and versions, hashes, comparison, counts,
+        the ordered selection, every source record, mentioned-only identities, claim counts, the
+        provenance of every claim about a selected allele, findings, runtime capabilities with
+        blockers, requirements and what the projection does not keep.
+
+        Records and capability blockers with the same outcome and the same explanation are listed
+        together, each named.  Every claim about a selected allele has its own line under that
+        allele (id, value, coordinates, status, support, derivation, outcome, evidence, mappings
+        and reason); claims about unselected records are counted, and their full provenance is in
+        ``to_dict()``."""
+        return "\n".join(_Text(self).lines())
+
     # -- serialization -------------------------------------------------
+
+    def __repr__(self) -> str:
+        lock, outcomes = self.source_lock, self.counts.record_outcomes
+        return (f"<BuildReport {lock.provider} {lock.set_id} release {lock.release}: {outcomes.selected} selected of "
+                f"{len(self.records)} records, {len(self.claims)} claims; runtime execution "
+                f"{short_digest(self.runtime.execution_hash)}; generator {self.generator.name} "
+                f"{self.generator.version}>")
 
     def to_dict(self) -> dict:
         return {"artifact": ARTIFACT, "schema_version": SCHEMA_VERSION, "generator": self.generator.to_dict(),
@@ -634,3 +658,354 @@ class BuildReport:
     @classmethod
     def read(cls, path) -> "BuildReport":
         return cls.from_dict(read_json(path, max_bytes=MAX_REPORT_BYTES))
+
+
+# ── readable text ────────────────────────────────────────────────────
+
+_WIDTH = 100
+_OUTCOME_TITLES = {"projected": "projected", "withheld": "withheld", "not_representable": "not representable at runtime",
+                   "not_selected": "not selected"}
+
+
+def _wrapped(items, indent: str) -> list:
+    """``items`` joined with commas and wrapped at whole items (labels are never split)."""
+    return textwrap.wrap(", ".join(items), width=_WIDTH, initial_indent=indent, subsequent_indent=indent,
+                         break_long_words=False, break_on_hyphens=False)
+
+
+def terms_text(terms: dict) -> str:
+    """A lock's data terms (``Terms.to_dict()``): ``<status>: <reason>`` or ``recorded (<assets>): <licence>``."""
+    return terms["status"] + (f": {terms['reason']}" if terms["reason"] else
+                              f" ({', '.join(terms['assets'])}): {terms['licence']}")
+
+
+def asset_lines(assets: list, missing: list, indent: str) -> list:
+    """One line per locked asset (``Asset.to_dict()``) and per missing asset (``MissingAsset.to_dict()``)."""
+    out = [f"{indent}{a['asset_id']:<18} {a['role']:<18} {a['sha256']}  {a['bytes']} bytes  {a['origin_kind']}"
+           + (f"  {a['declared_url']}" if a["declared_url"] else "") for a in assets]
+    out += [f"{indent}{m['format']:<18} {m['role']:<18} missing: {m['reason']}"
+            + (f" ({m['detail']})" if m["detail"] else "") for m in missing]
+    return out
+
+
+def segment_counts_text(counts: dict) -> str:
+    """``V n, D n, J n, unassigned n`` of per-segment counts."""
+    return ", ".join(f"{segment} {counts[segment]}" for segment in _SEGMENT_KEYS)
+
+
+def _terms_line(terms) -> str:
+    return "data terms: " + terms_text(terms.to_dict())
+
+
+def _segment_counts(counts: SegmentCounts) -> str:
+    return segment_counts_text(counts.to_dict())
+
+
+class _Text:
+    """Renders a :class:`BuildReport`; everything comes from the report itself."""
+
+    def __init__(self, report: BuildReport):
+        self.report = report
+        recipe = report.recipe
+        self.alleles = {}           # subject id -> runtime allele id
+        for entry, chosen in zip(recipe.selection, report.selection):
+            self.alleles[entry.record.id] = entry.allele_id
+            self.alleles[chosen.candidate.id] = entry.allele_id
+
+    def lines(self) -> list:
+        out = []
+        for part in (self.title, self.summary, self.head, self.hashes, self.comparison, self.counts, self.selection, self.reasons,
+                     self.decisions, self.records, self.mentioned, self.claims, self.provenance, self.findings,
+                     self.capabilities, self.requirements, self.losses):
+            out.extend(part())
+        return out
+
+    def title(self) -> list:
+        reference = self.report.recipe.reference
+        return [f"Build report: {reference.name}" + (f" version {reference.version}" if reference.version else "")]
+
+    def summary(self) -> list:
+        """The key facts first, in a few lines; every one of them is detailed in the sections below."""
+        from GenAIRR._reference_sources.projection import PROJECTION_LOSSES
+        report, lock = self.report, self.report.source_lock
+        reference, identity, terms = report.recipe.reference, lock.identity, lock.terms
+        outcomes, capabilities = report.counts.record_outcomes, report.capabilities
+        out = ["Summary",
+               f"  reference: {reference.name}" + (f" version {reference.version}" if reference.version else "")
+               + f"; runtime execution {report.runtime.execution_hash}",
+               f"  source: {lock.provider.upper()} {lock.set_id} release {lock.release} "
+               f"({identity.taxon.scientific_name}, {identity.locus}, {identity.chain_type}); lock {report.hashes.source_lock}",
+               "  " + _terms_line(terms),
+               f"  source records: {len(report.records)} (selected {outcomes.selected}, excluded {outcomes.excluded}, "
+               f"rejected {outcomes.rejected}); selected alleles {_segment_counts(report.counts.selected_alleles)}",
+               f"  runtime capabilities (phase support {capabilities.phase_support}):"]
+        for status in capabilities.statuses:
+            if status.available:
+                state = "available" + (f" at evidence {status.evidence}" if status.evidence else "")
+            else:
+                state = "unavailable" + (f" ({len(status.unmet)} blockers)" if status.unmet else "")
+            out.append(f"    {status.name}: {state}" + (f"; {status.note}" if status.note else ""))
+        requirements = report.requirements
+        out.append(f"  requirements: {sum(r.satisfied for r in requirements)} of {len(requirements)} satisfied"
+                   + (": " + ", ".join(f"{r.capability} at evidence {r.evidence}" for r in requirements)
+                      if requirements else ""))
+        out.append("  not in the runtime reference: " + ", ".join(code for code, _ in PROJECTION_LOSSES))
+        out.append("  The full report follows: source, hashes, comparison, counts, the selection with its reasons, the "
+                   "recipe decisions, every source record and claim, findings, capabilities and requirements.")
+        return out
+
+    def head(self) -> list:
+        report, lock, recipe = self.report, self.report.source_lock, self.report.recipe
+        identity, adapter = lock.identity, lock.adapter
+        profile = adapter.coordinate_profile
+        out = [f"Generator: {report.generator.name} {report.generator.version} (as recorded by the build that wrote this "
+               "report; a dossier check verifies content, not this statement)",
+               "This report covers the complete source inventory, the explicit selection, the outcome of every source",
+               "record and claim, and what the projection did not keep. Reference.report() describes only the runtime",
+               "catalogue: the selected executable alleles, their annotations and capabilities.",
+               f"Source: {lock.provider.upper()} {lock.set_id} release {lock.release} ({identity.taxon.scientific_name}, "
+               f"taxonomy {identity.taxon.taxonomy_id}, {identity.locus}, {identity.chain_type})",
+               f"  adapter {adapter.id} v{adapter.version}, interpretation profile {profile.id} v{profile.version}, "
+               f"projection {recipe.projection.id} v{recipe.projection.version}, defaults {recipe.defaults_profile}",
+               "  assets:"]
+        out += asset_lines([a.to_dict() for a in lock.assets], [m.to_dict() for m in lock.missing_assets], "    ")
+        out.append("  the asset origins, declared URLs and data terms are the lock writer's statements; the asset "
+                   "bytes are what is verified")
+        out.append("  " + _terms_line(lock.terms))
+        if lock.terms.citation:
+            out.append(f"  citation: {lock.terms.citation}")
+        return out
+
+    def hashes(self) -> list:
+        hashes, runtime = self.report.hashes, self.report.runtime
+        return ["Hashes:",
+                f"  source lock          {hashes.source_lock}",
+                f"  source inventory     {hashes.inventory}",
+                f"  recipe               {hashes.recipe}",
+                f"  build inputs         {hashes.build_inputs} (cited by the runtime allele notes)",
+                f"  runtime catalogue    {runtime.catalogue_hash}",
+                f"  runtime models       {runtime.models_hash}",
+                f"  runtime execution    {runtime.execution_hash}",
+                f"  runtime artifact     {runtime.artifact_hash}"]
+
+    def comparison(self) -> list:
+        comparison = self.report.comparison
+        if not comparison.complete:
+            return [f"Endpoint comparison: incomplete: {', '.join(comparison.missing)} not locked, so differences "
+                    "between the record exports are not compared"]
+        codes = {}
+        for finding in comparison.findings:
+            code = self.report.inventory.finding(finding).code
+            codes[code] = codes.get(code, 0) + 1
+        found = "; ".join(f"{code} {n}" for code, n in sorted(codes.items())) or "none"
+        return [f"Endpoint comparison: complete ({', '.join(comparison.exports)}); {len(comparison.findings)} "
+                f"comparison finding{'' if len(comparison.findings) == 1 else 's'}: {found}"]
+
+    def counts(self) -> list:
+        counts = self.report.counts
+        out = ["Counts:"]
+        for export in counts.exports:
+            out.append(f"  {export.asset}: records {_segment_counts(export.record_occurrences)}; sequence candidates "
+                       f"{_segment_counts(export.sequence_candidates)}; mentioned-only identities "
+                       f"{_segment_counts(export.mentioned_identities)}")
+        selected = counts.selected_alleles
+        out.append(f"  selected executable alleles: {_segment_counts(selected)} "
+                   f"({selected.V + selected.D + selected.J + selected.unassigned})")
+        return out
+
+    def selection(self) -> list:
+        recipe = self.report.recipe
+        out = [f"Selection ({len(recipe.selection)} alleles, recipe order; record field and coding-sequence digest):"]
+        for n, (entry, chosen) in enumerate(zip(recipe.selection, self.report.selection), 1):
+            out.append(f"  {n:>4}. {chosen.allele}  {chosen.candidate.id}  {entry.sequence_sha256}")
+        return out
+
+    def reasons(self) -> list:
+        """The recipe's reason for each selected allele: each distinct text once, verbatim, with
+        every allele that has it (each allele is named exactly once)."""
+        groups: dict = {}
+        for entry in self.report.recipe.selection:
+            groups.setdefault(entry.reason, []).append(entry.allele_id)
+        out = [f"Selection reasons ({len(groups)} distinct; each selected allele is named under its reason):"]
+        for n, (reason, alleles) in enumerate(groups.items(), 1):
+            out.append(f"  {n}. ({len(alleles)} allele{'' if len(alleles) == 1 else 's'}) {reason}")
+            out += _wrapped(alleles, "      ")
+        return out
+
+    def decisions(self) -> list:
+        """Each recipe decision: its action, the findings or claims it decides, the sequence it is
+        bound to, its evidence and its reason."""
+        decisions = self.report.recipe.decisions
+        out = [f"Recipe decisions ({len(decisions)}):"]
+        for index, decision in enumerate(decisions):
+            parts = [f"  {index}. {decision.action}"]
+            if decision.findings:
+                parts.append("findings " + ", ".join(decision.findings))
+            if decision.claims:
+                parts.append("claims " + ", ".join(decision.claims))
+            parts.append(f"sequence {decision.sequence_sha256}")
+            if decision.evidence:
+                parts.append("evidence " + ", ".join(locator.id for locator in decision.evidence))
+            out.append("; ".join(parts) + f"; reason: {decision.reason}")
+        return out if decisions else out + ["  none"]
+
+    def records(self) -> list:
+        report = self.report
+        outcomes = report.counts.record_outcomes
+        out = [f"Source records: {len(report.records)} (selected {outcomes.selected}, excluded {outcomes.excluded}, "
+               f"rejected {outcomes.rejected})"]
+        labels = {record.id: record.label for record in report.inventory.records}
+        groups: dict = {}
+        for outcome in report.records:
+            key = (outcome.outcome, outcome.exclusion)
+            groups.setdefault(key, {}).setdefault((outcome.detail, outcome.related), []).append(outcome)
+        order = [(kind, None) for kind in RECORD_OUTCOMES] + [("excluded", r) for r in EXCLUSION_REASONS]
+        for kind, exclusion in sorted(groups, key=order.index):
+            by_detail = groups[(kind, exclusion)]
+            total = sum(len(items) for items in by_detail.values())
+            if kind == "selected":
+                out.append(f"  selected ({total}): each is listed under Selection")
+                for (detail, _), items in by_detail.items():
+                    if detail is not None:
+                        out += [f"    {o.record.id}  {o.allele}: {detail}" for o in items]
+                continue
+            out.append(f"  {kind}{', ' + exclusion if exclusion else ''} ({total}):")
+            for (detail, related), items in by_detail.items():
+                relation = f" (selected record {related.id})" if related is not None and \
+                    (detail is None or related.id not in detail) else ""
+                if len(items) == 1:
+                    record = items[0].record
+                    out.append(f"    {record.id} ({labels.get(record.id) or 'no label'}){relation}"
+                               + (f": {detail}" if detail else ""))
+                    continue
+                out.append(f"    {len(items)} records{relation}" + (f": {detail}" if detail else ":"))
+                out += _wrapped([f"{o.record.id} ({labels.get(o.record.id) or 'no label'})" for o in items], "      ")
+        return out
+
+    def mentioned(self) -> list:
+        """Names that only appear inside other records' alias or paralog fields."""
+        inventory = self.report.inventory
+        labels = {record.id: record.label for record in inventory.records}
+        out = [f"Mentioned-only identities ({len(inventory.mentioned_identities)}; named by records, with no record "
+               "of their own in that export):"]
+        for identity in inventory.mentioned_identities:
+            mentions = "; ".join(
+                f"{m.relationship} named by {m.record.id} ({labels.get(m.record.id) or 'no label'}) at "
+                f"{m.locator.pointer[len(m.record.pointer) + 1:] or m.locator.pointer}" for m in identity.mentions)
+            out.append(f"  {identity.asset} {identity.segment}:{identity.label}: {mentions}")
+        return out if inventory.mentioned_identities else out + ["  none"]
+
+    def claims(self) -> list:
+        report = self.report
+        tallies = {name: sum(o.outcome == name for o in report.claims) for name in CLAIM_OUTCOMES}
+        out = [f"Claims: {len(report.claims)} (" + ", ".join(f"{_OUTCOME_TITLES[k]} {v}" for k, v in tallies.items())
+               + ")"]
+        counts: dict = {}
+        for outcome, claim in zip(report.claims, report.inventory.claims):
+            key = (outcome.outcome, claim.predicate, claim.status)
+            counts[key] = counts.get(key, 0) + 1
+        for name in CLAIM_OUTCOMES:
+            keys = [key for key in counts if key[0] == name]
+            if keys:
+                out.append(f"  {_OUTCOME_TITLES[name]}: " + ", ".join(f"{predicate} {status} {counts[(name, predicate, status)]}"
+                                                                    for _, predicate, status in keys))
+        out += textwrap.wrap("Every claim about a selected allele is listed with its provenance below. Claims about "
+                             "records and sequences outside the selection are only counted here; their full provenance "
+                             "(value, evidence, mappings and reason) is in report.to_dict() and report.json.",
+                             width=_WIDTH, initial_indent="  ", subsequent_indent="  ",
+                             break_long_words=False, break_on_hyphens=False)
+        return out
+
+    def provenance(self) -> list:
+        """One line per claim about a selected allele, grouped under that allele (recipe order)."""
+        report = self.report
+        inventory = report.inventory
+        by_subject: dict = {}
+        order = {}
+        for index, (outcome, claim) in enumerate(zip(report.claims, inventory.claims)):
+            by_subject.setdefault(claim.subject.id, []).append((outcome, claim))
+            order[claim.id] = index
+        out = ["Claim provenance of the selected alleles (one line per claim: id, predicate = value (coordinates) "
+               "[status, support, derivation] -> outcome; evidence; mappings; reason):"]
+        for entry, chosen in zip(report.recipe.selection, report.selection):
+            out.append(f"  {chosen.allele} ({entry.record.id})")
+            items = by_subject.get(entry.record.id, []) + by_subject.get(chosen.candidate.id, [])
+            for outcome, claim in sorted(items, key=lambda item: order[item[1].id]):
+                out.append(self._claim_line(outcome, claim))
+        return out
+
+    def _claim_line(self, outcome: ClaimOutcome, claim) -> str:
+        inventory = self.report.inventory
+        line = (f"    {claim.id} {claim.predicate} = {canonical_json(claim.value.get())} "
+                f"({claim.coordinate_system or 'no coordinate system'}) [{claim.status}, support {claim.support}, "
+                f"{claim.derivation}] -> {outcome.outcome}")
+        if outcome.decision is not None:
+            line += f" by recipe decision {outcome.decision}"
+        line += f"; evidence {self._evidence(claim.evidence)}"
+        mappings = [inventory.mapping(m) for m in claim.mappings]
+        line += "; mappings " + (", ".join(f"{m.id} ({m.kind}, {m.validation})" for m in mappings) or "none")
+        return line + (f"; reason: {outcome.reason}" if outcome.reason else "")
+
+    def _evidence(self, locators) -> str:
+        """Evidence locators as ``asset#record: field, field; asset#pointer`` (record pointers factored out)."""
+        groups: list = []
+        for locator in locators:
+            try:
+                record = self.report.inventory.observation(locator).record
+            except KeyError:
+                record = None
+            if record is None or record.asset != locator.asset or locator.pointer == record.pointer:
+                groups.append((None, locator.id))
+            elif groups and groups[-1][0] == record.id:
+                groups[-1][1].append(locator.pointer[len(record.pointer) + 1:])
+            else:
+                groups.append((record.id, [locator.pointer[len(record.pointer) + 1:]]))
+        return "; ".join(text if head is None else f"{head}: {', '.join(text)}" for head, text in groups)
+
+    def findings(self) -> list:
+        counts: dict = {}
+        for finding in self.report.inventory.findings:
+            key = (finding.code, finding.severity, finding.category)
+            counts[key] = counts.get(key, 0) + 1
+        return ["Findings (code, severity, category: count):"] + [
+            f"  {code}, {severity}, {category}: {n}" for (code, severity, category), n in sorted(counts.items())]
+
+    def capabilities(self) -> list:
+        capabilities = self.report.capabilities
+        out = [f"Runtime capabilities (phase support {capabilities.phase_support}):"]
+        for status in capabilities.statuses:
+            if status.available:
+                line = f"  {status.name}: available" + (f" at evidence {status.evidence}" if status.evidence else "")
+            else:
+                line = f"  {status.name}: unavailable" + (f"; {len(status.unmet)} blockers" if status.unmet else "")
+            out.append(line + (f"; {status.note}" if status.note else ""))
+            groups: dict = {}
+            for unmet in status.unmet:
+                groups.setdefault((unmet.requirement, unmet.hint), []).append(unmet.allele)
+            for (requirement, hint), alleles in groups.items():
+                out.append(f"    {requirement} ({len(alleles)}); would be resolved by: {hint}")
+                out += _wrapped(alleles, "      ")
+        return out
+
+    def requirements(self) -> list:
+        out = ["Required capabilities:"]
+        for outcome in self.report.requirements:
+            out.append(f"  {outcome.capability} at evidence {outcome.evidence}: "
+                       f"{'satisfied' if outcome.satisfied else 'not satisfied'}")
+        return out if self.report.requirements else out + ["  none"]
+
+    def losses(self) -> list:
+        from GenAIRR._reference_sources.projection import PROJECTION_LOSSES
+        report = self.report
+        selected = report.counts.selected_alleles
+        out = ["Not in the runtime reference (all of it stays in this report):"]
+        for code, text in PROJECTION_LOSSES:
+            out += textwrap.wrap(f"{code}: {text}", width=_WIDTH, initial_indent="  ", subsequent_indent="    ",
+                                 break_long_words=False, break_on_hyphens=False)
+        out += textwrap.wrap(f"The source inventory holds {len(report.records)} records, "
+                             f"{len(report.inventory.claims)} claims and {len(report.inventory.findings)} findings; "
+                             f"the runtime reference holds the {selected.V + selected.D + selected.J} selected "
+                             "executable alleles, their projected annotations and the relationships they state.",
+                             width=_WIDTH, initial_indent="  ", subsequent_indent="  ",
+                             break_long_words=False, break_on_hyphens=False)
+        return out
