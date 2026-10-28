@@ -259,9 +259,10 @@ class OgrdbSource:
         interpretation profile id, such as ``"ogrdb_api_v2_human_ig_observed_v1"``; ``formats``
         lists exports among ``airr``, ``airr_ex``, ``gapped`` and ``gapped_ex``, by default all
         four: a build compares both record exports, and V junction anchors are accepted only when
-        bound to the gapped exports; ``cache`` is the content-addressed blob directory.  This is the only operation that uses the network: one
-        HTTPS request per format to the generated OGRDB endpoint, at most three redirects on the
-        same origin, bounded sizes and a deadline, no automatic retries.
+        bound to the gapped exports; ``cache`` is the content-addressed blob directory.  This is
+        the only operation that uses the network: one HTTPS request per format to the generated
+        OGRDB endpoint, at most three redirects on the same origin, bounded sizes and a deadline,
+        no automatic retries.
 
         ``expected_lock`` (a lock or a lock file path) reacquires every requested export and
         requires exactly its pinned bytes: bytes changed under the same release are reported as
@@ -365,7 +366,8 @@ class OgrdbSource:
         return SourceInspection._of(self._lock, inventory)
 
     def build(self, recipe) -> ReferenceBuild:
-        """Project ``recipe`` (a recipe document or a JSON file path) over this source.
+        """Project ``recipe`` over this source: a ``Recipe`` (such as ``ReferenceBuild.recipe``), a
+        recipe document (dict) or a recipe JSON file path.
 
         Never touches the network.  The recipe is validated as a closed document; errors keep their
         location in it and, for a recipe file, name the file.  A build compares both record exports,
