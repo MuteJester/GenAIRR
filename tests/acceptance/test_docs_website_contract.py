@@ -36,9 +36,10 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "docs_website_audit.md"
 _README = _REPO_ROOT / "README.md"
 _WEBSITE = _REPO_ROOT / "website"

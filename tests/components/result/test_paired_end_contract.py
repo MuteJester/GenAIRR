@@ -39,6 +39,7 @@ from pathlib import Path
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -190,7 +191,7 @@ def test_pin_scaffold_paired_end_addresses_in_engine_source() -> None:
     defence beyond the engine's own
     ``frozen_address_spellings_*`` test."""
     addr_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "address.rs"
@@ -288,7 +289,7 @@ def test_pin_scaffold_paired_end_fields_declared_on_engine_record() -> None:
     ``AirrRecord`` so a later refactor that drops one surfaces
     here before the Python column list test fires."""
     record_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "airr_record"
@@ -373,14 +374,14 @@ def test_pin_scaffold_apply_rev_comp_projection_pattern_is_post_build() -> None:
     materialised), the §7 composition guarantee for paired-end
     breaks."""
     sequence_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "airr_record"
         / "sequence.rs"
     ).read_text(encoding="utf-8")
     builder_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "airr_record"
@@ -466,7 +467,7 @@ def test_pin_scaffold_validator_emits_structured_details_source() -> None:
     would break the paired-end design's MCP / dashboard
     compatibility plan."""
     outcome_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "python"
@@ -495,7 +496,7 @@ def test_pin_scaffold_paired_end_validator_issue_scaffolding_landed() -> None:
     consistently. The design doc's §8 table will be reconciled in
     the Slice B doc update."""
     validate_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "airr_record"
@@ -517,7 +518,7 @@ def test_pin_scaffold_paired_end_validator_issue_scaffolding_landed() -> None:
     # `details.source` string is pinned, mirroring the receptor-
     # revision Slice E source-string contract.
     outcome_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "python"
@@ -609,7 +610,7 @@ def test_pin_design_doc_paired_end_lists_fourteen_sections() -> None:
     `docs/receptor_revision_design.md`. Pin the section count so
     a future contributor can't quietly drop a section."""
     doc = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "paired_end_design.md"
     ).read_text(encoding="utf-8")
@@ -628,7 +629,7 @@ def test_pin_design_doc_summary_table_carries_every_decision() -> None:
     audit decisions. Pin the row labels so a future contributor
     can't quietly drop a decision."""
     doc = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "paired_end_design.md"
     ).read_text(encoding="utf-8")

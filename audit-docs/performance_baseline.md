@@ -1,7 +1,7 @@
 # Performance baseline + budget audit
 
 **Status:** baseline measured, budgets enforced as pytest assertions in
-[`tests/test_performance_budgets.py`](../tests/test_performance_budgets.py).
+[`tests/performance/test_performance_budgets.py`](../tests/performance/test_performance_budgets.py).
 
 This audit complements the correctness audits
 ([primer_trim_end_loss](primer_trim_end_loss_audit.md),
@@ -174,14 +174,14 @@ When a refactor or feature legitimately changes performance:
    machine (or document the machine).
 2. Update §3's table with the new numbers and the date.
 3. Recompute §4's budgets at ~5–10× the new baseline.
-4. Update [`tests/test_performance_budgets.py`](../tests/test_performance_budgets.py)'s
+4. Update [`tests/performance/test_performance_budgets.py`](../tests/performance/test_performance_budgets.py)'s
    `BUDGETS` dict.
 5. Note in the commit message which workload's baseline shifted
    and why (e.g. "added per-event contract verify; W3 budget +20%").
 
 **Do not bump budgets reactively to make CI green.** If a budget
 fails, profile first (`py-spy --native record -o flame.svg --
-python -m pytest tests/test_performance_budgets.py::test_w3...`)
+python -m pytest tests/performance/test_performance_budgets.py::test_w3...`)
 and find the regression's root cause. Only update the baseline
 when the slowdown is intentional and accepted.
 

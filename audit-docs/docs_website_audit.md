@@ -16,7 +16,7 @@ were rewritten to point at the live flat-HTML pages
 README "Documentation" pointer list expanded to surface
 all 5 lessons + 5 concepts + 8 representative guides + the
 reference page. Pin set in
-[`tests/test_docs_website_contract.py`](../tests/test_docs_website_contract.py)
+[`tests/acceptance/test_docs_website_contract.py`](../tests/acceptance/test_docs_website_contract.py)
 flipped: prior broken-URL stop-and-report pin replaced by
 `pin_present_readme_hosted_doc_urls_resolve_to_live_website_pages`
 (asserts every URL maps to a real `website/*.html` file)
@@ -28,7 +28,7 @@ framework change yet. Path A (keep hand-rolled) vs Path B
 (migrate to MkDocs Material) decision belongs to the user.
 
 Companion to
-[`tests/test_docs_website_contract.py`](../tests/test_docs_website_contract.py)
+[`tests/acceptance/test_docs_website_contract.py`](../tests/acceptance/test_docs_website_contract.py)
 which freezes (a) the current site framework + URL
 scheme, (b) the parallel maintainer-facing doc tree, (c)
 the broken README cross-references that any migration must
@@ -484,7 +484,7 @@ the most production-critical gap.
 ## 7. Pins/tests — what this audit pins
 
 Mirrored in
-[`tests/test_docs_website_contract.py`](../tests/test_docs_website_contract.py).
+[`tests/acceptance/test_docs_website_contract.py`](../tests/acceptance/test_docs_website_contract.py).
 
 ### `pin_scaffold_*` — current state inventory
 

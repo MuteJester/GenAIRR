@@ -507,7 +507,7 @@ and gated on a green test sweep before the next started.
    `_extract_invert_d_prob` pre-pass) — keeps the canonical
    V-NP1-D-NP2-J pool layout intact without explicit schedule
    edges. End-to-end pytest in
-   [`tests/test_invert_d_dsl.py`](../tests/test_invert_d_dsl.py).
+   [`tests/components/experiment/test_invert_d_dsl.py`](../tests/components/experiment/test_invert_d_dsl.py).
    First two pin-the-absence audit tests flipped.
 5. **Slice E — AIRR projection** ✅ shipped.
    `AirrRecord.d_inverted: bool` field sourced from the final IR

@@ -328,7 +328,7 @@ mechanism specifically requires D-segment behaviour — the C4
 allele oracle is currently incomplete on D under non-zero trim
 (known gap, follow-up slice). For VDJ-specific testing, filter
 out `AlleleCallTieSetMismatch` on D as the release-tier test
-does (see [`tests/test_release_validation.py`](../tests/test_release_validation.py)).
+does (see [`tests/components/result/test_release_validation.py`](../tests/components/result/test_release_validation.py)).
 
 This is the **final required step** in the contributor checklist:
 

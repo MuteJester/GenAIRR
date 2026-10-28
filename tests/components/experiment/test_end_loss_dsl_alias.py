@@ -22,6 +22,7 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -220,7 +221,7 @@ def test_audit_doc_lists_end_loss_as_canonical_dsl_surface() -> None:
     from pathlib import Path
 
     doc = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "primer_trim_end_loss_audit.md"
     )

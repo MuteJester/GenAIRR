@@ -14,7 +14,7 @@ boundary.
 Release-tier consolidation closed the slice the same way D
 inversion / receptor revision / paired-end closed: full-stack
 IGH + targeted-SHM + replay round-trip + zero-rate exclusion
-invariant in [`test_release_validation.py`](../tests/test_release_validation.py),
+invariant in [`test_release_validation.py`](../tests/components/result/test_release_validation.py),
 plus a row in [`docs/validation_matrix.md`](validation_matrix.md)
 naming the audit doc / contract file / implementation file /
 Rust kernel surfaces.

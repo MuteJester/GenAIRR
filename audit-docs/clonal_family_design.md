@@ -16,7 +16,7 @@ lands, the `pin_absence_*` tests flip to `pin_*_present` /
 The clonal-expansion surface — `expand_clones(n_clones, per_clone)`
 + `CompiledClonalExperiment` + the `clone_id` tag — has shipped and
 the existing G5 tests
-([`tests/test_experiment.py:1784-1891`](../tests/test_experiment.py#L1784-L1891))
+([`tests/components/experiment/test_experiment.py:1784-1891`](../tests/components/experiment/test_experiment.py#L1784-L1891))
 already pin: total record count, "identical without post-fork
 passes", "share junction backbone, diverge under SHM", double-call
 rejection, explicit-`n` reconciliation. **This audit does not
@@ -41,7 +41,7 @@ test in the companion contract file.
 | `CompiledSimulator.run_from` (Rust) | [`engine_rs/src/python/compiled.rs:166-183`](../engine_rs/src/python/compiled.rs#L166-L183) | The Rust-side entry point that takes a parent `Simulation` IR and runs the post-fork plan from it. Docstring already names "clonal-family generation" semantics. |
 | Post-fork contract bundle inheritance | [`engine_rs/src/compiled/analyze.rs:58-68`](../engine_rs/src/compiled/analyze.rs#L58-L68) and [`:207-221`](../engine_rs/src/compiled/analyze.rs#L207-L221) | `has_recombination_support()` lets the post-fork plan skip productive-frame compile-time preconditions (no recombination facts available) while keeping runtime contract filtering live. |
 | Per-descendant `clone_id` tag | [`src/GenAIRR/_compiled.py:444`](../src/GenAIRR/_compiled.py#L444) | The single "family identity" surface visible to downstream consumers today: an integer in `[0, n_clones)` written onto each AIRR record dict. |
-| `expose_provenance` truth columns | [`src/GenAIRR/_compiled.py:445-446`](../src/GenAIRR/_compiled.py#L445-L446) and `_inject_truth_columns` | Adds `truth_v_call/d_call/j_call`. Already verified family-invariant by [`test_g8_truth_columns_via_clonal_pipeline`](../tests/test_experiment.py#L1707). |
+| `expose_provenance` truth columns | [`src/GenAIRR/_compiled.py:445-446`](../src/GenAIRR/_compiled.py#L445-L446) and `_inject_truth_columns` | Adds `truth_v_call/d_call/j_call`. Already verified family-invariant by [`test_g8_truth_columns_via_clonal_pipeline`](../tests/components/experiment/test_experiment.py#L1707). |
 | `SimulationResult.validate_records` | [`src/GenAIRR/result.py:374-431`](../src/GenAIRR/result.py#L374-L431) | Per-record postcondition validator; iterates `(outcome, record)` pairs independently. No family-level pass exists. |
 | `Outcome.trace` | [`engine_rs/src/python/outcome.rs:85-88`](../engine_rs/src/python/outcome.rs#L85-L88) | Addressed-choice trace for replay. Each descendant carries only its own post-fork trace; the pre-fork parent trace is discarded after `final_simulation()` extracts the IR. |
 
@@ -162,7 +162,7 @@ library-prep passes are the only sources of within-clone divergence.
 | `v_call` (truth, not live) | Pre-fork V allele assignment | Same recombination event |
 | `d_call` (truth, not live) | Pre-fork D allele assignment | Same recombination event |
 | `j_call` (truth, not live) | Pre-fork J allele assignment | Same recombination event |
-| `truth_v_call` / `truth_d_call` / `truth_j_call` | `expose_provenance=True` | Already verified by [`test_g8_truth_columns_via_clonal_pipeline`](../tests/test_experiment.py#L1707) |
+| `truth_v_call` / `truth_d_call` / `truth_j_call` | `expose_provenance=True` | Already verified by [`test_g8_truth_columns_via_clonal_pipeline`](../tests/components/experiment/test_experiment.py#L1707) |
 | `original_v_call` | Pre-fork receptor-revision provenance | Receptor revision happens in the pre-fork pass; the "what V did we start with?" value is identical for every descendant |
 | `d_inverted` | Pre-fork D orientation flag | D inversion is a pre-fork decision |
 | Junction in germline frame | Pre-fork pool bytes between CDR3 anchors | SHM may modify *observed* junction bases but the germline-frame coordinates and the *pre-SHM* junction string are family-invariant |
@@ -176,7 +176,7 @@ The live-call (`v_call` / `d_call` / `j_call` columns as projected)
 **can** diverge across descendants under heavy SHM even though the
 truth allele is invariant: the tie-set widens when SHM erases the
 distinguishing positions. [`test_g5_clonal_descendants_share_
-junction_diverge_via_mutate`](../tests/test_experiment.py#L1815)
+junction_diverge_via_mutate`](../tests/components/experiment/test_experiment.py#L1815)
 already pins a soft form of this: it asserts only that the
 **non-empty** v_call sets agree, allowing the heavy-SHM cases where
 some descendants get a wider tie set or a tie-list-of-equals. A
@@ -355,7 +355,7 @@ Given the §3/§4 split, a family validator should assert, per
 1. **Shared truth allele.** Every descendant's
    `truth_v_call`, `truth_d_call`, `truth_j_call` matches the
    group's first value. (Already true today, tested manually in
-   [`test_g8_truth_columns_via_clonal_pipeline`](../tests/test_experiment.py#L1707)
+   [`test_g8_truth_columns_via_clonal_pipeline`](../tests/components/experiment/test_experiment.py#L1707)
    but not exposed as a built-in check.)
 
 2. **Shared `original_v_call`.** Receptor-revision provenance is
@@ -384,7 +384,7 @@ Given the §3/§4 split, a family validator should assert, per
    descendant pair within a clone should differ (heavy-SHM
    collisions are vanishingly rare). Today this is checked in
    isolation by [`test_g5_clonal_descendants_share_junction_diverge_
-   via_mutate`](../tests/test_experiment.py#L1815) but it is a
+   via_mutate`](../tests/components/experiment/test_experiment.py#L1815) but it is a
    single test, not a release-tier postcondition.
 
 ### What a family validator must *not* check

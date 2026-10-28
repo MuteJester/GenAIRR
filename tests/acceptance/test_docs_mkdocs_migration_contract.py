@@ -34,9 +34,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 # The migration plan documents this session's docs-migration work and stays
 # in the private docs/ directory (gitignored). On CI checkouts it's absent;
 # the module-level skipif below short-circuits the whole file in that case.

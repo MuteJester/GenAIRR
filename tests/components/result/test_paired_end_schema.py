@@ -23,6 +23,7 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR import _engine as ge
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -278,7 +279,7 @@ def test_slice_b_geometry_check_helpers_landed_in_engine_source() -> None:
     from pathlib import Path
 
     validate_src = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "engine_rs"
         / "src"
         / "airr_record"

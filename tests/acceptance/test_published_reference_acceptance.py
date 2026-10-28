@@ -43,8 +43,9 @@ from GenAIRR._reference_sources.acquisition import HttpsTransport
 from GenAIRR.experimental import FamilyReplayError
 from GenAIRR.reference_sources import OgrdbSource, ReferenceBuild, ReferenceSourceError
 from tests.support.fixtures.ogrdb_inventory import EXPECT, IGH, IGK, RECORDS, SELECTION, raw, raw_records
+from tests.support import paths
 
-TESTS = pathlib.Path(__file__).resolve().parent
+TESTS = paths.tests_root()
 REPO = TESTS.parent
 DATA = TESTS / "data" / "reference_sources"
 EVIDENCE = json.loads((DATA / "interpretation_evidence.json").read_bytes().decode("utf-8"))

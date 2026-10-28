@@ -35,9 +35,10 @@ from pathlib import Path
 import pytest
 
 import GenAIRR as ga
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "fastq_export_design.md"
 
 

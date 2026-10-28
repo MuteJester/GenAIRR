@@ -138,3 +138,24 @@ def test_no_two_test_paths_differ_only_by_case():
     lowered = [str(p.relative_to(TESTS_ROOT)).lower() for p in _python_files(TESTS_ROOT)]
     duplicates = {p for p in lowered if lowered.count(p) > 1}
     assert duplicates == set(), f"paths colliding under a case-insensitive filesystem: {duplicates}"
+
+
+def test_no_test_modules_sit_at_the_suite_root():
+    """Every test module belongs to an area: components, biology, acceptance or
+    performance. The root holds conftest.py and the package marker, nothing else.
+    """
+    stray = sorted(p.name for p in TESTS_ROOT.glob("test_*.py"))
+    assert stray == [], f"test modules at the suite root: {stray}"
+
+
+def test_every_test_directory_is_a_package():
+    """pytest can collect without __init__.py, but the suite is imported as a
+    package (from tests.support import ...), and a missing marker makes two
+    modules with the same basename collide."""
+    missing = []
+    for directory in sorted({p.parent for p in TESTS_ROOT.rglob("test_*.py")}):
+        if "__pycache__" in directory.parts:
+            continue
+        if not (directory / "__init__.py").is_file():
+            missing.append(str(directory.relative_to(TESTS_ROOT)))
+    assert missing == [], f"test directories without __init__.py: {missing}"

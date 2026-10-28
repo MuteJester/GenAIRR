@@ -230,7 +230,7 @@ and the AIRR fields (`end_loss_{5,3}_length`).
 `primer_trim_5prime()` / `primer_trim_3prime()` survive as
 backwards-compatible aliases for the canonical methods. Same
 trace address, same AIRR field, byte-identical records for the
-same seed — pinned by `tests/test_end_loss_dsl_alias.py`.
+same seed — pinned by `tests/components/experiment/test_end_loss_dsl_alias.py`.
 
 ### 6.3 Trim-only fallback for germline coords — **✅ No drift (parity invariant pinned)**
 

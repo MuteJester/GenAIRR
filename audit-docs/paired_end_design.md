@@ -9,13 +9,13 @@ deliverables:
 
 | Slice | What landed | Verified by |
 |---|---|---|
-| A — Record schema + default validator | Eight `AirrRecord` fields (`read_layout` / `r1_sequence` / `r2_sequence` / `r1_start/end` / `r2_start/end` / `insert_size`) with the additive-default precedent. Five `RecordValidationIssue` variants (`PairedEndFieldWithoutLayout` enforced; four `Read*` variants reserved for Slice B). | `engine_rs/src/airr_record/tests/projection.rs` (5 Slice A tests) + [`tests/test_paired_end_schema.py`](../tests/test_paired_end_schema.py) (7 tests) |
+| A — Record schema + default validator | Eight `AirrRecord` fields (`read_layout` / `r1_sequence` / `r2_sequence` / `r1_start/end` / `r2_start/end` / `insert_size`) with the additive-default precedent. Five `RecordValidationIssue` variants (`PairedEndFieldWithoutLayout` enforced; four `Read*` variants reserved for Slice B). | `engine_rs/src/airr_record/tests/projection.rs` (5 Slice A tests) + [`tests/components/result/test_paired_end_schema.py`](../tests/components/result/test_paired_end_schema.py) (7 tests) |
 | B — Projection kernel + geometry validator | `project_paired_end_layout(rec, r1_length, r2_length, insert_size) -> PairedEndProjection`, validator dispatches on `read_layout` and surfaces the four reserved variants for `"paired_end"` records. `"single_end"` reserved no-op; unknown values → `ReadLayoutMismatch`. | `engine_rs/src/airr_record/sequence.rs` + `engine_rs/src/airr_record/tests/projection.rs::slice_b_*` (17 Slice B tests covering kernel correctness + every geometry tamper) |
 | C — Trace addresses + builder integration | Three new `ChoiceAddress` variants (`PairedEndR1Length` / `PairedEndR2Length` / `PairedEndInsertSize`), `PairedEndLayoutSpec` (three int distributions), `PairedEndSamplingPass` (trace-only, no IR mutation), AIRR builder reads trace + applies kernel | `engine_rs/src/passes/paired_end.rs::tests` (12 Slice C tests: fresh, replay, missing/wrong address, bad geometry, baseline) + `airr_record::tests::projection::slice_c_*` (5 builder integration tests) |
-| D — DSL | `Experiment.paired_end(*, r1_length, r2_length=None, insert_size)` with three input shapes (int / `(low, high)` / empirical pairs), at-most-once + fixed-value geometry guards, end-of-plan lowering | [`tests/test_paired_end_dsl.py`](../tests/test_paired_end_dsl.py) (20 e2e tests) |
-| Consolidation | README row, validation-matrix row, release-tier IGH stack composed with receptor revision + D inversion + mutation + end-loss + rev-comp, full-stack replay round-trip with variable insert sizes, distribution invariant on `paired_end.insert_size` (uniform-int mean ±5σ + endpoint bounds) | [`tests/test_release_validation.py`](../tests/test_release_validation.py), [`tests/components/engine/test_distribution_invariants.py`](../tests/components/engine/test_distribution_invariants.py) |
+| D — DSL | `Experiment.paired_end(*, r1_length, r2_length=None, insert_size)` with three input shapes (int / `(low, high)` / empirical pairs), at-most-once + fixed-value geometry guards, end-of-plan lowering | [`tests/components/experiment/test_paired_end_dsl.py`](../tests/components/experiment/test_paired_end_dsl.py) (20 e2e tests) |
+| Consolidation | README row, validation-matrix row, release-tier IGH stack composed with receptor revision + D inversion + mutation + end-loss + rev-comp, full-stack replay round-trip with variable insert sizes, distribution invariant on `paired_end.insert_size` (uniform-int mean ±5σ + endpoint bounds) | [`tests/components/result/test_release_validation.py`](../tests/components/result/test_release_validation.py), [`tests/components/engine/test_distribution_invariants.py`](../tests/components/engine/test_distribution_invariants.py) |
 
-The contract test suite [`tests/test_paired_end_contract.py`](../tests/test_paired_end_contract.py)
+The contract test suite [`tests/components/result/test_paired_end_contract.py`](../tests/components/result/test_paired_end_contract.py)
 closed the arc with every Slice-gated `pin_absence_*` test
 flipped to `pin_scaffold_*`. Out-of-scope pins (no FASTQ
 exporter, no two-row per-fragment output, no `.single_end()` DSL
@@ -29,7 +29,7 @@ through an explicit lockstep flip.
 A read-only architecture review of every engine surface that
 paired-end read-layout projection will touch, written **before**
 any implementation. Companion to
-[`tests/test_paired_end_contract.py`](../tests/test_paired_end_contract.py)
+[`tests/components/result/test_paired_end_contract.py`](../tests/components/result/test_paired_end_contract.py)
 which pins today's absence + the existing scaffolding and will
 flip to behavior-pinning as implementation slices land.
 
@@ -640,7 +640,7 @@ five slices to land in the same shape.
 ## 13. Test surface — what the implementation slices must pin
 
 A non-exhaustive list, mirrored as TODO markers in the companion
-[`tests/test_paired_end_contract.py`](../tests/test_paired_end_contract.py):
+[`tests/components/result/test_paired_end_contract.py`](../tests/components/result/test_paired_end_contract.py):
 
 1. **Field defaults.** Baseline records (no `.paired_end()`)
    carry the eight fields at their defaults. Pinned per-field.
