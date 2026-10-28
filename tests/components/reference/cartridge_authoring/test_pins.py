@@ -48,9 +48,10 @@ from GenAIRR.reference_models import (
     ReferenceEmpiricalModels,
 )
 from GenAIRR.reference_rules import ReferenceRulesSpec
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "reference_cartridge_authoring_audit.md"
 
 
@@ -509,7 +510,7 @@ def test_pin_scaffold_manual_dataconfig_construction_remains_supported() -> None
 
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
-    assert "test_reference_cartridge_authoring_contract.py" in doc, (
+    assert "tests/components/reference/cartridge_authoring/test_pins.py" in doc, (
         "audit doc no longer references the contract file"
     )
     for marker in (

@@ -46,6 +46,7 @@ from GenAIRR.dataconfig.cartridge_views import (
 from GenAIRR.dataconfig.data_config import DataConfig
 from GenAIRR.reference_models import EmpiricalDistributionSpec, ReferenceEmpiricalModels
 from GenAIRR.reference_rules import AnchorRuleSpec, ReferenceRulesSpec
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -598,7 +599,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     from pathlib import Path
 
     doc_path = (
-        Path(__file__).resolve().parent.parent
+        paths.repo_root()
         / "audit-docs"
         / "reference_cartridge_completeness_audit.md"
     )

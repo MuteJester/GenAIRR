@@ -38,6 +38,7 @@ from GenAIRR.reference_models import (
     ReferenceEmpiricalModels,
 )
 from GenAIRR.reference_rules import ReferenceRulesSpec
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -414,7 +415,7 @@ def test_dead_reference_cleanup_data_config_docstring_and_build_tool() -> None:
     other still surfaces here."""
     from pathlib import Path
 
-    repo = Path(__file__).resolve().parent.parent
+    repo = paths.repo_root()
     dc_src = (
         repo / "src" / "GenAIRR" / "dataconfig" / "data_config.py"
     ).read_text(encoding="utf-8")

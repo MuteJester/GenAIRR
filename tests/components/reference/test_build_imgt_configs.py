@@ -15,8 +15,9 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR.dataconfig.enums import ChainType, Species
+from tests.support import paths
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 _TOOL_PATH = _REPO_ROOT / "tools" / "build_imgt_configs.py"
 
 

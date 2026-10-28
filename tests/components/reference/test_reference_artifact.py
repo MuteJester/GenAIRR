@@ -19,6 +19,7 @@ from GenAIRR._reference.artifact import ClaimSummary, ReferenceAllele, Reference
 from GenAIRR._reference.defaults import models_hash
 from GenAIRR._reference.lowering import PROFILE_ID, lower, seal
 from GenAIRR._reference.model import Catalogue
+from tests.support import paths
 
 # A human IGHV1-2*02-like V (TGT Cys codon at 285), two IGHD-like Ds and two IGHJ-like Js
 # (TGG-GGC-CAG/A-GG motif at 14 and 29).  Software fixtures, not evidence.
@@ -40,7 +41,7 @@ D_FASTA = f">IGHD3-10*01\n{D1}\n>IGHD2-2*01\n{D2}\n"
 J_FASTA = f">IGHJ4*02\n{J1}\n>IGHJ6*02\n{J2}\n"
 SOURCE = "doi:10.1000/lab-reference"
 ARTIFACT_DOMAIN = "genairr_reference_artifact_v1"
-GOLDEN = pathlib.Path(__file__).parent / "golden" / "reference" / "human_igh.genairr-ref.json"
+GOLDEN = paths.golden("reference", "human_igh.genairr-ref.json")
 
 
 def digest(seq):

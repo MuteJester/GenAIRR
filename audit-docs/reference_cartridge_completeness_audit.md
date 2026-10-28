@@ -16,7 +16,7 @@ users have enough metadata to reproduce or compare simulations
 across runs.
 
 Companion to
-[`tests/test_reference_cartridge_completeness_contract.py`](../tests/test_reference_cartridge_completeness_contract.py)
+[`tests/components/reference/test_reference_cartridge_completeness_contract.py`](../tests/components/reference/test_reference_cartridge_completeness_contract.py)
 which freezes every claim here as either a `pin_scaffold_*`
 (today's behaviour) or a `pin_absence_*` (deferred surface that a
 later slice flips).
@@ -545,7 +545,7 @@ each slice flips the relevant `pin_absence_*` to
 ## 12. Test surface — what the audit pins
 
 Mirrored in
-[`tests/test_reference_cartridge_completeness_contract.py`](../tests/test_reference_cartridge_completeness_contract.py).
+[`tests/components/reference/test_reference_cartridge_completeness_contract.py`](../tests/components/reference/test_reference_cartridge_completeness_contract.py).
 
 ### `pin_scaffold_*` — today's contract
 

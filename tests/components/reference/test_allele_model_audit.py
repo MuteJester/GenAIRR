@@ -40,6 +40,7 @@ from GenAIRR.reference_models import (
     EmpiricalDistributionSpec,
     ReferenceEmpiricalModels,
 )
+from tests.support import paths
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -388,7 +389,7 @@ def test_audit_doc_exists_and_lists_every_pinned_topic() -> None:
     section header, the test surfaces it so the doc and the
     behaviour-pinning tests don't drift apart."""
 
-    doc = Path(__file__).resolve().parent.parent / "audit-docs" / "allele_model_audit.md"
+    doc = paths.repo_root() / "audit-docs" / "allele_model_audit.md"
     assert doc.is_file(), f"docs/allele_model_audit.md is missing at {doc}"
     text = doc.read_text(encoding="utf-8")
     for header in (
