@@ -7,7 +7,7 @@ import json
 import pytest
 
 from GenAIRR import Experiment, SimulationResult
-from tests.duplex_experiment_cases import references, model, history
+from tests.support.cases.duplex import references, model, history
 
 
 def _base():

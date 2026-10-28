@@ -269,7 +269,7 @@ def test_family_replay_capture_with_reference_unsupported(ref, monkeypatch):
 
 def test_family_replay_restored_result_binds_reconstructed_reference():
     from GenAIRR._family_replay import _bundle_from_result
-    from tests.duplex_experiment_cases import history, model, references
+    from tests.support.cases.duplex import history, model, references
 
     refs = references()
     exp = (Experiment.on(refs).recombine(duplex_repair=model(refs, [history(restore=True)]))

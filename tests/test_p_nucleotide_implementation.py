@@ -35,7 +35,7 @@ from GenAIRR.reference_models import (
     EmpiricalDistributionSpec,
     ReferenceEmpiricalModels,
 )
-from ._p_productive_support import assert_productive_record
+from tests.support.cases.productive import assert_productive_record
 
 
 # ──────────────────────────────────────────────────────────────────

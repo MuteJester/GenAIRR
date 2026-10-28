@@ -9,7 +9,7 @@ import pytest
 import GenAIRR as ga
 from GenAIRR import _engine as ge
 from GenAIRR.experimental import DuplexHistory, DuplexRepairModel, CoupledDuplexRepair, DuplexJoin
-from tests.duplex_experiment_cases import references, script, history, model
+from tests.support.cases.duplex import references, script, history, model
 
 
 @pytest.mark.parametrize("weight", [-1, float("nan"), float("inf"), True, "invalid"])

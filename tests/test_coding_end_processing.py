@@ -7,7 +7,7 @@ import pytest
 import GenAIRR as ga
 from GenAIRR import _engine
 
-from ._p_productive_support import (
+from tests.support.cases.productive import (
     assert_productive_record,
     reverse_complement,
     synthetic_cartridge,

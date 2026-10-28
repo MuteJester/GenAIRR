@@ -186,7 +186,7 @@ def test_out_of_frame_junction_translates_complete_physical_codons() -> None:
     rec = _record(exp)
     assert rec["junction_length"] == 7
     assert rec["vj_in_frame"] is False
-    from ._p_productive_support import translate
+    from tests.support.cases.productive import translate
     assert rec["junction_aa"] == translate(rec["junction"])
     assert len(rec["junction_aa"]) == 2
     assert rec["stop_codon"] is False
@@ -431,7 +431,7 @@ def test_out_of_frame_junction_aa_retains_translation_not_none() -> None:
     )
     rec = _record(exp)
     assert rec["vj_in_frame"] is False
-    from ._p_productive_support import translate
+    from tests.support.cases.productive import translate
     assert rec["junction_aa"] == translate(rec["junction"])
     assert len(rec["junction_aa"]) == 2
     assert rec["junction_aa"] is not None

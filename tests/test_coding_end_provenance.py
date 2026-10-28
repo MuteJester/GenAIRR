@@ -5,7 +5,7 @@ import pytest
 import GenAIRR as ga
 from GenAIRR.alleles import VAllele
 
-from ._p_productive_support import reverse_complement, synthetic_cartridge
+from tests.support.cases.productive import reverse_complement, synthetic_cartridge
 
 
 def experiment(*, d=None):

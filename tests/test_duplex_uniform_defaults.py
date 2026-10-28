@@ -5,7 +5,7 @@ import pytest
 
 from GenAIRR import Experiment, _engine
 from GenAIRR.experimental import DuplexHistory
-from tests.duplex_experiment_cases import history, model, references, script
+from tests.support.cases.duplex import history, model, references, script
 
 
 def _choices(outcome):

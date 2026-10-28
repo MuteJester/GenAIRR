@@ -5,7 +5,7 @@ import pytest
 
 from GenAIRR import Experiment, RefDataConfig
 from GenAIRR.experimental import CoupledDuplexRepair, DuplexHistory, DuplexJoin, DuplexRepairModel
-from tests.duplex_experiment_cases import history, model, references
+from tests.support.cases.duplex import history, model, references
 
 
 def _family(exp, kind):

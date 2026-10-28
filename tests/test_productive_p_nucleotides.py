@@ -6,7 +6,7 @@ import GenAIRR as ga
 from GenAIRR._airr_record import outcome_to_airr_record
 from GenAIRR.reference_models import NpBaseModelSpec
 
-from ._p_productive_support import (
+from tests.support.cases.productive import (
     assert_productive_record,
     reverse_complement,
     synthetic_cartridge,

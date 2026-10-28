@@ -5,7 +5,7 @@ import csv
 import pytest
 
 import GenAIRR as ga
-from ._p_productive_support import reverse_complement, synthetic_cartridge
+from tests.support.cases.productive import reverse_complement, synthetic_cartridge
 
 
 @pytest.mark.parametrize("reverse", [False, True])

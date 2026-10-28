@@ -11,7 +11,7 @@ import pytest
 from GenAIRR import Experiment, SimulationResult, _engine
 from GenAIRR.experimental import FamilyReplayBundle, FamilyReplayError, FamilyReplayLimits
 from GenAIRR._family_replay import _bundle_from_result, _content_decode, _digest
-from tests.duplex_experiment_cases import references, model, history
+from tests.support.cases.duplex import references, model, history
 
 
 def experiment(*, rows=None, n_clones=2, depth=2, rate=.05, inverted=False, **family):
@@ -377,7 +377,7 @@ def test_repeated_annotations_are_charged_before_retaining_cumulative_output(cap
 def test_reconstructed_source_cannot_bypass_public_bcr_only_workflow(captured):
     from GenAIRR import RefDataConfig
     from GenAIRR.experimental import DuplexHistory
-    from tests.duplex_experiment_cases import script
+    from tests.support.cases.duplex import script
 
     refs = RefDataConfig.vdj()
     refs.add_v_allele("TRBV*01", "TRBV", b"AAATGT", anchor=3)

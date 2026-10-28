@@ -10,7 +10,7 @@ import pytest
 import GenAIRR as ga
 from GenAIRR._s5f_loader import load_builtin_s5f_kernel
 
-from ._p_productive_support import synthetic_cartridge
+from tests.support.cases.productive import synthetic_cartridge
 
 
 @pytest.mark.parametrize("strict", [False, True])

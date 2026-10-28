@@ -7,7 +7,7 @@ from GenAIRR._airr_record import outcome_to_airr_record
 from GenAIRR.alleles import JAllele, VAllele
 from GenAIRR.genotype import Genotype
 
-from ._p_productive_support import assert_productive_record, synthetic_cartridge
+from tests.support.cases.productive import assert_productive_record, synthetic_cartridge
 
 
 def _phased_fixture():

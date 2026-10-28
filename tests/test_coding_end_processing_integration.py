@@ -6,7 +6,7 @@ import pytest
 
 import GenAIRR as ga
 
-from ._p_productive_support import reverse_complement, synthetic_cartridge
+from tests.support.cases.productive import reverse_complement, synthetic_cartridge
 from .test_productive_p_genotype import _phased_fixture
 
 

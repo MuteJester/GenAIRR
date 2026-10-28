@@ -4,7 +4,7 @@ import pytest
 import GenAIRR as ga
 from GenAIRR import _engine
 
-from ._p_productive_support import translate
+from tests.support.cases.productive import translate
 from .test_junction_call_provenance import _vj_basic
 
 

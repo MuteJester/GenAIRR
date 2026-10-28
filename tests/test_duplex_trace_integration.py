@@ -4,7 +4,7 @@ import json
 import pytest
 
 from GenAIRR import Experiment, _engine as ge
-from tests.duplex_experiment_cases import history, model, references
+from tests.support.cases.duplex import history, model, references
 
 
 def _compile(refs, rows=None, *, weights=None):
