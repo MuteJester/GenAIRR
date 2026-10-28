@@ -30,9 +30,10 @@ from GenAIRR.reference_models import (
     NpBaseModelSpec,
     ReferenceEmpiricalModels,
 )
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "np_markov_base_generator_design.md"
 
 
@@ -558,7 +559,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc must continue to exist and reference this
     contract file; the 15-section structure stays intact."""
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
-    assert "test_np_markov_base_generator_contract.py" in doc, (
+    assert "tests/components/estimators/np_markov/test_pins.py" in doc, (
         "audit doc no longer references the contract file; lockstep "
         "convention drifted"
     )

@@ -41,9 +41,10 @@ from GenAIRR.dataconfig.data_config import (
     _DOCUMENTED_ORPHAN_DATACONFIG_FIELDS,
 )
 from GenAIRR.reference_models import ReferenceEmpiricalModels
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "allele_usage_estimation_design.md"
 
 
@@ -521,7 +522,7 @@ def test_pin_present_ambiguous_kwarg_accepts_three_string_literals() -> None:
 
 def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
-    assert "test_allele_usage_estimation_contract.py" in doc, (
+    assert "tests/components/estimators/allele_usage/test_pins.py" in doc, (
         "audit doc no longer references the contract file"
     )
     for marker in (

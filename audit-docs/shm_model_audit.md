@@ -15,7 +15,7 @@ strand / paired-end). The split between "biological SHM" and
 audit pins.
 
 Companion to
-[`tests/test_shm_model_contract.py`](../tests/test_shm_model_contract.py)
+[`tests/components/estimators/shm_model/test_pins.py`](../tests/components/estimators/shm_model/test_pins.py)
 which freezes every claim here as either `pin_scaffold_*`
 (today's contract) or `pin_absence_*` (deferred surface).
 
@@ -580,7 +580,7 @@ each slice flips the relevant `pin_absence_*` to
 ## 12. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_shm_model_contract.py`](../tests/test_shm_model_contract.py).
+[`tests/components/estimators/shm_model/test_pins.py`](../tests/components/estimators/shm_model/test_pins.py).
 
 ### `pin_scaffold_*` — today's contract
 

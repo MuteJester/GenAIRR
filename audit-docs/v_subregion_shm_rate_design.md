@@ -11,7 +11,7 @@ sites and unannotated V alleles receive identity factor `1.0`.
 Pinned end-to-end by
 [`tests/test_pass_parameter_signature.py`](../tests/test_pass_parameter_signature.py)
 and
-[`tests/test_v_subregion_rates_implementation.py`](../tests/test_v_subregion_rates_implementation.py).
+[`tests/components/estimators/v_subregion_rates/test_estimation.py`](../tests/components/estimators/v_subregion_rates/test_estimation.py).
 Per-region SHM **counters** (`n_cdr1_mutations` etc.) remain
 deferred and are pinned absent in the contract file.
 
@@ -32,7 +32,7 @@ about somatic hypermutation (CDRs evolve fast, FWRs stay
 conserved).
 
 Companion to
-[`tests/test_v_subregion_shm_rate_contract.py`](../tests/test_v_subregion_shm_rate_contract.py)
+[`tests/components/estimators/v_subregion_rates/test_pins.py`](../tests/components/estimators/v_subregion_rates/test_pins.py)
 which freezes today's surfaces (`pin_scaffold_*`) and the gaps
 the implementation slice would close (`pin_absence_*`).
 
@@ -723,7 +723,7 @@ What landed:
      `in_plan_signature=True`, `in_content_hash=False`.
 
 6. **Tests** (~50 specs total):
-   - [tests/test_v_subregion_rates_implementation.py](../tests/test_v_subregion_rates_implementation.py)
+   - [tests/components/estimators/v_subregion_rates/test_estimation.py](../tests/components/estimators/v_subregion_rates/test_estimation.py)
      (27 spec tests): DSL validation (label set, aliases,
      expansion order, bool/NaN/inf/negative/all-zero,
      unsatisfiable-rates rejection on an
@@ -737,7 +737,7 @@ What landed:
      plan-signature gate, default ≡ explicit all-ones,
      manifest advertises support, CDR/FR counter fields stay
      absent.
-   - [tests/test_v_subregion_shm_rate_contract.py](../tests/test_v_subregion_shm_rate_contract.py)
+   - [tests/components/estimators/v_subregion_rates/test_pins.py](../tests/components/estimators/v_subregion_rates/test_pins.py)
      pins flipped: kwarg present, validator present, Rust
      struct present, helper present, manifest support
      present, compile-time rejection present.
@@ -763,7 +763,7 @@ user-facing biology surface on top.
 ## 12. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_v_subregion_shm_rate_contract.py`](../tests/test_v_subregion_shm_rate_contract.py).
+[`tests/components/estimators/v_subregion_rates/test_pins.py`](../tests/components/estimators/v_subregion_rates/test_pins.py).
 
 ### `pin_scaffold_*` — pre-existing surfaces Slice B builds on
 

@@ -7,7 +7,7 @@ explicitly deferred.**
 
 - **Slice 1 — Typed NP base model** landed end-to-end
   alongside 27 implementation tests
-  ([`tests/test_np_base_model_implementation.py`](../tests/test_np_base_model_implementation.py))
+  ([`tests/components/estimators/np_base_model/test_model.py`](../tests/components/estimators/np_base_model/test_model.py))
   and pin flips in the audit contract. The
   `empirical_first_base` kind lets cartridges author per-NP-
   region weighted-categorical sampling that replaces the
@@ -21,9 +21,9 @@ explicitly deferred.**
   reconstructs `previous` from the prior recorded
   `np.np{1,2}.bases[i-1]` value — no new trace addresses.
   Pinned by
-  [`tests/test_np_markov_base_generator_contract.py`](../tests/test_np_markov_base_generator_contract.py)
+  [`tests/components/estimators/np_markov/test_pins.py`](../tests/components/estimators/np_markov/test_pins.py)
   + 13 behaviour tests in
-  [`tests/test_np_markov_base_generator_implementation.py`](../tests/test_np_markov_base_generator_implementation.py).
+  [`tests/components/estimators/np_markov/test_generation.py`](../tests/components/estimators/np_markov/test_generation.py).
   See companion design
   [`docs/np_markov_base_generator_design.md`](np_markov_base_generator_design.md).
 

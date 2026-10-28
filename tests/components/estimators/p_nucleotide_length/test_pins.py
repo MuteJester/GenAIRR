@@ -51,9 +51,10 @@ from GenAIRR.reference_models import (
     EmpiricalDistributionSpec,
     ReferenceEmpiricalModels,
 )
+from tests.support import paths
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "p_nucleotide_length_estimation_design.md"
 
 
@@ -562,7 +563,7 @@ def test_pin_scaffold_audit_doc_exists_and_references_contract() -> None:
     """The audit doc exists and references the contract
     file by name; section structure intact."""
     doc = _AUDIT_DOC.read_text(encoding="utf-8")
-    assert "test_p_nucleotide_length_estimation_contract.py" in doc, (
+    assert "tests/components/estimators/p_nucleotide_length/test_pins.py" in doc, (
         "audit doc no longer references the contract file"
     )
     for marker in (

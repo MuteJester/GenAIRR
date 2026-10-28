@@ -12,14 +12,14 @@ deferred — see §7 below.
 
 Companion artefacts:
 
-- [`tests/test_np_markov_base_generator_contract.py`](../tests/test_np_markov_base_generator_contract.py)
+- [`tests/components/estimators/np_markov/test_pins.py`](../tests/components/estimators/np_markov/test_pins.py)
   — 20 pins (flipped to post-implementation state).
-- [`tests/test_np_markov_base_generator_implementation.py`](../tests/test_np_markov_base_generator_implementation.py)
+- [`tests/components/estimators/np_markov/test_generation.py`](../tests/components/estimators/np_markov/test_generation.py)
   — 13 behaviour tests covering the user's greenlight surface
   (lowering, dependency, replay round-trip, signature-gate
   mismatch, productive-only, byte-identical legacy
   signatures, manifest flip).
-- [`tests/test_np_markov_release.py`](../tests/test_np_markov_release.py)
+- [`tests/components/estimators/np_markov/test_composition.py`](../tests/components/estimators/np_markov/test_composition.py)
   — release-tier composition tests (productive IGH full
   stack + replay round-trip + deterministic walk).
 
@@ -638,7 +638,7 @@ generator + tests) + ~80 lines Python (bridge + resolver + manifest)
 ## 13. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_np_markov_base_generator_contract.py`](../tests/test_np_markov_base_generator_contract.py).
+[`tests/components/estimators/np_markov/test_pins.py`](../tests/components/estimators/np_markov/test_pins.py).
 
 ### `pin_scaffold_*` — pre-existing surfaces the slice builds on
 

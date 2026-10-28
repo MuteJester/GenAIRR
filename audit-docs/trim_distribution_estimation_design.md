@@ -11,7 +11,7 @@ P-nucleotide, productive-only composition) depends on the
 post-trim coding-flank state.
 
 Companion to
-[`tests/test_trim_distribution_estimation_contract.py`](../tests/test_trim_distribution_estimation_contract.py)
+[`tests/components/estimators/trim_distribution/test_pins.py`](../tests/components/estimators/trim_distribution/test_pins.py)
 which freezes (a) the engine's existing trim-distribution
 lowering chain that the estimator's output flows into,
 (b) the AIRR trim fields GenAIRR populates reliably today,
@@ -602,7 +602,7 @@ Mirrors the six-step allele-usage discipline, but
    end-to-end + manifest exposure + report shape).
 
 4. **Doc + contract pin flip** — flip the absence pins in
-   `tests/test_trim_distribution_estimation_contract.py`
+   `tests/components/estimators/trim_distribution/test_pins.py`
    to present-state, mirror the allele-usage doc-flip
    discipline. Add the new `trims` block to the
    `_allele_usage_manifest_block` neighbour.
@@ -643,7 +643,7 @@ Cost estimate:
 ## 10. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_trim_distribution_estimation_contract.py`](../tests/test_trim_distribution_estimation_contract.py).
+[`tests/components/estimators/trim_distribution/test_pins.py`](../tests/components/estimators/trim_distribution/test_pins.py).
 
 ### `pin_scaffold_*` — live surfaces the estimator builds on
 
