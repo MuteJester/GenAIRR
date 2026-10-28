@@ -1011,3 +1011,15 @@ def test_a_lock_write_failure_reports_its_real_cause(tmp_path, monkeypatch, exis
     monkeypatch.setattr(api, "write_atomic", failing)
     exc = error("io", source.write_lock, path)
     assert "simulated" in exc.message and "the lock file exists" not in exc.message
+
+
+def test_the_shared_starter_cannot_be_changed_by_one_test_for_another(igh_starter_session, igl_two_allele_session):
+    import dataclasses
+    with pytest.raises(TypeError):
+        igh_starter_session.blobs["airr"] = b"changed"
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        igh_starter_session.build = None
+    document = igh_starter_session.document
+    document["selection"].clear()
+    assert len(igh_starter_session.document["selection"]) == sum(len(v) for v in SELECTION["selected"].values())
+    assert isinstance(igl_two_allele_session, tuple)
