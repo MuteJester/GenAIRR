@@ -4,5 +4,7 @@ tests/data/reference_first_use/** -text
 tests/golden/reference/** -text
 # Exact provider bytes and their manifests: digests cover these bytes, so no EOL conversion.
 tests/data/reference_sources/** -text
+# The IMGT human IGHV set: the starter's recipe reasons cite its digest.
+tests/data/IGHV.fasta -text
 # Packaged reference build archives: binary; their digests cover the exact bytes.
 src/GenAIRR/data/published_references/*.zip -text -diff

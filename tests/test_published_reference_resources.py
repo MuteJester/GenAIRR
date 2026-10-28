@@ -230,10 +230,16 @@ def test_every_other_reason_states_the_starter_rules_and_each_specific_observati
             f"bases after gene_end read {observation['sequence_after_gene_end']}") in given[observation["label"]]
 
 
-def imgt_classes() -> dict:
+def imgt_classes(path: pathlib.Path = IMGT_IGHV) -> dict:
     """``{allele: (IMGT class, ungapped V-REGION)}`` read from the IMGT FASTA headers (field 4)."""
-    data = IMGT_IGHV.read_bytes()
-    assert "sha256:" + hashlib.sha256(data).hexdigest() == IMGT_IGHV_SHA256
+    data = path.read_bytes()
+    found = "sha256:" + hashlib.sha256(data).hexdigest()
+    if found != IMGT_IGHV_SHA256:
+        lf = "sha256:" + hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
+        if b"\r\n" in data and lf == IMGT_IGHV_SHA256:
+            pytest.fail(f"{path.name} was checked out with CRLF line endings ({found}); its bytes are pinned, so "
+                        ".gitattributes must keep tests/data/IGHV.fasta byte-exact with a -text rule")
+        pytest.fail(f"{path.name} is {found}, not the pinned {IMGT_IGHV_SHA256}")
     entries = {}
     for chunk in data.decode("ascii").split(">")[1:]:
         header, _, body = chunk.partition("\n")
@@ -241,6 +247,13 @@ def imgt_classes() -> dict:
         assert fields[1] not in entries
         entries[fields[1]] = (fields[3], body.replace("\n", "").replace(".", "").upper())
     return entries
+
+
+def test_a_crlf_checkout_of_the_imgt_set_is_named_as_the_cause(tmp_path):
+    copy = tmp_path / "IGHV.fasta"
+    copy.write_bytes(IMGT_IGHV.read_bytes().replace(b"\n", b"\r\n"))
+    with pytest.raises(pytest.fail.Exception, match="checked out with CRLF line endings"):
+        imgt_classes(copy)
 
 
 def test_each_v_that_imgt_classes_as_orf_or_pseudogene_says_so():
@@ -652,7 +665,9 @@ def test_loading_the_starter_leaves_the_human_igh_alias_unchanged(starter):
 
 def declared_version(text: str) -> str:
     """``[project].version`` of a pyproject.toml text (read without tomllib, so on every Python);
-    a missing table or version, or a dynamic version, fails with a message saying so."""
+    a missing table or version, or a dynamic version, fails with a message saying so.  Line endings
+    are normalised first: a Windows checkout may hold the file with CRLF."""
+    text = text.replace("\r\n", "\n")
     table = re.search(r"^\[project\][ \t]*(?:#.*)?$(.*?)(?=^\[|\Z)", text, re.M | re.S)
     if table is None:
         pytest.fail("pyproject.toml has no [project] table, so it declares no version to compare with")
@@ -669,6 +684,7 @@ def declared_version(text: str) -> str:
 
 @pytest.mark.parametrize("text, expected", [
     ('[project]\nname = "GenAIRR"\nversion = "2.3.1"\n', "2.3.1"),
+    ('[project]\r\nname = "GenAIRR"\r\nversion = "2.3.1"\r\n[tool.maturin]\r\n', "2.3.1"),          # a CRLF checkout
     ('[project]\nversion = "2.4.0"  # set by the release workflow\n[tool.maturin]\nversion = "9"\n', "2.4.0"),
     ("[project]\nversion = '2.4.1'\n", "2.4.1"),
 ])
@@ -684,6 +700,16 @@ def test_the_declared_version_is_read_from_the_project_table(text, expected):
 def test_an_undeclared_version_fails_with_a_clear_message(text, message):
     with pytest.raises(pytest.fail.Exception, match=re.escape(message)):
         declared_version(text)
+
+
+def test_a_crlf_checkout_of_pyproject_declares_the_same_version(tmp_path):
+    pyproject = REPO / "pyproject.toml"
+    if not pyproject.is_file():
+        pytest.skip("no checkout pyproject.toml")
+    text = pyproject.read_bytes().decode("utf-8").replace("\r\n", "\n")
+    copy = tmp_path / "pyproject.toml"
+    copy.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+    assert declared_version(copy.read_bytes().decode("utf-8")) == declared_version(text)
 
 
 def test_the_packaged_dossier_was_generated_by_the_version_this_checkout_declares(starter):
@@ -706,6 +732,7 @@ def test_the_packaged_archive_and_its_sources_are_checked_out_byte_for_byte_on_e
              if line.strip() and not line.startswith("#")]
     assert ["src/GenAIRR/data/published_references/*.zip", "-text", "-diff"] in rules
     assert ["tests/data/reference_sources/**", "-text"] in rules       # exports, statements and the recipe
+    assert ["tests/data/IGHV.fasta", "-text"] in rules                 # the IMGT set whose digest is pinned
 
 
 # ── installation conditions ──────────────────────────────────────────
