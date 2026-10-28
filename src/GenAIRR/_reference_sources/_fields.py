@@ -67,6 +67,12 @@ def show(value: Any) -> str:
     return text if len(text) <= _SHOW else text[:_SHOW - 3] + "..."
 
 
+def short_digest(value: Any) -> str:
+    """A digest shortened for display: its algorithm and first 12 hex digits."""
+    text = str(value)
+    return text[:19] + "..." if len(text) > 19 else text
+
+
 def ptr(path: str, token: Any) -> str:
     """Append one JSON-pointer token (escaping ``~`` and ``/``)."""
     return path + "/" + str(token).replace("~", "~0").replace("/", "~1")

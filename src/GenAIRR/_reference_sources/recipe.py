@@ -14,7 +14,7 @@ from typing import Optional
 
 from GenAIRR._reference.capabilities import CAPABILITIES
 from GenAIRR._reference_sources._fields import (
-    MAX_NAME, MAX_REFS, MAX_TEXT, bad, check_date, check_digest, check_enum, check_instance, check_label,
+    short_digest, MAX_NAME, MAX_REFS, MAX_TEXT, bad, check_date, check_digest, check_enum, check_instance, check_label,
     check_text, check_token, check_tuple, check_unique, construct, parse_array, parse_json, ptr, read_json,
     require_object, check_header,
 )
@@ -232,6 +232,16 @@ class Recipe:
                 if claim in decided:
                     raise bad("/decisions", f"claim {claim} is decided by decisions {decided[claim]} and {i}")
                 decided[claim] = i
+
+    def __repr__(self) -> str:
+        segments = {}
+        for entry in self.selection:
+            segments[entry.segment] = segments.get(entry.segment, 0) + 1
+        counted = ", ".join(f"{segment} {n}" for segment, n in segments.items())
+        version = f" version {self.reference.version}" if self.reference.version else ""
+        return (f"<Recipe {self.reference.name[:80]!r}{version}: {len(self.selection)} selected ({counted}), "
+                f"{len(self.decisions)} decisions, {len(self.requires)} requirements; lock "
+                f"{short_digest(self.source_lock_hash)}>")
 
     def to_dict(self) -> dict:
         return {"artifact": ARTIFACT, "schema_version": SCHEMA_VERSION, "source_lock_hash": self.source_lock_hash,

@@ -29,7 +29,7 @@ from typing import Any, Optional
 from GenAIRR._reference.capabilities import CAPABILITIES
 from GenAIRR._reference.model import PREDICATES as _RUNTIME_MODEL_PREDICATES, SUBREGION_LABELS, sequence_digest
 from GenAIRR._reference_sources._fields import (
-    MAX_SOURCE_RECORDS, MAX_NAME, MAX_REFS, MAX_SEQUENCE, MAX_TAXONOMY_ID, MAX_TEXT, JsonValue, bad, check_bool,
+    short_digest, MAX_SOURCE_RECORDS, MAX_NAME, MAX_REFS, MAX_SEQUENCE, MAX_TAXONOMY_ID, MAX_TEXT, JsonValue, bad, check_bool,
     check_canonical_order, check_digest, check_enum, check_instance, check_int, check_label, check_text,
     check_token, check_tuple, construct, digest, parse_array, parse_json, ptr, read_json, require_object,
     check_header, show,
@@ -1123,6 +1123,11 @@ class SourceInventory:
                             elif isinstance(entry, Mention):
                                 for part in ("record", "locator"):
                                     yield ptr(ptr(ptr(ptr(base, key), j), part), "asset"), getattr(entry, part).asset
+
+    def __repr__(self) -> str:
+        return (f"<SourceInventory of lock {short_digest(self.source_lock_hash)}: {len(self.records)} records, "
+                f"{len(self.candidates)} candidates, {len(self.mentioned_identities)} mentioned-only identities, "
+                f"{len(self.claims)} claims, {len(self.mappings)} mappings, {len(self.findings)} findings>")
 
     def to_dict(self) -> dict:
         d = {"artifact": ARTIFACT, "schema_version": SCHEMA_VERSION, "source_lock_hash": self.source_lock_hash,

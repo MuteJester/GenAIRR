@@ -17,7 +17,7 @@ from typing import Mapping
 
 from GenAIRR._artifact_io import ArtifactIOError, canonical_json, write_atomic
 from GenAIRR._reference_sources import evidence, ogrdb
-from GenAIRR._reference_sources._fields import read_json
+from GenAIRR._reference_sources._fields import read_json, short_digest
 from GenAIRR._reference_sources.acquisition import (
     DATA_TERMS_FORMATS, AcquiredSource, HttpsTransport, Transport, fetch_source, ingest_files, read_locked,
 )
@@ -148,7 +148,10 @@ class SourceInspection:
 
     def __repr__(self) -> str:
         d = self.to_dict()
-        return f"<SourceInspection {d['provider']} {d['set_id']} release {d['release']} {d['lock_hash']}>"
+        scope = "in scope" if d["scope"]["in_scope"] else "out of scope"
+        comparison = "complete" if d["comparison"]["complete"] else "incomplete"
+        return (f"<SourceInspection {d['provider']} {d['set_id']} release {d['release']}: {len(d['records'])} records, "
+                f"{scope}, comparison {comparison}; lock {short_digest(d['lock_hash'])}>")
 
     def __str__(self) -> str:
         d = self.to_dict()
@@ -230,7 +233,8 @@ class OgrdbSource:
         return self
 
     def __repr__(self) -> str:
-        return f"<OgrdbSource {self.set_id} release {self.release} ({self.profile}) {self._lock.commitment}>"
+        return (f"<OgrdbSource {self.set_id} release {self.release} ({self.profile}): {len(self._lock.assets)} "
+                f"assets; lock {short_digest(self._lock.commitment)}>")
 
     @classmethod
     def _of(cls, acquired: AcquiredSource) -> "OgrdbSource":

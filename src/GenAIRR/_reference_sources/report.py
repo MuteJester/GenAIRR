@@ -22,7 +22,7 @@ from typing import Optional
 from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference.capabilities import CAPABILITIES
 from GenAIRR._reference_sources._fields import (
-    closed, digest, MAX_NAME, MAX_TEXT, bad, check_bool, check_canonical_order, check_digest, check_enum, check_instance,
+    short_digest, closed, digest, MAX_NAME, MAX_TEXT, bad, check_bool, check_canonical_order, check_digest, check_enum, check_instance,
     check_int, check_text, check_token, check_tuple, construct, parse_array, parse_json, ptr, read_json,
     require_object, check_header,
 )
@@ -612,6 +612,13 @@ class BuildReport:
         return "\n".join(_Text(self).lines())
 
     # -- serialization -------------------------------------------------
+
+    def __repr__(self) -> str:
+        lock, outcomes = self.source_lock, self.counts.record_outcomes
+        return (f"<BuildReport {lock.provider} {lock.set_id} release {lock.release}: {outcomes.selected} selected of "
+                f"{len(self.records)} records, {len(self.claims)} claims; runtime execution "
+                f"{short_digest(self.runtime.execution_hash)}; generator {self.generator.name} "
+                f"{self.generator.version}>")
 
     def to_dict(self) -> dict:
         return {"artifact": ARTIFACT, "schema_version": SCHEMA_VERSION, "generator": self.generator.to_dict(),

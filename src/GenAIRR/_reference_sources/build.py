@@ -25,7 +25,7 @@ from GenAIRR._reference.importer import FASTA_MAX_BYTES
 from GenAIRR._reference.sidecar import MAX_BYTES as SIDECAR_MAX_BYTES
 from GenAIRR._reference_sources import bundled
 from GenAIRR._reference_sources._fields import (
-    MAX_ASSET_BYTES, MAX_ASSETS, bad, parse_json, ptr, require_type, show,
+    MAX_ASSET_BYTES, MAX_ASSETS, bad, parse_json, ptr, require_type, short_digest, show,
 )
 from GenAIRR._reference_sources.digests import manifest_hash, recipe_hash, remember_report_hash, report_hash
 from GenAIRR._reference_sources.errors import ReferenceSourceError
@@ -359,8 +359,9 @@ class ReferenceBuild:
 
     def __repr__(self) -> str:
         lock = self._lock
-        return (f"<ReferenceBuild {self._reference.name!r} from {lock.provider} {lock.set_id} release "
-                f"{lock.release} {self._reference.execution_hash}>")
+        return (f"<ReferenceBuild {self._reference.name[:80]!r} from {lock.provider} {lock.set_id} release "
+                f"{lock.release}: {len(self._reference.alleles)} alleles; execution "
+                f"{short_digest(self._reference.execution_hash)}>")
 
     @classmethod
     def _create(cls, *, lock: SourceLock, recipe: Recipe, assets: Mapping[str, bytes], inputs: Mapping[str, bytes],

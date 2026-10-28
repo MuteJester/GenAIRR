@@ -926,3 +926,32 @@ def test_the_report_text_opens_with_a_short_summary(igh_starter):
     assert all(code in block for code in LOSS_CODES)
     assert "full report follows" in block
     assert lines.index("Summary") < next(i for i, line in enumerate(lines) if line.startswith("Hashes"))
+
+
+# ── compact representations ──────────────────────────────────────────
+
+
+def test_every_source_object_has_a_short_deterministic_repr(igl_build):
+    from GenAIRR._reference_sources.inventory import SourceInventory
+    from GenAIRR._reference_sources.lock import SourceLock
+    from GenAIRR._reference_sources.manifest import BuildManifest
+    from GenAIRR._reference_sources.report import BuildReport
+    source, build = igl_build
+    report = build.report
+    again = BuildReport.from_dict(json.loads(json.dumps(report.to_dict())))
+    objects = {"BuildReport": (report, again),
+               "SourceInventory": (report.inventory, again.inventory),
+               "Recipe": (build.recipe, m.Recipe.from_dict(build.recipe.to_dict())),
+               "SourceLock": (build.lock, SourceLock.from_dict(build.lock.to_dict())),
+               "BuildManifest": (build.manifest, BuildManifest.from_dict(build.manifest.to_dict())),
+               "SourceInspection": (source.inspect(), source.inspect()),
+               "ReferenceBuild": (build, build),
+               "OgrdbSource": (source, source)}
+    for kind, (one, other) in objects.items():
+        text = repr(one)
+        assert text.startswith(f"<{kind} ") and text.endswith(">"), text
+        assert len(text) <= 300, (kind, len(text))
+        assert repr(other) == text and one == other, kind
+    assert "9606.IGLambda_VJ release 4" in repr(report) and "9606.IGLambda_VJ release 4" in repr(build.lock)
+    assert f"{len(report.inventory.records)} records" in repr(report.inventory)
+    assert "2 selected" in repr(build.recipe)

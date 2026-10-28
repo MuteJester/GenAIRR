@@ -15,7 +15,7 @@ import re
 from GenAIRR._reference.artifact import SCHEMA_VERSION as REFERENCE_SCHEMA_VERSION
 from GenAIRR._reference.sidecar import SCHEMA_VERSION as ANNOTATIONS_SCHEMA_VERSION
 from GenAIRR._reference_sources._fields import (
-    closed, require_type, bad, check_canonical_order, check_digest, check_instance, check_int, check_member_path, check_tuple,
+    short_digest, closed, require_type, bad, check_canonical_order, check_digest, check_instance, check_int, check_member_path, check_tuple,
     construct, parse_array, parse_json, ptr, read_json, require_object, check_header,
 )
 from GenAIRR._reference_sources.common import AdapterRef, Generator, ProjectionRef, RuntimeHashes
@@ -164,6 +164,10 @@ class BuildManifest:
             if member.name == name:
                 return member
         raise KeyError(name)
+
+    def __repr__(self) -> str:
+        return (f"<BuildManifest by {self.builder.name} {self.builder.version}: {len(self.members)} members; report "
+                f"{short_digest(self.hashes.report)}; runtime execution {short_digest(self.runtime.execution_hash)}>")
 
     def to_dict(self) -> dict:
         return {"artifact": ARTIFACT, "schema_version": SCHEMA_VERSION, "builder": self.builder.to_dict(),

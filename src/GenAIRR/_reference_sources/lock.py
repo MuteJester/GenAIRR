@@ -14,7 +14,7 @@ import re
 from typing import Optional
 
 from GenAIRR._reference_sources._fields import (
-    MAX_ASSET_BYTES, MAX_ASSETS, MAX_SOURCE_PAYLOAD_BYTES, MAX_TEXT, MAX_RELEASE, bad, check_canonical_order, check_digest, check_enum, check_instance, check_int,
+    short_digest, MAX_ASSET_BYTES, MAX_ASSETS, MAX_SOURCE_PAYLOAD_BYTES, MAX_TEXT, MAX_RELEASE, bad, check_canonical_order, check_digest, check_enum, check_instance, check_int,
     check_text, check_token, check_tuple, check_url, construct, digest, parse_array, parse_json, ptr,
     read_json, require_object, check_header,
 )
@@ -257,6 +257,10 @@ class SourceLock:
         """Every field the commitment covers (all but ``commitment``)."""
         return _body(self.provider, self.set_id, self.release, self.identity, self.adapter, self.assets,
                      self.missing_assets, self.terms)
+
+    def __repr__(self) -> str:
+        return (f"<SourceLock {self.provider} {self.set_id} release {self.release}: {len(self.assets)} assets, "
+                f"{len(self.missing_assets)} missing; terms {self.terms.status}; {short_digest(self.commitment)}>")
 
     def to_dict(self) -> dict:
         d = self.body()
