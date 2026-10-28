@@ -888,8 +888,8 @@ def test_an_unmet_requirement_groups_its_blockers_in_a_bounded_message(igh_start
     selected = {segment: len(labels) for segment, labels in SELECTION["selected"].items()}
     blockers = selected["V"] + selected["J"] + 2 * selected["D"]                   # V 3', J 5', both D ends
     named = re.findall(r"\b[VDJ]:IGH[VDJ][^\s,;)]*", exc.message)
-    shown = re.search(r"\.\.\. and (\d+) more", exc.message)
-    assert len(named) + (int(shown.group(1)) if shown else 0) == blockers
+    more = sum(int(n) for n in re.findall(r"\.\.\. and (\d+) more", exc.message))
+    assert len(named) + more == blockers
     alleles = {f"{segment}:{label}" for segment, labels in SELECTION["selected"].items() for label in labels}
     assert set(named) <= alleles                       # a D allele blocks both coding ends, so it can appear twice
     groups = [int(n) for n in re.findall(r"unmet for (\d+) alleles", exc.message)]
@@ -949,3 +949,45 @@ def test_every_source_object_has_a_short_deterministic_repr(igl_build):
     assert "9606.IGLambda_VJ release 4" in repr(report) and "9606.IGLambda_VJ release 4" in repr(build.lock)
     assert f"{len(report.inventory.records)} records" in repr(report.inventory)
     assert "2 selected" in repr(build.recipe)
+
+
+def unmet_parts(message: str) -> dict:
+    """``{capability: (blockers by group counts, named alleles, alleles counted as not shown)}`` of a
+    capability error, one entry per unmet requirement."""
+    import re
+    lead, _, rest = message.partition(" are not met: ")
+    parts = {}
+    for part in rest.split(" | "):
+        capability = re.search(r"required capability (\S+) at evidence", part).group(1)
+        parts[capability] = (sum(int(n) for n in re.findall(r"unmet for (\d+) alleles", part)),
+                             len(re.findall(r"\b[VDJ]:IGH[VDJ][^\s,;)]*", part)),
+                             sum(int(n) for n in re.findall(r"\.\.\. and (\d+) more", part)))
+    return parts
+
+
+def starter_blockers() -> dict:
+    selected = {segment: len(labels) for segment, labels in SELECTION["selected"].items()}
+    return {"original_coding_ends": selected["V"] + selected["J"] + 2 * selected["D"],      # V 3', J 5', both D ends
+            "complete_reference_span": 2 * sum(selected.values()),                          # both ends of every allele
+            "genotype_constrained": 0, "duplex_family_replay": 0}
+
+
+@pytest.mark.parametrize("extra", [("original_coding_ends", "complete_reference_span"),
+                                   ("original_coding_ends", "complete_reference_span", "genotype_constrained"),
+                                   ("duplex_family_replay", "original_coding_ends")])
+def test_every_unmet_requirement_is_named_and_counted_in_a_bounded_message(igh_starter, tmp_path, extra):
+    build, _ = igh_starter
+    document = build.recipe.to_dict()
+    first = len(document["requires"])
+    document["requires"] += [{"capability": capability, "evidence": "assertion"} for capability in extra]
+    exc = error("capability", from_files(tmp_path, IGH).build, document)
+    assert exc.path == f"/requires/{first}" and len(exc.message) <= 4096
+    assert exc.message.startswith(f"{len(extra)} of {len(document['requires'])} required capabilities are not met: ")
+    parts, blockers = unmet_parts(exc.message), starter_blockers()
+    assert list(parts) == list(extra)
+    for capability, (grouped, named, more) in parts.items():
+        assert grouped == blockers[capability] == named + more, capability
+        assert f"/requires/{first + extra.index(capability)}: required capability {capability}" in exc.message
+    for capability in ("genotype_constrained", "duplex_family_replay"):
+        if capability in extra:
+            assert "not yet supported for portable references" in exc.message

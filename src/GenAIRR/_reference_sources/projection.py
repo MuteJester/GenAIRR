@@ -723,41 +723,53 @@ _MAX_CAPABILITY_MESSAGE = MAX_TEXT
 def _check_requirements(recipe: Recipe, capabilities) -> None:
     """Each recipe requirement is satisfied by the built reference's capabilities: available at an
     evidence level at least the required one.  One error names every unmet requirement (the report
-    is not returned on failure); its path is the first unmet one.  Blockers sharing a requirement
-    and a hint are listed together, and the message is bounded: alleles beyond the bound are
-    counted in an explicit "... and N more" marker."""
-    pieces, first, count = [], None, 0          # (text, allele) pieces; allele pieces can be left out
+    is not returned on failure); its path is the first unmet one.
+
+    Every unmet requirement and every group of its blockers (those sharing a requirement and a
+    hint) is always stated, with the group's count; there are at most as many requirements as
+    capabilities.  Only the alleles of each group are bounded: the groups share what is left of
+    the message's budget, and each group ends with its own "... and N more" marker when it names
+    fewer alleles than it counts.
+    """
+    unmet = []                                  # (index, header, [(group header, alleles)])
     for i, requirement in enumerate(recipe.requires):
         if requirement.capability in capabilities.available(evidence=requirement.evidence):
             continue
-        first = i if first is None else first
-        count += 1
         status = capabilities.status(requirement.capability)
-        text = (f"{' | ' if count > 1 else ''}{ptr('/requires', i)}: required capability {requirement.capability} at "
-                f"evidence {requirement.evidence} is not available on the built reference")
+        header = (f"{ptr('/requires', i)}: required capability {requirement.capability} at evidence "
+                  f"{requirement.evidence} is not available on the built reference")
         if status.available:
-            text += f"; it is available only at evidence {status.evidence}"
+            header += f"; it is available only at evidence {status.evidence}"
         if status.note:
-            text += f"; {status.note}"
-        pieces.append((text, None))
+            header += f"; {status.note}"
         groups: dict = {}
-        for unmet in status.unmet:
-            groups.setdefault((unmet.requirement, unmet.hint), []).append(unmet.allele)
-        for (needed, hint), alleles in groups.items():
-            pieces.append((f"; unmet for {len(alleles)} alleles: {needed} (resolved by: {hint}): ", None))
-            pieces.extend((("" if n == 0 else ", ") + allele, allele) for n, allele in enumerate(alleles))
-    if first is None:
+        for blocker in status.unmet:
+            groups.setdefault((blocker.requirement, blocker.hint), []).append(blocker.allele)
+        unmet.append((i, header, [(f"unmet for {len(alleles)} alleles: {needed} (resolved by: {hint})", alleles)
+                                  for (needed, hint), alleles in groups.items()]))
+    if not unmet:
         return
-    message = f"{count} of {len(recipe.requires)} required capabilities are not met: "
-    names = [allele for _, allele in pieces if allele is not None]
-    shown = 0
-    for text, allele in pieces:
-        if len(message) + len(text) > _MAX_CAPABILITY_MESSAGE - 120:
-            message += f" ... and {len(names) - shown} more not shown (the message is bounded)"
-            break
-        message += text
-        shown += allele is not None
-    raise bad(ptr("/requires", first), message, "capability")
+    lead = f"{len(unmet)} of {len(recipe.requires)} required capabilities are not met: "
+    marker = " ... and {} more not shown (the message is bounded)"
+    fixed = len(lead) + sum(len(header) + 3 + sum(len(group) + 2 + len(marker) + 8 for group, _ in groups)
+                            for _, header, groups in unmet)
+    count = sum(len(groups) for _, _, groups in unmet)
+    budget = max(0, (_MAX_CAPABILITY_MESSAGE - fixed) // count) if count else 0
+    parts = []
+    for _, header, groups in unmet:
+        text = header
+        for group, alleles in groups:
+            named, used = [], 0
+            for allele in alleles:
+                if used + len(allele) + 2 > budget:
+                    break
+                named.append(allele)
+                used += len(allele) + 2
+            text += f"; {group}: {', '.join(named)}"
+            if len(named) < len(alleles):
+                text += marker.format(len(alleles) - len(named))
+        parts.append(text)
+    raise bad(ptr("/requires", unmet[0][0]), lead + " | ".join(parts), "capability")
 
 
 # ── the entry point ──────────────────────────────────────────────────
