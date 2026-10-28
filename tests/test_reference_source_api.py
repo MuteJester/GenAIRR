@@ -991,3 +991,23 @@ def test_every_unmet_requirement_is_named_and_counted_in_a_bounded_message(igh_s
     for capability in ("genotype_constrained", "duplex_family_replay"):
         if capability in extra:
             assert "not yet supported for portable references" in exc.message
+
+
+@pytest.mark.parametrize("existing, cause", [
+    (False, OSError(5, "simulated: the directory could not be synced")),     # published, then failed
+    (True, PermissionError(13, "simulated: the directory is not writable")),    # the lock exists, but that is not it
+])
+def test_a_lock_write_failure_reports_its_real_cause(tmp_path, monkeypatch, existing, cause):
+    from GenAIRR._artifact_io import ArtifactIOError
+    source = from_files(tmp_path)
+    path = tmp_path / "one.lock.json"
+    if existing:
+        source.write_lock(path)
+
+    def failing(target, data, *, replace):
+        pathlib.Path(target).write_bytes(data)
+        raise ArtifactIOError("io", str(cause)) from cause
+
+    monkeypatch.setattr(api, "write_atomic", failing)
+    exc = error("io", source.write_lock, path)
+    assert "simulated" in exc.message and "the lock file exists" not in exc.message

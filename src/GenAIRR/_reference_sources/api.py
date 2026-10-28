@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+import errno
 import json
 import os
 from types import MappingProxyType
@@ -70,6 +71,17 @@ def _parse_recipe(recipe) -> tuple:
         return Recipe.from_dict(read_json(recipe, max_bytes=MAX_RECIPE_BYTES)), recipe
     except ReferenceSourceError as exc:
         raise _named(exc, recipe) from None
+
+
+def _caused_by_an_existing_file(exc: BaseException) -> bool:
+    """Whether an existing file (``FileExistsError`` or ``EEXIST``) is in the exception's chain."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, FileExistsError) or getattr(exc, "errno", None) == errno.EEXIST:
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
 
 
 def _relocated(exc: ReferenceSourceError, old: str, new: str) -> ReferenceSourceError:
@@ -338,7 +350,7 @@ class OgrdbSource:
         try:
             write_atomic(path, document_bytes(self._lock.to_dict()), replace=replace)
         except ArtifactIOError as exc:
-            if not replace and os.path.lexists(path):
+            if not replace and _caused_by_an_existing_file(exc):
                 raise ReferenceSourceError("io", "", f"cannot write the source lock to {path}: the lock file exists; "
                                                      "pass replace=True to replace it") from exc
             raise ReferenceSourceError("io", "", f"cannot write the source lock to {path}: {exc}") from exc
