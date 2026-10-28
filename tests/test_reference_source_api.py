@@ -284,12 +284,13 @@ def test_fetch_downloads_exactly_the_requested_formats(tmp_path, monkeypatch):
     assert [r.origin for r in source.receipts] == ["provider_download"] * len(ALL)
 
 
-def test_fetch_defaults_to_both_record_exports(tmp_path, monkeypatch):
+def test_fetch_defaults_to_every_validated_export(tmp_path, monkeypatch):
+    """Without the gapped exports no V junction anchor can be accepted, so the default asks for all four."""
     transport = fake(monkeypatch, serve(IGL))
     source = OgrdbSource.fetch(set_id=IGL[0], release=IGL[1], profile=PROFILE, cache=tmp_path / "cache")
-    assert transport.urls == [provider_url(IGL, "airr"), provider_url(IGL, "airr_ex")]
-    assert [(x.format, x.reason) for x in source.lock.missing_assets] == [
-        ("gapped", "not_requested"), ("gapped_ex", "not_requested")]
+    assert transport.urls == [provider_url(IGL, fmt) for fmt in ("airr", "airr_ex", "gapped", "gapped_ex")]
+    assert source.lock.asset_ids == ("airr", "airr_ex", "gapped", "gapped_ex")
+    assert source.lock.missing_assets == ()
 
 
 @pytest.mark.parametrize("override, kind, path", [

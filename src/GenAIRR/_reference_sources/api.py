@@ -240,14 +240,15 @@ class OgrdbSource:
     # Acquisition -------------------------------------------------------
 
     @classmethod
-    def fetch(cls, *, set_id: str, release: int, profile: str, cache, formats=("airr", "airr_ex"),
-              expected_lock=None) -> "OgrdbSource":
+    def fetch(cls, *, set_id: str, release: int, profile: str, cache,
+              formats=("airr", "airr_ex", "gapped", "gapped_ex"), expected_lock=None) -> "OgrdbSource":
         """Download the requested exports of one explicit set release and lock their bytes.
 
         ``release`` is an explicit positive integer (never ``"latest"``); ``profile`` is a known
         interpretation profile id, such as ``"ogrdb_api_v2_human_ig_observed_v1"``; ``formats``
-        lists exports among ``airr``, ``airr_ex``, ``gapped`` and ``gapped_ex``; ``cache`` is the
-        content-addressed blob directory.  This is the only operation that uses the network: one
+        lists exports among ``airr``, ``airr_ex``, ``gapped`` and ``gapped_ex``, by default all
+        four: a build compares both record exports, and V junction anchors are accepted only when
+        bound to the gapped exports; ``cache`` is the content-addressed blob directory.  This is the only operation that uses the network: one
         HTTPS request per format to the generated OGRDB endpoint, at most three redirects on the
         same origin, bounded sizes and a deadline, no automatic retries.
 
