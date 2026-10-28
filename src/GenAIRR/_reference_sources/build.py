@@ -597,6 +597,8 @@ class ReferenceBuild:
         try:
             projection = project(lock, assets, recipe)
         except ReferenceSourceError as exc:
+            if exc.kind == "io":            # the environment (a private temporary directory), not the dossier
+                raise
             raise _regeneration_failed(exc, lock) from None
         regenerated = projection.inputs
         for name in _input_names(lock):

@@ -1701,3 +1701,11 @@ def test_regeneration_errors_are_rooted_at_a_dossier_member(mini, monkeypatch, k
     monkeypatch.setattr(build_module, "project", failing)
     exc = error(kind, ReferenceBuild.read_dossier, dossier)
     assert exc.path == rooted and "do not regenerate" in exc.message
+
+
+def test_an_environment_failure_while_checking_is_not_blamed_on_the_dossier(mini, monkeypatch):
+    _, dossier = mini
+    failing_temporary_directory(monkeypatch, create=True)
+    exc = error("io", ReferenceBuild.read_dossier, dossier)
+    assert exc.path == "" and "temporary directory" in exc.message
+    assert "do not regenerate" not in exc.message and "dossier's lock" not in exc.message
