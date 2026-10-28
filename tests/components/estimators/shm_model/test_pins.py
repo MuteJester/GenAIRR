@@ -365,7 +365,7 @@ def test_pin_scaffold_performance_baseline_file_exists() -> None:
     covers SHM under realistic count / rate values. A future
     SHM-perf audit would extend it; this pin protects the
     file's existence."""
-    perf = _REPO_ROOT / "tests" / "test_performance_budgets.py"
+    perf = paths.tests_root() / "performance" / "test_performance_budgets.py"
     assert perf.exists(), (
         "performance baseline test file missing; SHM performance "
         "coverage regressed."
@@ -386,7 +386,7 @@ def test_pin_present_shm_metadata_in_cartridge_manifest() -> None:
 
     Flipped from ``pin_absence_no_shm_model_in_cartridge_manifest``
     when the Slice landed. Spec-driven behavioural coverage lives
-    in [`tests/test_cartridge_manifest_shm.py`](test_cartridge_manifest_shm.py);
+    in [`tests/components/cartridge/test_cartridge_manifest_shm.py`](test_cartridge_manifest_shm.py);
     this pin is the audit-doc lockstep counterpart.
 
     The companion ``pin_absence_no_s5f_kernel_in_content_hash``

@@ -4,7 +4,7 @@ Estimation v1** slice.
 Companion to
 [`docs/trim_distribution_estimation_design.md`](../docs/trim_distribution_estimation_design.md)
 and the contract pins in
-[`tests/test_trim_distribution_estimation_contract.py`](test_trim_distribution_estimation_contract.py).
+[`tests/components/estimators/trim_distribution/test_pins.py`](test_trim_distribution_estimation_contract.py).
 
 Covers the 12-test surface from the user brief:
 

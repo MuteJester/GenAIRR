@@ -127,8 +127,8 @@ def test_pin_present_to_paired_fastq_and_absence_of_single_end_alias() -> None:
     """The paired-end design's §11 deferred ``to_paired_fastq``
     to a follow-up slice; that slice has now landed via
     ``docs/fastq_export_design.md`` and is enforced by
-    [`tests/test_fastq_export_contract.py`](test_fastq_export_contract.py)
-    and [`tests/test_to_paired_fastq.py`](test_to_paired_fastq.py).
+    [`tests/components/result/test_fastq_export_contract.py`](test_fastq_export_contract.py)
+    and [`tests/components/result/test_to_paired_fastq.py`](test_to_paired_fastq.py).
     This pin captures the cross-audit lockstep: the
     paired-end-design absence pin flips to present, and the
     sibling ``.single_end`` DSL alias stays absent (the design

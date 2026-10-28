@@ -418,7 +418,7 @@ def test_pin_validate_records_stays_per_record_only() -> None:
     impossible but constructible by mutating returned dicts — is
     NOT caught by ``validate_records``. ``validate_families``
     catches it; that's covered in
-    [`tests/test_validate_families.py`](test_validate_families.py)."""
+    [`tests/components/clonal/test_validate_families.py`](test_validate_families.py)."""
     refdata = ga.Experiment.on("human_igh").compile().refdata
     result = (
         _make_clonal_experiment(n_clones=2, per_clone=3, with_mutate=False)
@@ -460,7 +460,7 @@ def test_pin_present_family_level_validator() -> None:
     family-layer slice landed: ``SimulationResult.validate_families``
     is present, and ``_validation`` exports
     ``FamilyValidationFailedError`` + the raise helper. See
-    [`tests/test_validate_families.py`](test_validate_families.py)
+    [`tests/components/clonal/test_validate_families.py`](test_validate_families.py)
     for the spec-driven behavioural coverage; this pin is the
     audit-doc lockstep counterpart."""
     assert hasattr(SimulationResult, "validate_families"), (

@@ -348,7 +348,7 @@ def test_pin_scaffold_receptor_revision_validator_issues_exist() -> None:
     a ``details.source`` field per the structured-issue convention;
     pin the source string here.
 
-    Bug D fix (see ``tests/test_receptor_revision_provenance_in_ir.py``)
+    Bug D fix (see ``tests/components/engine/receptor_revision/test_receptor_revision_provenance_in_ir.py``)
     moved receptor-revision provenance from the trace to the IR. The
     ``details.source`` flipped from
     ``trace:receptor_revision.applied`` / ``trace:sample_allele.v``

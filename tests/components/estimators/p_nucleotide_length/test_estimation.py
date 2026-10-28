@@ -4,7 +4,7 @@ Length Estimation v1** slice.
 Companion to
 [`docs/p_nucleotide_length_estimation_design.md`](../docs/p_nucleotide_length_estimation_design.md)
 and the contract pins in
-[`tests/test_p_nucleotide_length_estimation_contract.py`](test_p_nucleotide_length_estimation_contract.py).
+[`tests/components/estimators/p_nucleotide_length/test_pins.py`](test_p_nucleotide_length_estimation_contract.py).
 
 Covers the 14-test surface from the user brief:
 

@@ -65,19 +65,19 @@ P_LENGTHS = ("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length")
 
 # ── acceptance criteria and the tests that exercise them ─────────────
 
-_HERE = "tests/test_published_reference_acceptance.py::"
-_ACQ = "tests/test_reference_source_acquisition.py::"
-_API = "tests/test_reference_source_api.py::"
-_CACHE = "tests/test_reference_source_cache.py::"
-_DOSSIER = "tests/test_reference_source_dossier.py::"
-_FIXTURES = "tests/test_reference_source_fixtures.py::"
-_MODELS = "tests/test_reference_source_models.py::"
-_PROJECTION = "tests/test_reference_source_projection.py::"
-_COORDINATES = "tests/test_ogrdb_source_coordinates.py::"
-_EVIDENCE = "tests/test_ogrdb_source_evidence.py::"
-_INVENTORY = "tests/test_ogrdb_source_inventory.py::"
-_RESOURCES = "tests/test_published_reference_resources.py::"
-_EXPERIMENT = "tests/test_reference_experiment.py::"
+_HERE = "tests/acceptance/test_published_reference_acceptance.py::"
+_ACQ = "tests/components/reference_sources/test_reference_source_acquisition.py::"
+_API = "tests/components/reference_sources/test_reference_source_api.py::"
+_CACHE = "tests/components/reference_sources/test_reference_source_cache.py::"
+_DOSSIER = "tests/components/reference_sources/test_reference_source_dossier.py::"
+_FIXTURES = "tests/components/reference_sources/test_reference_source_fixtures.py::"
+_MODELS = "tests/components/reference_sources/test_reference_source_models.py::"
+_PROJECTION = "tests/components/reference_sources/test_reference_source_projection.py::"
+_COORDINATES = "tests/components/reference_sources/test_ogrdb_source_coordinates.py::"
+_EVIDENCE = "tests/components/reference_sources/test_ogrdb_source_evidence.py::"
+_INVENTORY = "tests/components/reference_sources/test_ogrdb_source_inventory.py::"
+_RESOURCES = "tests/components/reference/test_published_reference_resources.py::"
+_EXPERIMENT = "tests/components/reference/test_reference_experiment.py::"
 
 ACCEPTANCE = {
     "A01": ("Two clean acquisitions of identical bytes have equal source locks; receipt times never change a "
@@ -287,13 +287,13 @@ ACCEPTANCE = {
     # the tree from before published sources were added, so it is made outside the suite.
     "A28": ("Compatibility: the existing golden reference artifact loads unchanged, the human_igh alias is "
             "unchanged, and unsupported integrations still reject", (
-                "tests/test_reference_first_use_acceptance.py::test_golden_igh_artifact",
+                "tests/acceptance/test_reference_first_use_acceptance.py::test_golden_igh_artifact",
                 _RESOURCES + "test_loading_the_starter_leaves_the_human_igh_alias_unchanged",
                 _EXPERIMENT + "test_existing_inputs_unchanged_smoke",
                 _EXPERIMENT + "test_genotype_and_cohort_rejected_with_capability_error",
                 _EXPERIMENT + "test_curate_refdata_on_reference_rejected_at_the_call",
                 _EXPERIMENT + "test_family_replay_capture_with_reference_unsupported",
-                "tests/test_reference_capabilities.py::test_unsupported_capabilities_unavailable_with_note",
+                "tests/components/reference/test_reference_capabilities.py::test_unsupported_capabilities_unavailable_with_note",
                 _HERE + "test_workflows_portable_references_do_not_support_still_reject_the_bundled_starter")),
     # Only a fresh process with the optional packages blocked runs in this suite; installing the built
     # wheel into a fresh environment and running the starter there is a release check.

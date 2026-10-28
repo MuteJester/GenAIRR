@@ -66,3 +66,26 @@ def test_the_known_stale_record_does_not_rot():
     resolved = sorted(ref for ref in KNOWN_STALE if (REPO / ref).is_file())
     assert resolved == [], (
         f"these now exist and should be removed from KNOWN_STALE: {resolved}")
+
+
+def test_no_test_module_names_a_test_path_that_does_not_exist():
+    """A test module that names another module by path must name a real one.
+
+    Several modules carry such paths: acceptance criteria mapped to node ids,
+    pins asserting a companion file exists, audit-doc lockstep assertions.
+    Relocating a module leaves these pointing at nothing, and most of them are
+    not themselves asserted -- so the break stays silent until something else
+    reads one.
+    """
+    tests_root = paths.tests_root()
+    stale = {}
+    for module in sorted(tests_root.rglob("*.py")):
+        if "__pycache__" in module.parts:
+            continue
+        gone = sorted({m for m in TEST_PATH.findall(module.read_text(encoding="utf-8"))
+                       if not (REPO / m).is_file() and m not in KNOWN_STALE})
+        if gone:
+            stale[str(module.relative_to(tests_root))] = gone
+    assert stale == {}, (
+        "test modules naming test paths that do not exist:\n"
+        + "\n".join(f"  {mod}: {refs}" for mod, refs in sorted(stale.items())))

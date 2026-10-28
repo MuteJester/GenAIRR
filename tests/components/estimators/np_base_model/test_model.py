@@ -550,7 +550,7 @@ def test_markov_spec_lowers_and_runs_end_to_end() -> None:
     through ``MarkovBaseGenerator`` and produces records. The
     full conditional-sampling / replay / signature behaviour is
     pinned in
-    ``tests/test_np_markov_base_generator_implementation.py``;
+    ``tests/components/estimators/np_markov/test_generation.py``;
     this test just freezes that ``kind='markov'`` no longer
     raises at lowering time."""
     cfg = _cartridge_with_np_bases(

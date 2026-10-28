@@ -154,7 +154,7 @@ def test_pin_present_mutate_accepts_segment_rates() -> None:
     ``segment_rates: Optional[Dict[str, float]] = None`` kwarg.
     Flipped from ``pin_scaffold_mutate_signature_lacks_segment_rates_today``
     when the implementation slice landed. Spec-driven behavioural
-    coverage lives in [`tests/test_segment_rates_implementation.py`](test_segment_rates_implementation.py)."""
+    coverage lives in [`tests/components/estimators/segment_rates/test_estimation.py`](test_segment_rates_implementation.py)."""
     sig = inspect.signature(ga.Experiment.mutate)
     assert "segment_rates" in sig.parameters, (
         "Experiment.mutate.segment_rates regressed; Slice 1 backed out."

@@ -442,7 +442,7 @@ def test_pin_present_mkdocs_yml_landed_at_repo_root() -> None:
 
     The mkdocs.yml content + buildability is owned by the
     migration-contract test file
-    (`tests/test_docs_mkdocs_migration_contract.py`);
+    (`tests/acceptance/test_docs_mkdocs_migration_contract.py`);
     this pin is the lockstep flip on the docs-website-
     audit contract."""
     assert (_REPO_ROOT / "mkdocs.yml").is_file(), (

@@ -729,7 +729,7 @@ def test_paired_end_trace_replay_round_trip_passes_validator():
 # receptor revision / paired-end closed: a productive IGH full-stack
 # run with realistic kwargs + replay round-trip + the zero-rate
 # exclusion invariant. See ``docs/shm_segment_rate_design.md`` (audit)
-# and ``tests/test_segment_rates_implementation.py`` (slice spec
+# and ``tests/components/estimators/segment_rates/test_estimation.py`` (slice spec
 # tests).
 # ──────────────────────────────────────────────────────────────────
 
@@ -964,7 +964,7 @@ def test_segment_rates_zero_rate_exclusion_invariant_full_stack():
 # standard as targeted SHM: full-stack IGH + non-default
 # segment_rates + sum-invariant cross-check + corruption isolation.
 # See ``docs/mutation_provenance_audit.md`` for the architecture
-# contract and ``tests/test_per_segment_mutation_counters.py`` for
+# contract and ``tests/components/engine/mutation/test_per_segment_mutation_counters.py`` for
 # the slice spec tests.
 # ──────────────────────────────────────────────────────────────────
 
@@ -1224,7 +1224,7 @@ def test_v_subregion_annotation_release_sanity():
 # (segment_rates × v_subregion_rates) + AIRR validator + cache
 # parity + per-segment sum invariant + replay round-trip.
 # See ``docs/v_subregion_shm_rate_design.md`` for the architecture
-# contract and ``tests/test_v_subregion_rates_implementation.py``
+# contract and ``tests/components/estimators/v_subregion_rates/test_estimation.py``
 # for the per-spec implementation tests.
 # ──────────────────────────────────────────────────────────────────
 
@@ -1557,7 +1557,7 @@ def test_v_subregion_rates_zero_rate_exclusion_invariant_full_stack():
 # two-layer partition invariants. See
 # ``docs/v_subregion_mutation_counters_audit.md`` for the
 # architecture contract and
-# ``tests/test_v_subregion_mutation_counters_implementation.py``
+# ``tests/components/engine/mutation/v_subregion/test_counters.py``
 # for the per-spec implementation tests.
 # ──────────────────────────────────────────────────────────────────
 
@@ -1699,7 +1699,7 @@ def test_v_subregion_mutation_counters_full_stack_partition_and_validate():
 # end-to-end check: a productive IGH paired-end pipeline →
 # `to_paired_fastq` → readback two files → assert structural
 # invariants. The slice's spec tests live in
-# `tests/test_to_paired_fastq.py`; this is the
+# `tests/components/result/test_to_paired_fastq.py`; this is the
 # "did it survive the full stack" smoke. See
 # `docs/fastq_export_design.md`.
 # ──────────────────────────────────────────────────────────────────
@@ -1720,7 +1720,7 @@ def test_paired_fastq_export_full_stack_smoke(tmp_path):
        lengths** on every read (R1 and R2 scored independently).
 
     Smoke-tier only — the spec tests in
-    `tests/test_to_paired_fastq.py` cover the
+    `tests/components/result/test_to_paired_fastq.py` cover the
     error-path / overwrite / quality-model variants. This test
     confirms the export survives the same full-stack pipeline the
     other release-tier tests run.

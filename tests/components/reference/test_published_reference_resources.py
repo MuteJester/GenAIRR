@@ -390,7 +390,7 @@ def test_the_generator_writes_one_deterministic_stored_zip_of_the_dossier_member
         assert line in printed.splitlines(), line
     hint = printed.splitlines()[-1]                               # every pin a regeneration may move
     for pin in ("src/GenAIRR/_reference_sources/bundled.py", "MANIFEST_PIN", "ARCHIVE_PIN", "RUNTIME_PINS",
-                "LOCK_PIN", "tests/test_published_reference_resources.py"):
+                "LOCK_PIN", "tests/components/reference/test_published_reference_resources.py"):
         assert pin in hint, pin
     assert members["recipe.json"] == RECIPE_PATH.read_bytes()
     assert load_tool().archive(dict(reversed(list(members.items())))) == data       # the same bytes again

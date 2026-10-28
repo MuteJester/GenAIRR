@@ -4,7 +4,7 @@ Distribution Estimation v1** slice.
 Companion to
 [`docs/np_length_estimation_design.md`](../docs/np_length_estimation_design.md)
 and the contract pins in
-[`tests/test_np_length_estimation_contract.py`](test_np_length_estimation_contract.py).
+[`tests/components/estimators/np_length/test_pins.py`](test_np_length_estimation_contract.py).
 
 Covers the 12-test surface from the user brief:
 

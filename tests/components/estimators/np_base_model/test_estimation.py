@@ -4,7 +4,7 @@ Estimation v1** slice.
 Companion to
 [`docs/np_base_model_estimation_design.md`](../docs/np_base_model_estimation_design.md)
 and the contract pins in
-[`tests/test_np_base_model_estimation_contract.py`](test_np_base_model_estimation_contract.py).
+[`tests/components/estimators/np_base_model/test_pins.py`](test_np_base_model_estimation_contract.py).
 
 Covers the 15-test surface from the user brief:
 

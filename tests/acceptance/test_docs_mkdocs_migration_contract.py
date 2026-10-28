@@ -192,7 +192,7 @@ def test_pin_present_redirect_map_covers_every_readme_hosted_doc_url() -> None:
     README link would 404 after the Phase 6 cutover.
 
     The Slice 1 contract test
-    (`tests/test_docs_website_contract.py::test_pin_present_readme_hosted_doc_urls_resolve_to_live_website_pages`)
+    (`tests/acceptance/test_docs_website_contract.py::test_pin_present_readme_hosted_doc_urls_resolve_to_live_website_pages`)
     enforces filesystem-level coverage today; this pin
     extends the coverage to the migration plan."""
     readme_text = _README.read_text(encoding="utf-8")

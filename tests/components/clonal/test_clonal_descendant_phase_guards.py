@@ -28,7 +28,7 @@ Unguarded (left as a follow-up decision): ``contaminate(...)``.
 The recombination-/ancestor-phase guards from the previous slice
 (``invert_d``, ``receptor_revision``) stay method-level — they
 enforce the opposite direction (pre-fork only) and are tested
-separately in ``tests/test_clonal_dsl_ordering_guards.py``.
+separately in ``tests/components/clonal/test_clonal_dsl_ordering_guards.py``.
 
 Spec coverage (from the user brief):
 

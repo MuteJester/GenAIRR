@@ -326,7 +326,7 @@ def test_pin_present_per_segment_mutation_counters_in_record() -> None:
     ``pin_absence_no_per_segment_mutation_counters_in_record``.
 
     Spec-driven behavioural coverage lives in
-    [`tests/test_per_segment_mutation_counters.py`](test_per_segment_mutation_counters.py);
+    [`tests/components/engine/mutation/test_per_segment_mutation_counters.py`](test_per_segment_mutation_counters.py);
     this pin is the audit-doc lockstep counterpart. Per-NP1/NP2
     split stays deferred — the audit §13 out-of-scope pin
     documenting it remains as a separate test."""

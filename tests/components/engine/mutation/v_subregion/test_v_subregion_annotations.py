@@ -7,7 +7,7 @@ hashed, and exposed via the cartridge manifest. It does NOT
 introduce CDR/FR mutation counters, ``v_subregion_rates`` on
 ``Experiment.mutate``, or any SHM behaviour change; those gaps
 remain explicitly pinned by
-``tests/test_v_region_substructure_contract.py``.
+``tests/components/engine/mutation/v_subregion/test_substructure_pins.py``.
 
 Spec coverage (from the slice brief):
 

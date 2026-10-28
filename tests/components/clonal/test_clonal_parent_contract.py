@@ -9,7 +9,7 @@ is proposed here; this file is the baseline a future Slice 2
 (parent-outcome read-only surface) will land against.
 
 Sibling to
-[`tests/test_clonal_family_contract.py`](test_clonal_family_contract.py) —
+[`tests/components/clonal/test_clonal_family_contract.py`](test_clonal_family_contract.py) —
 that file pins the higher-level family / lineage architecture; this
 file zooms in on the **parent-outcome lifecycle** specifically.
 Some pins necessarily overlap (e.g. "no parent_id field"); we
@@ -422,7 +422,7 @@ def test_pin_present_parents_attr_on_clonal_result() -> None:
     ``pin_absence_no_parents_attr_on_simulation_result`` when the
     parent-outcome read-only surface landed.
 
-    See [`tests/test_parent_outcomes.py`](test_parent_outcomes.py)
+    See [`tests/components/clonal/test_parent_outcomes.py`](test_parent_outcomes.py)
     for the spec-driven behavioural coverage; this pin is the
     audit-doc lockstep counterpart."""
     assert hasattr(SimulationResult, "parents"), (
@@ -567,7 +567,7 @@ def test_pin_present_parent_aware_validator(monkeypatch) -> None:
     parent-aware validator landed.
 
     Spec-driven behavioural coverage lives in
-    [`tests/test_validate_families_with_parents.py`](test_validate_families_with_parents.py);
+    [`tests/components/clonal/test_validate_families_with_parents.py`](test_validate_families_with_parents.py);
     this pin is the audit-doc lockstep counterpart.
 
     Legacy runs keep the explicit diagnostic behavior from Slice 3.

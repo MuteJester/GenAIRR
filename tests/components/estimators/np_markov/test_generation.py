@@ -4,7 +4,7 @@ implementation slice.
 Companion to
 [`docs/np_markov_base_generator_design.md`](../docs/np_markov_base_generator_design.md)
 and the contract pin file
-[`tests/test_np_markov_base_generator_contract.py`](test_np_markov_base_generator_contract.py).
+[`tests/components/estimators/np_markov/test_pins.py`](test_np_markov_base_generator_contract.py).
 
 Mirrors the user's greenlight test surface:
 
@@ -23,7 +23,7 @@ Mirrors the user's greenlight test surface:
    removes it from ``deferred_kinds``.
 
 Legacy orphan pins live in
-``tests/test_np_base_model_implementation.py`` (the typed-NP-base
+``tests/components/estimators/np_base_model/test_model.py`` (the typed-NP-base
 slice already enforces them); the Markov slice does NOT enable
 auto-lift, so the orphan invariants ride unchanged.
 """
@@ -395,7 +395,7 @@ def test_manifest_lists_markov_as_supported() -> None:
     """Audit §11 — the manifest's ``supported_kinds`` list
     promotes ``markov`` to supported and empties
     ``deferred_kinds``. Mirrors the pin flip in
-    ``tests/test_np_markov_base_generator_contract.py`` so a
+    ``tests/components/estimators/np_markov/test_pins.py`` so a
     regression that splits the two paths surfaces here too."""
     m = ga.HUMAN_IGH_OGRDB.cartridge_manifest()
     nbm = m["models"]["np_base_models"]
