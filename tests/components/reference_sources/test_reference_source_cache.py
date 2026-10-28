@@ -20,8 +20,9 @@ from GenAIRR._reference_sources import cache as cache_module
 from GenAIRR._reference_sources.cache import BLOB_DIRECTORY, BlobCache, BlobRef, StagedBlob
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.model import MAX_ASSET_BYTES
+from tests.support import paths
 
-ROOT = pathlib.Path(__file__).resolve().parent / "data" / "reference_sources" / "ogrdb"
+ROOT = paths.data("reference_sources", "ogrdb")
 GAPPED = (ROOT / "9606.IGH_VDJ" / "10" / "gapped.fasta").read_bytes()
 GAPPED_SHA = "sha256:681db69932757bd09253cbef990a64959f8c8745e46f364bcb35963ea4f16a65"
 GAPPED_SIZE = 72614

@@ -18,8 +18,9 @@ import pytest
 from GenAIRR._artifact_io import canonical_json, strict_loads, typed_digest
 from GenAIRR._reference_sources.errors import KINDS, ReferenceSourceError
 from GenAIRR._reference_sources import model as m
+from tests.support import paths
 
-ROOT = Path(__file__).resolve().parent / "data" / "reference_sources"
+ROOT = paths.data("reference_sources")
 IGH = "9606.IGH_VDJ"
 ROLE = {"airr": "record_export", "airr_ex": "record_export", "gapped": "gapped_alignment",
         "gapped_ex": "gapped_alignment"}

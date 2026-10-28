@@ -17,8 +17,9 @@ from pathlib import Path
 import pytest
 
 from GenAIRR._reference.capabilities import CAPABILITIES
+from tests.support import paths
 
-ROOT = Path(__file__).resolve().parent / "data" / "reference_sources"
+ROOT = paths.data("reference_sources")
 SOURCES = json.loads((ROOT / "sources.json").read_bytes())
 EVIDENCE = json.loads((ROOT / "interpretation_evidence.json").read_bytes())
 EXPECT = json.loads((ROOT / "expectations.json").read_bytes())
