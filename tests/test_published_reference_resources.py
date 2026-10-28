@@ -734,7 +734,7 @@ BLOCKED = ("pandas", "numpy", "scipy", "graphviz", "tqdm", "fastmcp")
 def network_guard() -> str:
     """The offline guard of the dossier tests: an audit hook and patched socket functions that
     count and refuse every connection, datagram and name lookup, with positive controls."""
-    from tests.test_reference_source_dossier import OFFLINE_SCRIPT
+    from tests.support.fixtures.source_dossier import OFFLINE_SCRIPT
     guard = OFFLINE_SCRIPT[:OFFLINE_SCRIPT.index("from GenAIRR import Experiment")]
     assert "sys.addaudithook(_audit)" in guard and "CONTROL_ATTEMPTS" in guard
     return guard
