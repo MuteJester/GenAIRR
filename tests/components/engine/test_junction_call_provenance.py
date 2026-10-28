@@ -34,8 +34,6 @@ pytestmark = pytest.mark.behavior
 # ──────────────────────────────────────────────────────────────────
 
 
-
-
 def _vdj_basic() -> "ge.RefDataConfig":
     cfg = ge.RefDataConfig.vdj()
     cfg.add_v_allele("v1*01", "v1", b"AAACCCTGT", anchor=6)

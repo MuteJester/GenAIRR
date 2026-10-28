@@ -14,12 +14,6 @@ COMPLEMENT = str.maketrans("ACGT", "TGCA")
 STOPS = {"TAA", "TAG", "TGA"}
 
 
-
-
-
-
-
-
 def _project(outcome, refs):
     return project_duplex_simulation(outcome.final_simulation(), refs)
 

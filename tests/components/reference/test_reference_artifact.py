@@ -830,7 +830,6 @@ def test_recommitted_entities_relationships_and_genes_regenerated(tmp_path):
     assert err.path == "catalogue.alleles[0].gene"
 
 
-
 def test_paralog_between_executable_alleles_links_alleles_without_an_entity(tmp_path):
     from GenAIRR._reference.importer import regenerate
 

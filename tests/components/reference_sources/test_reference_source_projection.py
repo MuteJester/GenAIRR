@@ -46,16 +46,8 @@ SIDECAR_ALLELE_KEYS = {"segment", "label", "sequence_sha256", "gene", "functiona
 # ── helpers ──────────────────────────────────────────────────────────
 
 
-
-
 def raw_sha(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
-
-
-
-
-
-
 
 
 def build(lock, blobs, document):
@@ -72,8 +64,6 @@ def mini(monkeypatch, labels=MINI, **edits):
 
 def mini_recipe(blobs, lock, labels=MINI, fmt="airr", **kwargs) -> dict:
     return recipe(lock, [entry(blobs, fmt, label) for label in labels], **kwargs)
-
-
 
 
 def no_native(monkeypatch):
@@ -141,10 +131,6 @@ def claim_id(inventory, fmt, label, predicate) -> str:
 
 
 # ── the starter: human IGH release 10 ───────────────────────────────
-
-
-
-
 
 
 @pytest.fixture(scope="module")

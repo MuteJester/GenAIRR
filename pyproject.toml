@@ -126,9 +126,12 @@ markers = [
 ]
 
 [tool.ruff]
-# Scoped to the test suite: the package and the engine bindings are not part of
-# this work, and a repo-wide sweep would bury the signal.
-include = ["tests/**/*.py"]
+# Deliberately NOT scoped with `include`. An `include = ["tests/**/*.py"]` made
+# `ruff check src/` print "All checks passed!" having checked zero files, which
+# is worse than reporting nothing: the exit code and the message both say the
+# tree is clean. The rules the package does not yet satisfy are turned off for
+# it explicitly below, with their counts, so the exemption is visible in the
+# config rather than implied by a path filter.
 line-length = 110
 
 [tool.ruff.lint]
@@ -164,3 +167,17 @@ ignore = ["F841"]
 # used -- and a fixture's dependency chain resolves without having to be
 # imported alongside it.
 "tests/**/test_*.py" = ["F541"]
+# The package and the build tooling, measured at 129 findings under the rules
+# above. Enforcing them is a separate change, not a test-suite restructure:
+#
+#   F401 (80)  unused imports, largely re-exports in the public __init__ layer
+#   F821 (40)  every one a quoted forward reference in an Experiment mixin,
+#              e.g. `-> "ReferenceCartridgeBuilder"` where the class is not
+#              imported. Harmless at runtime -- a string annotation is never
+#              evaluated -- but typing.get_type_hints() raises on it and no
+#              type checker or IDE can resolve the return type. Worth its own
+#              pass; fixing it means deciding whether these mixins should
+#              import under TYPE_CHECKING or return a protocol.
+#   F541 (9)   f-strings with no placeholder
+"src/**/*.py" = ["F401", "F821", "F541"]
+"tools/**/*.py" = ["F401", "F821", "F541"]

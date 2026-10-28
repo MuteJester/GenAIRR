@@ -134,7 +134,6 @@ def test_write_atomic_skips_an_existing_temporary_name(tmp_path, monkeypatch):
     assert sorted(p.name for p in tmp_path.iterdir()) == [".out.json.taken.tmp", "out.json"]
 
 
-
 def test_package_sources_have_no_literal_byte_order_mark():
     # An invisible U+FEFF in source is easy to lose or duplicate; it is spelled as an escape.
     package = pathlib.Path(_artifact_io.__file__).parent

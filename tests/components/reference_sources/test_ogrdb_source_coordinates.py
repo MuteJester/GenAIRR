@@ -48,12 +48,6 @@ SET_KEYS = {"9606.IGH_VDJ/10": IGH, "9606.IGKappa_VJ/5": IGK, "9606.IGLambda_VJ/
 # ── helpers ──────────────────────────────────────────────────────────
 
 
-
-
-
-
-
-
 def imgt_cdr3_start(record) -> object:
     (delineation,) = [d for d in record["v_gene_delineations"] if d["delineation_scheme"] == "IMGT"]
     return delineation["cdr3_start"]
@@ -146,8 +140,6 @@ def test_the_profile_declares_the_constants_the_rules_use():
 def test_profile_landmark_residues():
     assert profiles.PROFILE.landmark_residues == {"V": {"IGH": ("C",), "IGK": ("C",), "IGL": ("C",)},
                                                   "J": {"IGH": ("W",), "IGK": ("F",), "IGL": ("F",)}}
-
-
 
 
 def test_the_note_oracle_finds_the_settled_set_of_span_limiting_notes():
@@ -549,32 +541,8 @@ def test_landmark_codons_translate_with_the_standard_code(codon, residue):
 J_CODONS = {"9606.IGH_VDJ": {"TGG"}, "9606.IGKappa_VJ": {"TTT", "TTC"}, "9606.IGLambda_VJ": {"TTT", "TTC"}}
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def labels_in(inventory, finding) -> set:
     return {inventory.record(s).label for s in finding.subjects if s.id in {r.id for r in inventory.records}}
-
-
-
-
-
-
-
-
-
-
 
 
 # ── J in the pinned exports ──────────────────────────────────────────
@@ -803,8 +771,6 @@ def test_without_gapped_exports_no_v_anchor_is_accepted():
 
 
 # ── V failures through the whole interpretation ──────────────────────
-
-
 
 
 def _set_cdr3(value):

@@ -51,8 +51,6 @@ def _vj() -> "ge.RefDataConfig":
     return cfg
 
 
-
-
 def _vj_recombine() -> "ga.Experiment":
     return (
         ga.Experiment.on(_vj()).allow_curatable_refdata()
@@ -62,8 +60,6 @@ def _vj_recombine() -> "ga.Experiment":
             j_5=[(L, 1.0) for L in range(5)],
         )
     )
-
-
 
 
 def _vdj_full_stack(*, canonical=False) -> "ga.Experiment":

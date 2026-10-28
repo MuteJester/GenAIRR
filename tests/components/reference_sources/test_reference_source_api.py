@@ -43,28 +43,6 @@ T1 = datetime.datetime(2026, 10, 28, 17, 30, 0, tzinfo=datetime.timezone.utc)
 # ── helpers ──────────────────────────────────────────────────────────
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 @pytest.fixture(scope="module")
 def igl_build(igl_two_allele_session):
     """A two-allele build over the complete pinned IGL release 4 exports (no scope patch)."""

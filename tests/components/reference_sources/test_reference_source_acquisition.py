@@ -43,12 +43,6 @@ PROFILE = "ogrdb_api_v2_human_ig_observed_v1"
 T0 = datetime.datetime(2026, 10, 27, 9, 30, tzinfo=datetime.timezone.utc)
 
 
-
-
-
-
-
-
 def _sha(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
@@ -90,23 +84,13 @@ def _temporaries(directory: pathlib.Path) -> list:
 # ── controlled transport ─────────────────────────────────────────────
 
 
-
-
-
-
 def redirect(location, status=302):
     return lambda: FakeResponse(status, b"", headers={"Location": location} if location else {})
-
-
 
 
 class FailingTransport:
     def get(self, url, *, timeout, deadline):
         pytest.fail(f"the transport was called for {url}")
-
-
-
-
 
 
 def fetch(tmp_path, transport, *, source=IGH, formats=ALL, cache="cache", **kwargs):

@@ -19,7 +19,9 @@ from __future__ import annotations
 import pytest
 
 from tests.biology.catalog import verifies
+from tests.support.asserts import records as record_asserts
 from tests.support.builders import experiment as experiment_builder
+from tests.support.strategies import experiments as experiment_strategies
 from tests.support.oracles import coordinates
 
 pytestmark = pytest.mark.behavior
@@ -204,3 +206,35 @@ def test_the_books_still_balance_once_edits_displace_the_coordinates(stack, buil
             perturbed += 1
     if stack != "reverse-complemented":
         assert perturbed > 0, f"{stack}: no record carried an indel, so the bound was never exercised"
+
+
+# ── the same identities, over drawn inputs ───────────────────────────────────
+
+hypothesis = pytest.importorskip("hypothesis")
+
+
+@hypothesis.settings(max_examples=25, deadline=None)
+@hypothesis.given(drawn=experiment_strategies.recombinations(max_sequences=2))
+def test_the_identities_hold_for_any_locus_and_seed(drawn):
+    """The parametrized tests above fix the seed, so they establish the
+    identities for the records those seeds happen to produce.
+
+    What makes a coordinate identity worth having is that it holds for every
+    rearrangement, not for twelve of them. A drawn locus and seed reach allele
+    pairings and trim combinations a fixed seed never will -- which is the
+    difference between an identity and a hundred and twenty observations.
+    """
+    locus, seed, count = drawn
+    exp = experiment_builder.recombined(locus=locus)
+    for record, lengths in _observed(exp, n=count, seed=seed):
+        found = coordinates.disagreements(record, lengths)
+        assert found == (), (
+            f"{locus} seed={seed}: {len(found)} coordinate disagreement(s); "
+            f"first: {found[0]}")
+        record_asserts.assert_field(
+            record, "v_trim_5", 0,
+            because="RAG cleaves only the RSS-adjacent coding end, so there is "
+                    "no 5' V exonuclease loss for any locus or seed")
+        record_asserts.assert_field(
+            record, "j_trim_3", 0,
+            because="the same, at the other end: no 3' J exonuclease loss")

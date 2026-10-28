@@ -11,8 +11,6 @@ from tests.support.fixtures.phased_anchors import _phased_fixture
 pytestmark = pytest.mark.behavior
 
 
-
-
 @pytest.mark.parametrize("strict", [False, True])
 @pytest.mark.parametrize("chromosome_weights", [(0.5, 0.5), (0, 1)])
 def test_productive_p_conditions_future_alleles_on_the_drawn_haplotype(
