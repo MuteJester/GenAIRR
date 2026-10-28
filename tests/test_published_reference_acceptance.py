@@ -988,6 +988,8 @@ def test_polymerase_indels_keep_every_alignment_edit_against_the_generating_alle
     assert sum(record["n_indels"] for record in result) > 300
     assert all(edits[(s, op)] > 0 for s in "VJ" for op in "ID"), edits
     assert shapes["intact"] >= 280 and set(shapes) <= {"intact", "landmark_codon_edited", "undefined"}
+    # This seed puts an indel inside a J landmark codon, so the junction end after such an edit is checked.
+    assert shapes["landmark_codon_edited"] >= 1, shapes
 
 
 # ── unknowns and unsupported workflows on the packaged starter ───────

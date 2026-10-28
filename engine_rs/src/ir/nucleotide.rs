@@ -87,7 +87,7 @@ pub mod flag {
     pub const P_NUC: NucFlags = NucFlags::from_bits(1 << 0);
     /// Nucleotide is an N-nucleotide (TdT-added at the junction).
     pub const N_NUC: NucFlags = NucFlags::from_bits(1 << 1);
-    /// Nucleotide sits inside the junction region (V Cys -> J W/F + 3).
+    /// Nucleotide sits inside the junction region (V Cys codon through J W/F codon).
     pub const JUNCTION: NucFlags = NucFlags::from_bits(1 << 2);
     /// Nucleotide came from a D segment that was inverted (RSS-symmetric
     /// V(D)J inversion event, biologically real for D segments only).

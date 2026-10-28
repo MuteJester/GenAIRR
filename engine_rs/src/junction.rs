@@ -1,4 +1,4 @@
-//! Junction — the virtual entity from V Cys to J W/F + 3.
+//! Junction — the virtual entity from the V Cys codon through the J W/F codon.
 //!
 //! ## What this is
 //!

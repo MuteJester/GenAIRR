@@ -63,10 +63,12 @@ All notable changes to GenAIRR are documented here.
 - When an indel falls inside the J Trp/Phe landmark codon, simulated records now
   end the junction one past the codon's last surviving base, read from each
   base's recorded germline position. Previously the end was the codon's first
-  base plus 3, so `junction`, `junction_aa`, `junction_length` and
-  `vj_in_frame` were off by the indel's length (about 0.5% of polymerase indel
-  events). Record validation now derives this end independently. `productive`
-  was already false for these records; native content hashes are unchanged.
+  base plus 3, so `junction_end`, `junction_length`, `junction` and
+  `junction_aa` were off by the indel's length, and `vj_in_frame` (with the
+  `vj_out_of_frame` productivity reason) could be wrong. This affected about 0.5%
+  of polymerase indel events. Record validation now derives this end
+  independently. `productive` was already false for these records, and
+  generated sequences are unchanged.
 - The DataConfig bridge no longer assigns IMGT FWR/CDR subregions to V alleles
   whose `gapped_seq` declares no IMGT gaps (e.g. ungapped FASTA). Explicit
   subregions and IMGT-gapped sequences are unchanged; all 106 bundled cartridges

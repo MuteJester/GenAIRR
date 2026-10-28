@@ -8,7 +8,7 @@ use crate::trace::ChoiceValue;
 
 use super::{Contract, ContractKind, ContractViolation};
 
-/// Verifies that the junction (V Cys → J W/F + 3) has a length
+/// Verifies that the junction (the V Cys codon through the J W/F codon) has a length
 /// divisible by 3 — i.e., the codon frame closes cleanly across
 /// the V/NP/D/NP/J junction.
 ///
@@ -220,7 +220,12 @@ impl Contract for ProductiveJunctionFrame {
             return IndelEventClass::FrameNeutral;
         };
         let v_start = junction.start.index();
-        let j_start = junction.end.index() - 3;
+        // The J anchor's own first base, from its recorded germline position: the junction
+        // end is one past the codon's last surviving base, so it is no anchor once an indel
+        // has edited the codon.
+        let Some(j_start) = refdata.and_then(|r| j_anchor_position(sim, r)) else {
+            return IndelEventClass::FrameNeutral;
+        };
         let changes_length = match kind {
             super::IndelKindHint::Insertion => site > v_start && site <= j_start,
             super::IndelKindHint::Deletion => site >= v_start && site < j_start,
@@ -234,6 +239,18 @@ impl Contract for ProductiveJunctionFrame {
             IndelEventClass::FrameNeutral
         }
     }
+}
+
+/// The pool position of the first base of the assigned J allele's anchor codon.
+fn j_anchor_position(sim: &Simulation, refdata: &RefDataConfig) -> Option<u32> {
+    let inst = sim.assignments.get(Segment::J)?;
+    let anchor = refdata.get(Segment::J, inst.allele_id)?.anchor?;
+    let region = sim
+        .sequence
+        .regions
+        .iter()
+        .find(|r| r.segment == Segment::J)?;
+    crate::coding::anchor_position(sim, region, u32::from(anchor))
 }
 
 #[cfg(test)]

@@ -856,7 +856,7 @@ mod tests {
             (b'C', Some(5)),
             (b'A', Some(6)),
         ];
-        let cases: [(&str, Vec<(u8, Option<u16>)>, usize); 4] = [
+        let cases: Vec<(&str, Vec<(u8, Option<u16>)>, usize)> = vec![
             (
                 "intact codon",
                 vec![(b'T', Some(0)), (b'G', Some(1)), (b'G', Some(2))],
@@ -881,6 +881,57 @@ mod tests {
                 "last codon base deleted",
                 vec![(b'T', Some(0)), (b'G', Some(1))],
                 11,
+            ),
+            (
+                "base inserted between the codon's second and third bases",
+                vec![
+                    (b'T', Some(0)),
+                    (b'G', Some(1)),
+                    (b'A', None),
+                    (b'G', Some(2)),
+                ],
+                13,
+            ),
+            (
+                "two bases inserted inside the codon",
+                vec![
+                    (b'T', Some(0)),
+                    (b'A', None),
+                    (b'G', Some(1)),
+                    (b'C', None),
+                    (b'G', Some(2)),
+                ],
+                14,
+            ),
+            (
+                "second and third codon bases deleted",
+                vec![(b'T', Some(0))],
+                10,
+            ),
+            (
+                "base inserted just before the codon",
+                vec![
+                    (b'A', None),
+                    (b'T', Some(0)),
+                    (b'G', Some(1)),
+                    (b'G', Some(2)),
+                ],
+                13,
+            ),
+            (
+                "base inserted just after the codon",
+                vec![
+                    (b'T', Some(0)),
+                    (b'G', Some(1)),
+                    (b'G', Some(2)),
+                    (b'A', None),
+                ],
+                12,
+            ),
+            (
+                "substitution inside the codon",
+                vec![(b'T', Some(0)), (b'C', Some(1)), (b'G', Some(2))],
+                12,
             ),
         ];
         for (name, codon, end) in cases {
@@ -914,6 +965,67 @@ mod tests {
                 "{name}: record validates"
             );
         }
+    }
+
+    /// Without the codon's first base the J landmark is gone, so no junction is defined, in the
+    /// assessment, in the contract junction and in the validated record alike.
+    #[test]
+    fn junction_is_undefined_when_the_first_j_codon_base_is_deleted() {
+        let j = [
+            (b'G', Some(1)),
+            (b'G', Some(2)),
+            (b'G', Some(3)),
+            (b'G', Some(4)),
+            (b'C', Some(5)),
+            (b'A', Some(6)),
+        ];
+        let (cfg, sim) = edited_j_fixture(&j);
+        assert_eq!(assess(&sim, &cfg).junction, None);
+        assert!(crate::junction::compute_junction(&sim, &cfg).is_none());
+        let out = outcome(sim);
+        let rec = build_airr_record(&out, &cfg, "first codon base deleted");
+        assert_eq!((rec.junction_start, rec.junction_end), (None, None));
+        assert!(rec.junction.is_empty());
+        assert!(validate_airr_record(&rec, &out, &cfg).is_empty());
+    }
+
+    /// The frame contract classifies an edit by whether it shifts the J anchor's first base, so an
+    /// indel already inside the codon leaves that base where its recorded germline position puts
+    /// it: the next insertion just after it does not move the anchor.
+    #[test]
+    fn frame_contract_reads_the_j_anchor_from_its_own_base_after_an_edit_inside_the_codon() {
+        use crate::contract::{IndelEventClass, IndelKindHint, ProductiveJunctionFrame};
+        let mut j = vec![
+            (b'T', Some(0)),
+            (b'A', None),
+            (b'G', Some(1)),
+            (b'G', Some(2)),
+        ];
+        j.extend_from_slice(&[
+            (b'G', Some(3)),
+            (b'G', Some(4)),
+            (b'C', Some(5)),
+            (b'A', Some(6)),
+        ]);
+        let (cfg, sim) = edited_j_fixture(&j);
+        let frame = ProductiveJunctionFrame::new();
+        // The J anchor's first base is at pool 9; the junction now ends at 13.
+        assert_eq!(
+            frame.admissible_indel_class_at(&sim, Some(&cfg), 9, IndelKindHint::Insertion),
+            IndelEventClass::FrameDelta(1)
+        );
+        assert_eq!(
+            frame.admissible_indel_class_at(&sim, Some(&cfg), 10, IndelKindHint::Insertion),
+            IndelEventClass::FrameNeutral
+        );
+        assert_eq!(
+            frame.admissible_indel_class_at(&sim, Some(&cfg), 8, IndelKindHint::Deletion),
+            IndelEventClass::FrameDelta(-1)
+        );
+        assert_eq!(
+            frame.admissible_indel_class_at(&sim, Some(&cfg), 9, IndelKindHint::Deletion),
+            IndelEventClass::FrameNeutral
+        );
     }
 
     /// The validator derives the junction end on its own: a record whose end was computed by

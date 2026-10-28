@@ -219,6 +219,9 @@ fn set(
 #[derive(Debug)]
 struct Landmark {
     position: Option<usize>,
+    /// One past the query position of the codon's last base: an insertion inside the codon
+    /// moves it by its own length.
+    codon_end: Option<usize>,
     accepted: Option<bool>,
     reason: &'static str,
 }
@@ -232,6 +235,7 @@ fn landmark(
     let source = bindings.for_substrate(substrate);
     let unknown = |reason| Landmark {
         position: None,
+        codon_end: None,
         accepted: None,
         reason,
     };
@@ -251,6 +255,7 @@ fn landmark(
         if matches.is_empty() {
             return Landmark {
                 position: None,
+                codon_end: None,
                 accepted: Some(false),
                 reason: "anchor_removed",
             };
@@ -271,6 +276,7 @@ fn landmark(
     if positions[1] != positions[0] + 1 || positions[2] != positions[0] + 2 {
         return Landmark {
             position: Some(positions[0]),
+            codon_end: Some(positions[2] + 1),
             accepted: Some(false),
             reason: "anchor_provenance_disrupted",
         };
@@ -282,6 +288,7 @@ fn landmark(
     );
     Landmark {
         position: Some(q),
+        codon_end: Some(q + 3),
         accepted,
         reason: match accepted {
             Some(true) => "anchor_accepted",
@@ -302,9 +309,8 @@ fn assess(
     let j = landmark(&paths[2], Substrate::J, bindings, query);
     let junction = v
         .position
-        .zip(j.position)
-        .filter(|&(v, j)| j >= v && j + 3 <= query.len())
-        .map(|(v, j)| (v, j + 3));
+        .zip(j.codon_end)
+        .filter(|&(v, end)| end > v && end <= query.len());
     let frame = bindings
         .v
         .coding_phase
