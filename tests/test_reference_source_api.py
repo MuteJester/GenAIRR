@@ -130,11 +130,9 @@ def offline(monkeypatch):
 
 
 @pytest.fixture(scope="module")
-def igl_build(tmp_path_factory):
+def igl_build(igl_two_allele_session):
     """A two-allele build over the complete pinned IGL release 4 exports (no scope patch)."""
-    root = tmp_path_factory.mktemp("igl")
-    source = from_files(root)
-    return source, source.build(full_recipe(root, source))
+    return igl_two_allele_session
 
 
 # ── the public module ────────────────────────────────────────────────
@@ -547,13 +545,10 @@ SECTIONS = ("Source", "Hashes", "Endpoint comparison", "Counts", "Selection", "S
 
 
 @pytest.fixture(scope="module")
-def igh_starter(tmp_path_factory):
-    """The IGH release 10 starter: the selection fixture as a recipe over the pinned exports."""
-    from tests.test_reference_source_projection import interpreted, starter_recipe
-    root = tmp_path_factory.mktemp("igh")
-    source = from_files(root, IGH)
-    blobs = {fmt: fixture_bytes(IGH, fmt) for fmt in ALL}
-    build = source.build(starter_recipe(source.lock, interpreted(blobs, source.lock)))
+def igh_starter(igh_starter_session):
+    """The IGH release 10 starter (the selection fixture as a recipe over the pinned exports, built
+    once for the session) and its report text."""
+    build = igh_starter_session.build
     return build, str(build.report)
 
 
@@ -932,7 +927,6 @@ def test_the_report_text_opens_with_a_short_summary(igh_starter):
 
 
 def test_every_source_object_has_a_short_deterministic_repr(igl_build):
-    from GenAIRR._reference_sources.inventory import SourceInventory
     from GenAIRR._reference_sources.lock import SourceLock
     from GenAIRR._reference_sources.manifest import BuildManifest
     from GenAIRR._reference_sources.report import BuildReport

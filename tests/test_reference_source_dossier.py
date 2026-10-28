@@ -34,11 +34,9 @@ T0 = datetime.datetime(2026, 10, 27, 9, 0, 0, tzinfo=datetime.timezone.utc)
 
 
 @pytest.fixture(scope="module")
-def igl(tmp_path_factory):
-    """A two-allele build over the complete pinned IGL release 4 exports."""
-    root = tmp_path_factory.mktemp("igl")
-    source = from_files(root)
-    return source, source.build(full_recipe(root, source))
+def igl(igl_two_allele_session):
+    """A two-allele build over the complete pinned IGL release 4 exports (shared for the session)."""
+    return igl_two_allele_session
 
 
 def recording_writer(monkeypatch, fail_at=None, *, after=False) -> list:

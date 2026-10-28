@@ -194,17 +194,15 @@ def starter_recipe(lock, inventory) -> dict:
 
 
 @pytest.fixture(scope="module")
-def igh():
-    blobs = pinned(IGH)
-    lock = seal(IGH, blobs)
-    return blobs, lock, interpreted(blobs, lock)
+def igh(igh_starter_session):
+    """The pinned IGH exports, their lock and interpreted inventory (shared for the session)."""
+    return igh_starter_session.blobs, igh_starter_session.lock, igh_starter_session.inventory
 
 
 @pytest.fixture(scope="module")
-def starter(igh):
-    blobs, lock, inventory = igh
-    document = starter_recipe(lock, inventory)
-    return document, build(lock, blobs, document)
+def starter(igh_starter_session):
+    """The starter recipe and its projection (built once for the session)."""
+    return igh_starter_session.document, igh_starter_session.projection
 
 
 def test_starter_fasta_holds_exactly_the_selected_labels_and_supplied_dna(starter):
