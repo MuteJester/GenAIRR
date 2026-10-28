@@ -1,0 +1,236 @@
+"""The mechanisms, in the order a receptor is actually formed.
+
+Stages follow development rather than the source tree: the inherited locus,
+then recombination, then the junction, then whether the result can be
+expressed, then what maturation does to it, then clonal history. ``assay`` is
+last and is different in kind -- not what the cell did, but what the protocol
+did to the molecule afterwards. GenAIRR's oracle claim covers both.
+
+A mechanism may have no engine pass: productivity is an assessment the engine
+makes rather than a pass it schedules, and clonal history is driven by the
+lineage machinery. The completeness test runs the other way round -- every
+pass must be classified -- so a mechanism without a pass is not a gap.
+"""
+from __future__ import annotations
+
+from ._model import Mechanism
+
+#: Developmental order. Reports and directory listings follow it.
+STAGES = ("germline", "recombination", "junction", "expression",
+          "maturation", "clonality", "assay")
+
+#: Passes that are not biology. The engine documents these as reference
+#: implementations; classifying them as a mechanism would make the catalog
+#: assert something false.
+INFRASTRUCTURE = {
+    "EchoPass": "the engine's deterministic transform reference, not a biological step",
+    "SampleBasePass": "the engine's sampling reference, not a biological step",
+}
+
+#: Truth fields that a plain single-end record does not carry, so the
+#: field-existence check knows they are real rather than typos.
+FIELDS_NOT_IN_A_PLAIN_RECORD = frozenset({
+    "duplicate_count", "clone_id", "lineage_parent_id", "generation",
+})
+
+MECHANISMS = (
+    # ── germline: what the locus inherited ────────────────────────────────
+    Mechanism(
+        id="germline.genotype",
+        stage="germline",
+        summary="Which alleles this individual carries, across both haplotypes, "
+                "including whether a haplotype is functional at all.",
+        truth_fields=("locus",),
+        engine_passes=("SampleGenotypePass",),
+    ),
+    Mechanism(
+        id="germline.allele_choice",
+        stage="germline",
+        summary="Which V, D and J allele this rearrangement drew from the "
+                "genotype it was given.",
+        truth_fields=("v_call", "d_call", "j_call", "original_v_call",
+                      "recalled_v_call", "recalled_d_call", "recalled_j_call"),
+        engine_passes=("SampleAllelePass",),
+    ),
+
+    # ── recombination: RAG cuts and rejoins ───────────────────────────────
+    Mechanism(
+        id="recombination.trimming",
+        stage="recombination",
+        summary="Exonuclease loss at each coding end before joining: how many "
+                "bases of V, D and J were removed.",
+        truth_fields=("v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5"),
+        engine_passes=("TrimPass",),
+    ),
+    Mechanism(
+        id="recombination.d_inversion",
+        stage="recombination",
+        summary="A D segment joined in inverted orientation, which the record "
+                "must declare because its germline coordinates run backwards.",
+        truth_fields=("d_inverted",),
+        engine_passes=("InvertDPass",),
+    ),
+    Mechanism(
+        id="recombination.assembly",
+        stage="recombination",
+        summary="Copying the surviving germline stretches into the rearranged "
+                "sequence, which fixes every germline coordinate the record reports.",
+        truth_fields=("sequence", "sequence_length", "v_germline_start", "v_germline_end",
+                      "d_germline_start", "d_germline_end", "j_germline_start", "j_germline_end"),
+        engine_passes=("AssembleSegmentPass",),
+    ),
+
+    # ── junction: hairpin opening and untemplated addition ────────────────
+    Mechanism(
+        id="junction.p_nucleotide",
+        stage="junction",
+        summary="Palindromic bases left when a hairpinned coding end is opened "
+                "asymmetrically -- templated by the segment's own end, but "
+                "reversed and complemented.",
+        truth_fields=("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length"),
+        engine_passes=("PAdditionPass", "EmitCodingEndPPass"),
+    ),
+    Mechanism(
+        id="junction.coding_end_processing",
+        stage="junction",
+        summary="How a coding end is resolved before joining, which decides "
+                "what survives of the conserved anchor codons.",
+        truth_fields=("junction_start", "junction_end"),
+        engine_passes=("ProcessCodingEndsPass",),
+    ),
+    Mechanism(
+        id="junction.n_addition",
+        stage="junction",
+        summary="TdT-mediated untemplated nucleotide addition at the V-D and "
+                "D-J joins: bases with no germline origin at all.",
+        truth_fields=("np1", "np2", "np1_length", "np2_length", "np1_aa", "np2_aa"),
+        engine_passes=("GenerateNPPass",),
+    ),
+    Mechanism(
+        id="junction.assembly",
+        stage="junction",
+        summary="The junction as reported: its span, its sequence and its "
+                "translation, spanning the conserved anchors at both ends.",
+        truth_fields=("junction", "junction_aa", "junction_length"),
+    ),
+
+    # ── expression: can the rearrangement be used ─────────────────────────
+    Mechanism(
+        id="expression.productivity",
+        stage="expression",
+        summary="Whether the rearrangement can produce a receptor: reading "
+                "frame across the junction, absence of a stop codon in the "
+                "coding region, and intact conserved anchors.",
+        truth_fields=("productive", "stop_codon", "vj_in_frame", "productivity_policy",
+                      "productivity_reasons", "productivity_scope"),
+        notes="An assessment the engine makes over a finished sequence rather "
+              "than a scheduled pass, so it owns no pass.",
+    ),
+    Mechanism(
+        id="expression.receptor_revision",
+        stage="expression",
+        summary="Secondary rearrangement replacing an already-joined V, which "
+                "leaves the original call recoverable alongside the new one.",
+        truth_fields=("receptor_revision_applied", "original_v_call"),
+        engine_passes=("ReceptorRevisionPass",),
+    ),
+
+    # ── maturation: what happens after expression ─────────────────────────
+    Mechanism(
+        id="maturation.hypermutation",
+        stage="maturation",
+        summary="Somatic hypermutation: AID-initiated point substitution, "
+                "targeted by sequence context under S5F or spread uniformly.",
+        truth_fields=("n_mutations", "n_v_mutations", "n_d_mutations", "n_j_mutations",
+                      "n_np_mutations", "mutation_rate", "n_v_unannotated_mutations",
+                      "n_cdr1_mutations", "n_cdr2_mutations", "n_fwr1_mutations",
+                      "n_fwr2_mutations", "n_fwr3_mutations"),
+        engine_passes=("S5FMutationPass", "UniformMutationPass"),
+    ),
+
+    # ── clonality: one cell's descendants ─────────────────────────────────
+    Mechanism(
+        id="clonality.expansion",
+        stage="clonality",
+        summary="A clone's descendants sharing a rearrangement and diverging "
+                "only by what maturation did to each.",
+        truth_fields=("sequence_id", "duplicate_count", "clone_id"),
+        notes="Driven by the lineage and family-replay machinery rather than "
+              "by a scheduled pass.",
+    ),
+
+    # ── assay: what the protocol did to the molecule ──────────────────────
+    Mechanism(
+        id="assay.polymerase_indels",
+        stage="assay",
+        summary="Insertions and deletions introduced while copying, which shift "
+                "every downstream coordinate and must stay reconcilable with "
+                "the generating allele.",
+        truth_fields=("n_indels", "n_v_indels", "n_d_indels", "n_j_indels"),
+        engine_passes=("IndelPass",),
+    ),
+    Mechanism(
+        id="assay.pcr_error",
+        stage="assay",
+        summary="Misincorporation during amplification: a substitution that is "
+                "not somatic hypermutation and must not be counted as one.",
+        truth_fields=("n_pcr_errors",),
+        engine_passes=("PCRErrorPass",),
+    ),
+    Mechanism(
+        id="assay.quality_error",
+        stage="assay",
+        summary="Base-calling error at the sequencer, recorded separately from "
+                "amplification error.",
+        truth_fields=("n_quality_errors",),
+        engine_passes=("QualityErrorPass",),
+    ),
+    Mechanism(
+        id="assay.ambiguous_calls",
+        stage="assay",
+        summary="Positions the instrument could not call, which appear as N and "
+                "must not be read as mutations.",
+        truth_fields=("sequence",),
+        engine_passes=("NCorruptionPass",),
+    ),
+    Mechanism(
+        id="assay.contamination",
+        stage="assay",
+        summary="A read that did not come from the sampled repertoire at all.",
+        truth_fields=("is_contaminant",),
+        engine_passes=("ContaminantPass",),
+    ),
+    Mechanism(
+        id="assay.orientation",
+        stage="assay",
+        summary="Which strand the read was sequenced from, which decides whether "
+                "the recorded sequence needs reverse-complementing to align.",
+        truth_fields=("rev_comp",),
+        engine_passes=("RevCompPass",),
+    ),
+    Mechanism(
+        id="assay.end_loss",
+        stage="assay",
+        summary="Sequence missing from either end because the amplicon or the "
+                "read did not reach it, as distinct from germline trimming.",
+        truth_fields=("end_loss_5_length", "end_loss_3_length"),
+        engine_passes=("EndLossPass",),
+    ),
+    Mechanism(
+        id="assay.paired_end",
+        stage="assay",
+        summary="Sampling two reads from one molecule, with the layout and "
+                "insert size needed to reconstruct their relationship.",
+        truth_fields=("r1_sequence", "r1_start", "r1_end", "r2_sequence", "r2_start",
+                      "r2_end", "read_layout", "insert_size"),
+        engine_passes=("PairedEndSamplingPass",),
+    ),
+    Mechanism(
+        id="assay.duplex_formation",
+        stage="assay",
+        summary="Two molecules repaired into one chimeric duplex, whose halves "
+                "come from different rearrangements.",
+        truth_fields=("sequence",),
+        engine_passes=("DuplexRecombinePass",),
+    ),
+)
