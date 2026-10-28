@@ -17,7 +17,7 @@ The slice's headline contract:
 - Refuses to write non-paired records, empty windows, or
   length-mismatched quality arrays.
 
-See [`docs/fastq_export_design.md`](../docs/fastq_export_design.md)
+See [`docs/fastq_export_design.md`](audit-docs/fastq_export_design.md)
 for the audit and per-spec rationale.
 """
 from __future__ import annotations

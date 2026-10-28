@@ -1,7 +1,7 @@
 """Contract pins for the SHM Model / Context-Mutation audit.
 
 Companion to
-[`docs/shm_model_audit.md`](../docs/shm_model_audit.md). The audit
+[`docs/shm_model_audit.md`](audit-docs/shm_model_audit.md). The audit
 freezes the biological-vs-artefact split between SHM and the
 corruption family, the IR-sourced `n_mutations` counter, the S5F
 kernel's bundled-but-not-cartridge-owned status, the productive-

@@ -9,6 +9,7 @@ meant to be usable from a script.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -391,3 +392,121 @@ def test_no_module_augments_its_pytestmark():
     assert offenders == [], (
         f"modules augmenting pytestmark: {offenders}. Declare the full marker "
         "list in one binding so the tier and any skip are both visible.")
+
+
+# ── path anchoring ───────────────────────────────────────────────────────────
+# tests/README.md states this rule as enforced. Nothing enforced it, and
+# file-relative arithmetic is what made the reorganisation of this tree
+# dangerous: `Path(__file__).parent.parent` appeared 71 times, and in one
+# module it fed a parametrize glob, so a move turned 105 tests into an empty
+# parameter set that collected nothing and reported nothing wrong.
+
+#: Modules allowed to read ``__file__``, each with the reason. Three kinds are
+#: legitimate and the rest are not, so the exception is a list with reasons
+#: rather than a blanket carve-out for a directory.
+FILE_ANCHOR_ALLOWED = {
+    "support/paths.py":
+        "the anchor itself -- it is what every other module uses instead",
+    "support/meta/test_structure.py":
+        "this module; a guard on support.paths must not be positioned by it",
+    "support/meta/test_support_members.py":
+        "same reason: it audits the support layer and cannot depend on it",
+    "components/engine/d_inversion/test_extension_pins.py":
+        "reads its own source to assert the pin cites the design document",
+    "components/engine/d_inversion/test_pins.py":
+        "reads its own source, as above",
+    "components/engine/receptor_revision/test_pins.py":
+        "reads its own source, as above",
+    "components/result/test_paired_end_contract.py":
+        "reads its own source to assert the docstring documents the pin-flip "
+        "lockstep a future contributor has to follow",
+    "components/reference/test_allele_model_audit.py":
+        "excludes its own source from the set of files it scans",
+    "components/io/test_artifact_io.py":
+        "reads the __file__ of the module under test, not its own path",
+    "data/reference_first_use/make_fixtures.py":
+        "a fixture generator, not a test module",
+}
+
+
+def _modules_reading_file_anchor():
+    """Every module under tests/ that mentions ``__file__``."""
+    found = []
+    for module in sorted(TESTS_ROOT.rglob("*.py")):
+        if "__pycache__" in module.parts:
+            continue
+        if "__file__" in module.read_text(encoding="utf-8"):
+            found.append(str(module.relative_to(TESTS_ROOT)).replace("\\", "/"))
+    return found
+
+
+def test_no_module_builds_a_path_from_file_except_the_recorded_ones():
+    """The rule tests/README.md states, actually enforced.
+
+    Stated absolutely the rule is false -- the anchor has to read ``__file__``,
+    a pin that cites a design document has to read its own source, and the
+    guards on the support layer cannot be positioned by the support layer. So
+    the exceptions are enumerated with reasons, and a new one has to be argued
+    for rather than added by precedent.
+    """
+    reading = set(_modules_reading_file_anchor())
+    assert reading, "no module mentions __file__, so this guard is checking nothing"
+    unrecorded = sorted(reading - set(FILE_ANCHOR_ALLOWED))
+    assert unrecorded == [], (
+        f"module(s) building a path from __file__ with no recorded reason: "
+        f"{unrecorded}\n\nUse tests.support.paths, which is anchored to a fixed "
+        "location. If the use is genuinely one of the recorded kinds, add it to "
+        "FILE_ANCHOR_ALLOWED with its reason.")
+    stale = sorted(set(FILE_ANCHOR_ALLOWED) - reading)
+    assert stale == [], (
+        f"recorded as reading __file__ but no longer does: {stale}. Remove the "
+        "entry so the list stays a statement about the suite as it is.")
+
+
+def test_every_recorded_file_anchor_states_why():
+    thin = [m for m, reason in FILE_ANCHOR_ALLOWED.items() if not reason.strip()]
+    assert thin == [], f"recorded exceptions with no reason: {thin}"
+
+
+# ── documentation references ─────────────────────────────────────────────────
+# A guard already fails when an audit document names a test module that moved.
+# Nothing checked the other direction, and 52 links in test docstrings pointed
+# at ../docs/ while the documents live in audit-docs/ -- every one of them dead,
+# some since before this tree was reorganised.
+
+_DOC_LINK = re.compile(r"\[[^\]]*\]\((?!https?://)([^)]+\.md)\)")
+
+
+def _doc_links():
+    """``(module, link)`` for every markdown link to a local .md in the suite."""
+    for module in sorted(TESTS_ROOT.rglob("*.py")):
+        if "__pycache__" in module.parts:
+            continue
+        for link in _DOC_LINK.findall(module.read_text(encoding="utf-8")):
+            yield module, link
+
+
+def test_every_document_a_test_points_at_exists():
+    """Links are written repo-relative rather than relative to the module.
+
+    A `../`-style link is positioned by where the module happens to sit, so a
+    move silently breaks it -- which is how all 52 of them came to be dead. A
+    repo-relative path survives relocation, which is the whole point.
+    """
+    repo_root = TESTS_ROOT.parent
+    checked = 0
+    broken, relative = [], []
+    for module, link in _doc_links():
+        checked += 1
+        if link.startswith(("./", "../")):
+            relative.append(f"{module.relative_to(TESTS_ROOT)} -> {link}")
+        elif not (repo_root / link).exists():
+            broken.append(f"{module.relative_to(TESTS_ROOT)} -> {link}")
+    assert checked > 40, f"only {checked} doc links found; the scan is not reading the suite"
+    assert broken == [], (
+        f"{len(broken)} link(s) to a document that does not exist:\n  "
+        + "\n  ".join(broken[:12]))
+    assert relative == [], (
+        f"{len(relative)} module-relative link(s); write them from the "
+        f"repository root so a move cannot break them:\n  "
+        + "\n  ".join(relative[:12]))

@@ -2,7 +2,7 @@
 Length Estimation v1** slice.
 
 Companion to
-[`docs/p_nucleotide_length_estimation_design.md`](../docs/p_nucleotide_length_estimation_design.md)
+[`docs/p_nucleotide_length_estimation_design.md`](audit-docs/p_nucleotide_length_estimation_design.md)
 and the contract pins in
 [`tests/components/estimators/p_nucleotide_length/test_pins.py`](test_p_nucleotide_length_estimation_contract.py).
 

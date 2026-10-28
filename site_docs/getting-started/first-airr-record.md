@@ -116,6 +116,15 @@ construction). PCR / quality / indel artefacts are reported on
 separate counters - they're library/sequencing-stage noise, not
 biological mutation.
 
+It counts substitution **events**, which is not the same as visible
+differences from the germline: a replacement base is drawn without
+excluding the base already there, so some events change nothing. The
+share that leaves no evidence is 28.1% for `model="uniform"` and 4.9%
+for `model="s5f"` at one mutation per record, rising with the count as
+repeat hits on a position can restore the germline base. When scoring a
+mutation caller, compare the sequence against its germline rather than
+against `n_mutations`.
+
 ## Paired-end fields (when requested)
 
 ```python

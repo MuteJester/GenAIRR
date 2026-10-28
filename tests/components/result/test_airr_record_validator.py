@@ -1,6 +1,6 @@
 """AIRR-record postcondition validator tests.
 
-Companion to [docs/airr_record_validator.md](../docs/airr_record_validator.md).
+Companion to [docs/airr_record_validator.md](audit-docs/airr_record_validator.md).
 Exercises `outcome.validate_record(refdata)` against representative
 fixtures and confirms it surfaces issues when the record is
 manipulated.

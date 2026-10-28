@@ -2,7 +2,7 @@
 Inference API audit.
 
 Companion to
-[`docs/reference_cartridge_authoring_audit.md`](../docs/reference_cartridge_authoring_audit.md).
+[`docs/reference_cartridge_authoring_audit.md`](audit-docs/reference_cartridge_authoring_audit.md).
 
 Pin set:
 

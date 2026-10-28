@@ -2,7 +2,7 @@
 audit.
 
 Companion to
-[`docs/v_region_substructure_audit.md`](../docs/v_region_substructure_audit.md).
+[`docs/v_region_substructure_audit.md`](audit-docs/v_region_substructure_audit.md).
 The audit's pre-implementation pins have been partially
 discharged by Slice 1 (V-Subregion Cartridge Annotation
 Surface). The remaining absence pins gate Slice 2

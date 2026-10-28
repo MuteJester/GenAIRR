@@ -1,6 +1,6 @@
 """Pre-implementation contract for D-segment inversion.
 
-Companion to [`docs/d_inversion_design.md`](../docs/d_inversion_design.md).
+Companion to [`docs/d_inversion_design.md`](audit-docs/d_inversion_design.md).
 D inversion isn't implemented yet; this file pins **today's
 absence** of every surface the design doc proposes. When the
 implementation slice lands, the absence assertions flip to

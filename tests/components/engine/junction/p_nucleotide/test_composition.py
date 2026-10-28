@@ -25,7 +25,7 @@ preserves three load-bearing invariants:
   V's post-trim 3' coding flank — the deterministic property
   the audit guaranteed.
 
-Companion to [`docs/p_nucleotide_design.md`](../docs/p_nucleotide_design.md).
+Companion to [`docs/p_nucleotide_design.md`](audit-docs/p_nucleotide_design.md).
 Productive composition is checked against an independent genetic-code table,
 alignment arithmetic, combined NP intervals, and actual P emission.
 """

@@ -52,7 +52,8 @@ trimming, P addition, N addition and coding-end processing at once.
 
 ## Declaring a tier
 
-Every module under `components/`, `acceptance/` and `performance/` declares one:
+Every test module outside `support/` declares one — `components/`, `biology/`,
+`acceptance/` and `performance/` alike:
 
 ```python
 pytestmark = pytest.mark.behavior
@@ -135,10 +136,17 @@ Two rules, both enforced:
 - **No test module imports another test module.** Shared setup goes in
   `support/`. Borrowing a fixture from a neighbour couples their collection
   order and makes the lender impossible to move.
-- **Never build a path from `__file__`.** Use `support.paths`, which is anchored
+- **Do not build a path from `__file__`.** Use `support.paths`, which is anchored
   to a fixed location. File-relative arithmetic is what makes a module unsafe to
   relocate, and it broke silently when this tree was reorganised — in one case
   as an empty `parametrize` set that collected zero tests and reported nothing.
+
+  Three uses are legitimate and are listed, with their reasons, in
+  `FILE_ANCHOR_ALLOWED` in `support/meta/test_structure.py`: `paths.py` itself,
+  the two guards that audit the support layer and so cannot be positioned by
+  it, and a pin that reads its own source to check its own docstring. Anything
+  else fails. The list is the rule — a new exception is argued for there rather
+  than added by precedent.
 
 ## Reproducibility fixtures
 

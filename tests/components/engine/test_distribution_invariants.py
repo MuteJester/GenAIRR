@@ -1,6 +1,6 @@
 """Distribution-invariant golden tests.
 
-Companion to [docs/distribution_invariant_audit.md](../docs/distribution_invariant_audit.md).
+Companion to [docs/distribution_invariant_audit.md](audit-docs/distribution_invariant_audit.md).
 Pins the central rule across all sampling mechanisms:
 
     Pr[draw = x] ∝ natural_weight(x) * 1[contracts.admit(x)]

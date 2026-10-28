@@ -1,6 +1,6 @@
 """Pre-implementation contract for paired-end / read-layout output.
 
-Companion to [`docs/paired_end_design.md`](../docs/paired_end_design.md).
+Companion to [`docs/paired_end_design.md`](audit-docs/paired_end_design.md).
 Paired-end read-layout projection (one AIRR row per molecule with
 R1 / R2 windows carved out of ``rec.sequence``) isn't implemented
 yet; this file pins today's absence + the existing scaffolding the

@@ -39,6 +39,22 @@ class _MutationMixin:
         - ``"uniform"`` — position-independent SHM. Each mutated
           position gets a uniformly drawn A/C/G/T replacement.
 
+        **``n_mutations`` counts substitution events, not visible
+        differences from the germline.** A replacement base is drawn
+        without excluding the base already present, so some events
+        leave the sequence unchanged and are not recoverable by any
+        mutation caller. Measured over 3,000 single-mutation records:
+        28.1 % of ``uniform`` events and 4.9 % of ``"s5f"`` events.
+        Raising the count adds a second source of divergence, as
+        repeat hits on one position can restore the germline base —
+        at ``count=20`` the unrecoverable share rises to 29.7 % and
+        8.7 %.
+
+        If you are scoring a mutation caller, derive the expected
+        count from the sequence and its germline rather than from
+        ``n_mutations``, or the caller will be penalised for missing
+        substitutions that left no evidence.
+
         **Specify intensity with exactly one of ``rate`` or ``count``.**
 
         ``rate`` is the per-base mutation rate (e.g. ``0.03`` for 3 %

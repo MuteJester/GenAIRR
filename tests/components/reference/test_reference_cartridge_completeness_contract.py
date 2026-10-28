@@ -1,7 +1,7 @@
 """Contract pins for the Reference Cartridge Completeness audit.
 
 Companion to
-[`docs/reference_cartridge_completeness_audit.md`](../docs/reference_cartridge_completeness_audit.md).
+[`docs/reference_cartridge_completeness_audit.md`](audit-docs/reference_cartridge_completeness_audit.md).
 The audit is pre-implementation: it freezes today's cartridge
 contract (``pin_scaffold_*``) and the inspectability gaps a future
 ``cartridge_manifest()``-style slice will close (``pin_absence_*``).

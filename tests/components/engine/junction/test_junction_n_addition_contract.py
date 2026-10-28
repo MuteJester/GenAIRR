@@ -1,7 +1,7 @@
 """Contract pins for the Junction / N-Addition Modeling audit.
 
 Companion to
-[`docs/junction_n_addition_audit.md`](../docs/junction_n_addition_audit.md).
+[`docs/junction_n_addition_audit.md`](audit-docs/junction_n_addition_audit.md).
 The audit is pre-implementation: it freezes today's surfaces
 (``pin_scaffold_*``) and the gaps a future implementation slice
 would close (``pin_absence_*``).
@@ -63,7 +63,7 @@ def test_pin_scaffold_generate_np_pass_struct_shape() -> None:
     The Markov NP base generator slice renamed the third field
     from ``base_dist: Box<dyn Distribution<Output = u8>>`` to
     ``base_generator: Box<dyn NpBaseGenerator>`` (see
-    [`docs/np_markov_base_generator_design.md`](../docs/np_markov_base_generator_design.md)
+    [`docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md)
     §1) so the per-position support is conditioned on the
     previously emitted base. The constructor still accepts a
     legacy ``Box<dyn Distribution<Output = u8>>`` via an
@@ -277,7 +277,7 @@ def test_pin_scaffold_generate_np_parameter_signature_folds_base_generator() -> 
     ``fmt_byte_dist(base_dist)`` fold with the generator's
     own ``signature()`` method so the Markov first-base row +
     transition rows all participate in plan identity (see
-    [`docs/np_markov_base_generator_design.md`](../docs/np_markov_base_generator_design.md)
+    [`docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md)
     §5).
 
     Pinning the dual fold at source so a regression that drops
@@ -593,7 +593,7 @@ def test_pin_present_p_nucleotide_surface_post_v1_slice() -> None:
     explicitly (same style as `np_bases`). The per-base
     P-string surfaces (`p_v_3`, ...) and the aggregate
     `n_p_nucleotides` field remain out-of-scope per
-    [docs/p_nucleotide_design.md](../docs/p_nucleotide_design.md)
+    [docs/p_nucleotide_design.md](audit-docs/p_nucleotide_design.md)
     §15.
 
     Flipped from the prior absence pin."""

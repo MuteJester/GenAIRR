@@ -2,7 +2,7 @@
 Estimation v1** slice.
 
 Companion to
-[`docs/np_base_model_estimation_design.md`](../docs/np_base_model_estimation_design.md)
+[`docs/np_base_model_estimation_design.md`](audit-docs/np_base_model_estimation_design.md)
 and the contract pins in
 [`tests/components/estimators/np_base_model/test_pins.py`](test_np_base_model_estimation_contract.py).
 

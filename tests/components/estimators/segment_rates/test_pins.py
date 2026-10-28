@@ -1,7 +1,7 @@
 """Contract pins for the Per-Segment SHM Rate Scalars audit.
 
 Companion to
-[`docs/shm_segment_rate_design.md`](../docs/shm_segment_rate_design.md).
+[`docs/shm_segment_rate_design.md`](audit-docs/shm_segment_rate_design.md).
 The audit is pre-implementation: it pins today's full-pool SHM
 targeting and the architectural feasibility of the proposed slice
 (`pin_scaffold_*`) plus the surfaces the slice will add

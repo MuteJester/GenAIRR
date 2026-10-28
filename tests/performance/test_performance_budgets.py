@@ -1,7 +1,7 @@
 """Performance budget tests — regression guards.
 
 Companion to
-[docs/performance_baseline.md](../docs/performance_baseline.md).
+[docs/performance_baseline.md](audit-docs/performance_baseline.md).
 Each test runs a representative workload for a fixed N records,
 asserts the wall time is under the budget set at ~5–10× the
 developer-machine baseline. Goal: catch 10× regressions without

@@ -2,7 +2,7 @@
 Completeness audit.
 
 Companion to
-[`docs/plan_signature_completeness_audit.md`](../docs/plan_signature_completeness_audit.md).
+[`docs/plan_signature_completeness_audit.md`](audit-docs/plan_signature_completeness_audit.md).
 
 The audit's central claim is that **every parameterized
 public DSL surface that changes proposal support or output

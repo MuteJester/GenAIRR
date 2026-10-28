@@ -11,6 +11,7 @@ import pytest
 
 from tests.biology.catalog import verifies
 from tests.support.builders import experiment as experiment_builder
+from tests.support.oracles import reconstruction
 
 pytestmark = pytest.mark.behavior
 
@@ -66,30 +67,70 @@ def test_ambiguous_positions_are_not_counted_as_mutations():
 
 
 @verifies("assay.orientation",
-          claim="rev_comp records which strand was read, and the recorded "
-                "sequence is the strand the coordinates are relative to",
+          claim="rev_comp discriminates: it is False when no strand was "
+                "flipped, True when one was, and both occur in a mixed run. "
+                "When True the recorded sequence is the reverse complement of "
+                "the sequence the same seed produces unflipped, so the flag "
+                "names a real transformation rather than being set",
           fields=("rev_comp",))
-def test_orientation_is_recorded_and_consistent():
+def test_orientation_is_recorded_and_discriminates():
     """AIRR puts positions with respect to the reverse complement of `sequence`
     when rev_comp is true, so the flag is what makes every coordinate in the
-    record interpretable."""
-    exp = experiment_builder.recombined().random_strand_orientation(prob=1.0)
-    for outcome in exp.run(n=20, seed=5):
-        record = outcome.airr_record(exp.refdata)
-        assert record["rev_comp"] is True
-        assert record["v_sequence_start"] is not None
-        assert 0 <= record["v_sequence_start"] < len(record["sequence"])
+    record interpretable.
+
+    Checked on both sides. Run only at prob=1.0, this test passes against a
+    field hardcoded to True -- which is no check on a boolean at all. The
+    reverse-complement comparison against the same seed unflipped is what makes
+    the True case say something.
+    """
+    forward = experiment_builder.recombined().random_strand_orientation(prob=0.0)
+    flipped = experiment_builder.recombined().random_strand_orientation(prob=1.0)
+    unflipped = [o.airr_record(forward.refdata) for o in forward.run(n=20, seed=5)]
+    reversed_ = [o.airr_record(flipped.refdata) for o in flipped.run(n=20, seed=5)]
+
+    for record in unflipped:
+        assert record["rev_comp"] is False, "no strand was flipped, yet rev_comp is set"
+    for plain, flip in zip(unflipped, reversed_):
+        assert flip["rev_comp"] is True
+        assert flip["sequence"].upper() == reconstruction.reverse_complement(plain["sequence"]), (
+            "rev_comp is True but the sequence is not the reverse complement of "
+            "what the same seed produces unflipped")
+        assert 0 <= flip["v_sequence_start"] < len(flip["sequence"])
+
+    mixed = experiment_builder.recombined().random_strand_orientation(prob=0.5)
+    flags = [o.airr_record(mixed.refdata)["rev_comp"] for o in mixed.run(n=40, seed=5)]
+    assert set(flags) == {True, False}, (
+        f"a half-and-half run produced only {set(flags)}; the flag does not vary")
 
 
 @verifies("assay.contamination",
-          claim="a read that did not come from the sampled repertoire is flagged, "
-                "so a benchmark can exclude it rather than scoring against it",
+          claim="is_contaminant discriminates: False on an uncontaminated run "
+                "and on one with the pass configured off, True when every read "
+                "is contaminated, and both occur in a mixed run -- so a "
+                "benchmark excluding flagged reads excludes the right ones",
           fields=("is_contaminant",))
-def test_contamination_is_flagged():
-    exp = experiment_builder.recombined().contaminate(prob=1.0)
-    flags = {outcome.airr_record(exp.refdata)["is_contaminant"]
-             for outcome in exp.run(n=20, seed=5)}
-    assert flags == {True}, f"contaminated reads were not all flagged: {flags}"
+def test_contamination_is_flagged_and_discriminates():
+    """Both sides, for the same reason as orientation above: at prob=1.0 alone,
+    a field hardcoded to True passes."""
+    always = experiment_builder.recombined().contaminate(prob=1.0)
+    assert {o.airr_record(always.refdata)["is_contaminant"]
+            for o in always.run(n=20, seed=5)} == {True}, (
+        "contaminated reads were not all flagged")
+
+    never = experiment_builder.recombined().contaminate(prob=0.0)
+    assert {o.airr_record(never.refdata)["is_contaminant"]
+            for o in never.run(n=20, seed=5)} == {False}, (
+        "reads were flagged as contaminants with the pass configured off")
+
+    absent = experiment_builder.recombined()
+    assert {o.airr_record(absent.refdata)["is_contaminant"]
+            for o in absent.run(n=20, seed=5)} == {False}, (
+        "reads were flagged as contaminants with no contamination pass at all")
+
+    mixed = experiment_builder.recombined().contaminate(prob=0.5)
+    flags = [o.airr_record(mixed.refdata)["is_contaminant"] for o in mixed.run(n=40, seed=5)]
+    assert set(flags) == {True, False}, (
+        f"a half-and-half run produced only {set(flags)}; the flag does not vary")
 
 
 @verifies("assay.paired_end",

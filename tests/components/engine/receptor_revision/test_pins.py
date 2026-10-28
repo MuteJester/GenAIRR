@@ -1,6 +1,6 @@
 """Pre-implementation contract for receptor revision.
 
-Companion to [`docs/receptor_revision_design.md`](../docs/receptor_revision_design.md).
+Companion to [`docs/receptor_revision_design.md`](audit-docs/receptor_revision_design.md).
 Receptor revision (V replacement after initial V(D)J recombination)
 isn't implemented yet; this file pins today's absence + the
 existing scaffolding the design relies on. When the implementation

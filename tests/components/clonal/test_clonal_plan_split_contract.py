@@ -1,7 +1,7 @@
 """Contract pins for the clonal plan-split architecture.
 
 Companion to
-[`audit-docs/clonal_plan_split_design.md`](../audit-docs/clonal_plan_split_design.md).
+[`audit-docs/clonal_plan_split_design.md`](audit-docs/clonal_plan_split_design.md).
 The audit's predecessor passes (the Bug-A-through-F slices) shipped
 the user-visible changes; this contract suite freezes the resulting
 architecture as positive scaffold pins plus deferred-architecture

@@ -18,8 +18,8 @@ two load-bearing invariants from the audit:
   implementation cannot reproduce.
 
 Companion to
-[`docs/np_markov_base_generator_design.md`](../docs/np_markov_base_generator_design.md)
-+ [`docs/junction_n_addition_audit.md`](../docs/junction_n_addition_audit.md).
+[`docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md)
++ [`docs/junction_n_addition_audit.md`](audit-docs/junction_n_addition_audit.md).
 """
 from __future__ import annotations
 

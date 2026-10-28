@@ -1,7 +1,7 @@
 """Contract pins for the Mutation Provenance Counters audit.
 
 Companion to
-[`docs/mutation_provenance_audit.md`](../docs/mutation_provenance_audit.md).
+[`docs/mutation_provenance_audit.md`](audit-docs/mutation_provenance_audit.md).
 The audit is pre-implementation: it freezes today's global
 counter shape and the per-event provenance the future slice will
 aggregate (``pin_scaffold_*``), plus the surfaces the slice will

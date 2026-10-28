@@ -1,7 +1,7 @@
 """Contract pins for the clonal-family / lineage audit.
 
 Companion to
-[`docs/clonal_family_design.md`](../docs/clonal_family_design.md).
+[`docs/clonal_family_design.md`](audit-docs/clonal_family_design.md).
 The audit is pre-implementation: it fixes today's behaviour
 (``pin_scaffold_*``) and the architecture gaps it identifies
 (``pin_absence_*``). No family-layer slice is proposed here; this

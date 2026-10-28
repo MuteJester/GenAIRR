@@ -1,6 +1,6 @@
 """Contract pins for the MkDocs Migration Plan
 (Phases 0 + 1, documented in
-[`docs/docs_mkdocs_migration_plan.md`](../docs/docs_mkdocs_migration_plan.md)).
+[`docs/docs_mkdocs_migration_plan.md`](docs/docs_mkdocs_migration_plan.md)).
 
 Pin set:
 

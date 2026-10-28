@@ -1,7 +1,7 @@
 """Contract pins for the clonal parent-outcome audit.
 
 Companion to
-[`docs/clonal_parent_outcome_design.md`](../docs/clonal_parent_outcome_design.md).
+[`docs/clonal_parent_outcome_design.md`](audit-docs/clonal_parent_outcome_design.md).
 The audit is pre-implementation: it freezes today's parent-outcome
 lifecycle (``pin_scaffold_*``) and the addressability gaps the
 audit identifies (``pin_absence_*``). No Slice 2 implementation

@@ -1,6 +1,6 @@
 """Productive-contract failure-mode golden tests.
 
-Companion to [docs/productive_failure_mode_audit.md](../docs/productive_failure_mode_audit.md).
+Companion to [docs/productive_failure_mode_audit.md](audit-docs/productive_failure_mode_audit.md).
 Pins the failure matrix from audit §4 — for each detectable
 failure mode of the productive bundle (ProductiveJunctionFrame,
 NoStopCodonInJunction, AnchorPreserved.V, AnchorPreserved.J), the

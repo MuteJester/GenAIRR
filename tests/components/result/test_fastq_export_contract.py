@@ -1,7 +1,7 @@
 """Contract pins for the FASTQ / Read Export audit.
 
 Companion to
-[`docs/fastq_export_design.md`](../docs/fastq_export_design.md).
+[`docs/fastq_export_design.md`](audit-docs/fastq_export_design.md).
 The audit is pre-implementation: it freezes today's surfaces
 (``pin_scaffold_*``) and the gaps a future implementation slice
 would close (``pin_absence_*``).

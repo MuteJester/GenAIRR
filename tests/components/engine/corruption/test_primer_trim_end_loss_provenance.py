@@ -1,6 +1,6 @@
 """Primer-trim / end-loss provenance golden tests.
 
-Companion to [docs/primer_trim_end_loss_audit.md](../docs/primer_trim_end_loss_audit.md).
+Companion to [docs/primer_trim_end_loss_audit.md](audit-docs/primer_trim_end_loss_audit.md).
 This file pins **current** behaviour — including the
 provenance-gap drift items the audit catalogues. When a future
 slice fixes the drift, the corresponding assertions here flip from
