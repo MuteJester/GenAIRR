@@ -339,7 +339,7 @@ class OgrdbSource:
         Works for a single export (the endpoint comparison is then incomplete) and for bytes
         outside the profile's validated scope (no coordinate claim is then accepted).
         """
-        inventory = evidence.interpret(self._lock, self._assets, ogrdb.build_inventory(self._lock, self._assets))
+        inventory = evidence._interpret_locked(self._lock, self._assets)      # reads the bytes once
         return SourceInspection._of(self._lock, inventory)
 
     def build(self, recipe) -> ReferenceBuild:

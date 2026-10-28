@@ -819,3 +819,19 @@ def test_interpretation_of_a_supplied_inventory_still_rebuilds_and_compares_it(t
     edited = dataclasses.replace(inventory, findings=inventory.findings[:-1])
     exc = error("identity_mismatch", evidence.interpret, source.lock, blobs, edited)
     assert exc.path == "/inventory"
+
+
+def test_inspection_reads_the_source_bytes_into_an_inventory_once(tmp_path, monkeypatch):
+    from GenAIRR._reference_sources import evidence, ogrdb
+    source = from_files(tmp_path)
+    calls = []
+    real = ogrdb.build_inventory
+
+    def counted(lock, assets):
+        calls.append(lock.commitment)
+        return real(lock, assets)
+
+    monkeypatch.setattr(ogrdb, "build_inventory", counted)
+    monkeypatch.setattr(evidence, "build_inventory", counted)
+    source.inspect()
+    assert calls == [source.lock.commitment]
