@@ -49,7 +49,6 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import re
-import tempfile
 from types import MappingProxyType
 from typing import Mapping, Optional
 
@@ -62,7 +61,7 @@ from GenAIRR._reference.sidecar import (
     MAX_BYTES as SIDECAR_MAX_BYTES, SCHEMA_NAME as SIDECAR_SCHEMA, SCHEMA_VERSION as SIDECAR_VERSION,
 )
 from GenAIRR._reference_sources import evidence, ogrdb
-from GenAIRR._reference_sources._fields import MAX_TEXT, bad, digest, ptr, require_type
+from GenAIRR._reference_sources._fields import MAX_TEXT, bad, digest, private_directory, ptr, require_type
 from GenAIRR._reference_sources.common import RECORD_EXPORT_FORMATS, Generator, Locator, RuntimeHashes
 from GenAIRR._reference_sources.consistency import (
     check_decisions, check_inventory, check_profile_scope, check_recipe, check_selection,
@@ -679,13 +678,17 @@ def _check_sizes(fasta: tuple, annotations: bytes) -> None:
 
 def _runtime(fasta: tuple, annotations: bytes) -> Reference:
     """Build through the public ``Reference.from_fasta`` from files in a private temporary directory."""
-    with tempfile.TemporaryDirectory(prefix="genairr_projection_") as root:
+    with private_directory("genairr_projection_", "the projected files") as root:
         paths = {}
-        for segment, data in fasta:
-            paths[segment] = Path(root, FASTA_MEMBERS[segment])
-            paths[segment].write_bytes(data)
-        sidecar = Path(root, ANNOTATIONS_MEMBER)
-        sidecar.write_bytes(annotations)
+        try:
+            for segment, data in fasta:
+                paths[segment] = Path(root, FASTA_MEMBERS[segment])
+                paths[segment].write_bytes(data)
+            sidecar = Path(root, ANNOTATIONS_MEMBER)
+            sidecar.write_bytes(annotations)
+        except OSError as exc:
+            raise bad("", f"cannot write the projected files into a private temporary directory: {exc}",
+                      "io") from exc
         try:
             return Reference.from_fasta(v=paths["V"], j=paths["J"], d=paths.get("D"), annotations=sidecar)
         except ReferenceArtifactError as exc:

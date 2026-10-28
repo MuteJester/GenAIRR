@@ -1611,3 +1611,78 @@ def test_running_out_of_memory_while_loading_a_packaged_build_is_a_resource_limi
     monkeypatch.setattr(bundled, "_extract", exhausted)
     exc = error("resource_limit", ReferenceBuild.bundled, STARTER_ID)
     assert "memory" in exc.message and STARTER_ID in exc.message
+
+
+# ── temporary directories ────────────────────────────────────────────
+
+
+def failing_temporary_directory(monkeypatch, *, create=False, cleanup=False):
+    import errno
+    import tempfile
+    real = tempfile.TemporaryDirectory
+
+    class Failing(real):
+        def __init__(self, *args, **kwargs):
+            if create:
+                raise PermissionError(errno.EACCES, "simulated: no writable temporary directory")
+            super().__init__(*args, **kwargs)
+
+        def cleanup(self):
+            super().cleanup()
+            if cleanup:
+                raise PermissionError(errno.EACCES, "simulated: the directory is still in use")
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", Failing)
+
+
+def test_a_projection_without_a_temporary_directory_is_a_typed_io_error(tmp_path, monkeypatch):
+    from tests.test_reference_source_api import mini_source
+    from tests.test_reference_source_projection import entry, recipe
+    source, blobs = mini_source(tmp_path, monkeypatch)
+    document = recipe(source.lock, [entry(blobs, "airr", label) for label in MINI])
+    failing_temporary_directory(monkeypatch, create=True)
+    exc = error("io", source.build, document)
+    assert "temporary directory" in exc.message and "simulated" in exc.message
+
+
+def test_a_projection_that_cannot_write_its_inputs_is_a_typed_io_error(tmp_path, monkeypatch):
+    import errno
+    from tests.test_reference_source_api import mini_source
+    from tests.test_reference_source_projection import entry, recipe
+    source, blobs = mini_source(tmp_path, monkeypatch)
+    document = recipe(source.lock, [entry(blobs, "airr", label) for label in MINI])
+
+    def full(self, data):
+        raise OSError(errno.ENOSPC, "simulated: no space left")
+
+    monkeypatch.setattr(pathlib.Path, "write_bytes", full)
+    exc = error("io", source.build, document)
+    assert "projected" in exc.message and "simulated" in exc.message
+
+
+def test_failing_to_remove_a_temporary_directory_never_masks_or_fails_anything(tmp_path, monkeypatch):
+    from GenAIRR._reference.artifact import Reference
+    from GenAIRR._reference.errors import ReferenceArtifactError
+    from tests.test_reference_source_api import mini_source
+    from tests.test_reference_source_projection import entry, recipe
+    source, blobs = mini_source(tmp_path, monkeypatch)
+    document = recipe(source.lock, [entry(blobs, "airr", label) for label in MINI])
+    failing_temporary_directory(monkeypatch, cleanup=True)
+    assert [a.label for a in source.build(document).reference.alleles] == list(MINI)       # success stands
+
+    def rejects(**files):
+        raise ReferenceArtifactError("conflict", "alleles[0].anchor", "rejected for this test")
+
+    monkeypatch.setattr(Reference, "from_fasta", rejects)
+    error("projection", source.build, document)                                          # the real error
+
+
+def test_a_packaged_load_without_a_temporary_directory_is_a_typed_io_error(monkeypatch):
+    monkeypatch.setattr(build_module, "_BUNDLED", {})
+    with monkeypatch.context() as patch:
+        failing_temporary_directory(patch, create=True)
+        exc = error("io", ReferenceBuild.bundled, STARTER_ID)
+    assert "temporary directory" in exc.message
+    monkeypatch.setattr(build_module, "_BUNDLED", {})
+    failing_temporary_directory(monkeypatch, cleanup=True)
+    assert ReferenceBuild.bundled(STARTER_ID).reference.alleles

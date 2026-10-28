@@ -12,7 +12,6 @@ from dataclasses import dataclass
 import importlib.resources
 import io
 from pathlib import Path
-import tempfile
 import stat
 import struct
 from types import MappingProxyType
@@ -21,7 +20,7 @@ import unicodedata
 import zipfile
 
 from GenAIRR._artifact_io import read_bounded
-from GenAIRR._reference_sources._fields import bad, check_digest, check_member_path
+from GenAIRR._reference_sources._fields import bad, check_digest, check_member_path, private_directory
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.manifest import (
     MANIFEST_NAME, MAX_MANIFEST_BYTES, MAX_MEMBER_NAME, MAX_MEMBERS, BuildManifest,
@@ -307,8 +306,8 @@ def dossier_directory(dossier: BundledDossier, check: Optional[Callable[[Path], 
             check(resource)
         yield resource
         return
-    with tempfile.TemporaryDirectory(prefix="genairr_bundled_") as temporary:
-        target = Path(temporary) / "dossier"
+    with private_directory("genairr_bundled_", f"the bundled dossier {dossier.resource}") as temporary:
+        target = temporary / "dossier"
         where = f"the bundled dossier archive {dossier.resource} of {dossier.package}"
         try:
             if archived:

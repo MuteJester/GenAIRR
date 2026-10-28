@@ -8,12 +8,15 @@ caller passes a more specific kind.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import datetime
 import json
 import math
+from pathlib import Path
 import re
+import tempfile
 import unicodedata
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Iterator, Optional
 from urllib.parse import urlsplit
 
 from GenAIRR import _engine
@@ -65,6 +68,27 @@ def show(value: Any) -> str:
     """A short ``repr`` for error messages."""
     text = repr(value)
     return text if len(text) <= _SHOW else text[:_SHOW - 3] + "..."
+
+
+@contextmanager
+def private_directory(prefix: str, purpose: str) -> Iterator[Path]:
+    """A new private temporary directory for ``purpose``, removed afterwards.
+
+    Failing to create it is a typed ``io`` error.  Removing it is best effort: a failure (such as
+    a Windows sharing violation) never replaces an error being reported and never fails an
+    operation that succeeded.
+    """
+    try:
+        holder = tempfile.TemporaryDirectory(prefix=prefix)
+    except OSError as exc:
+        raise bad("", f"cannot create a private temporary directory for {purpose}: {exc}", "io") from exc
+    try:
+        yield Path(holder.name)
+    finally:
+        try:
+            holder.cleanup()
+        except OSError:
+            pass
 
 
 def short_digest(value: Any) -> str:
