@@ -38,8 +38,8 @@ def igh_starter_session(tmp_path_factory) -> StarterSession:
     from GenAIRR._artifact_io import canonical_json
     from GenAIRR._reference_sources import model, projection
     from GenAIRR._reference_sources.build import ReferenceBuild
-    from tests.test_reference_source_api import ALL, IGH, fixture_bytes, from_files
-    from tests.test_reference_source_projection import interpreted, starter_recipe
+    from tests.support.fixtures.source_api import ALL, IGH, fixture_bytes, from_files
+    from tests.support.fixtures.source_projection import interpreted, starter_recipe
     source = from_files(tmp_path_factory.mktemp("igh-starter"), IGH)
     blobs = MappingProxyType({fmt: fixture_bytes(IGH, fmt) for fmt in ALL})
     inventory = interpreted(blobs, source.lock)
@@ -56,7 +56,7 @@ def igh_starter_session(tmp_path_factory) -> StarterSession:
 def igl_two_allele_session(tmp_path_factory) -> tuple:
     """``(source, build)``: two IGL alleles built once per session over the complete pinned IGL
     release 4 exports (recorded as local files; no scope patch).  Both are immutable."""
-    from tests.test_reference_source_api import from_files, full_recipe
+    from tests.support.fixtures.source_api import from_files, full_recipe
     root = tmp_path_factory.mktemp("igl-two-alleles")
     source = from_files(root)
     return source, source.build(full_recipe(root, source))

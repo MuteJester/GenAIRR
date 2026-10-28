@@ -6,7 +6,7 @@ import pytest
 
 from GenAIRR import Experiment, SimulationResult, _engine as ge
 from GenAIRR.experimental import CoupledDuplexRepair, DuplexJoin
-from tests.test_duplex_observation_productivity import _fixture, _compile
+from tests.support.fixtures.duplex_observation import _fixture, _compile
 
 
 def _result(*, clipped=False):

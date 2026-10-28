@@ -23,8 +23,8 @@ import pytest
 
 from GenAIRR._artifact_io import canonical_json
 from GenAIRR._reference_sources.recipe import Recipe
-from tests.test_ogrdb_source_inventory import IGH, RECORDS, SELECTION, raw, raw_records
-from tests.test_reference_source_api import DATA, PROFILE, SOURCES
+from tests.support.fixtures.ogrdb_inventory import IGH, RECORDS, SELECTION, raw, raw_records
+from tests.support.fixtures.source_api import DATA, PROFILE, SOURCES
 
 STARTER_ID = "human_igh_ogrdb_10_observed_v1"
 RECIPE_PATH = DATA / f"{STARTER_ID}.recipe.json"
@@ -809,7 +809,7 @@ def test_the_starter_loads_from_a_read_only_package_location(tmp_path, monkeypat
     from GenAIRR._reference_sources import bundled
     from GenAIRR._reference_sources.digests import manifest_hash
     from GenAIRR.reference_sources import ReferenceBuild
-    from tests.test_reference_source_api import tree
+    from tests.support.fixtures.source_api import tree
     root = tmp_path / "site"
     dossier = root / "genairr_readonly_pkg" / "published"
     dossier.mkdir(parents=True)

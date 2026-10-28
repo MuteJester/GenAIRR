@@ -15,25 +15,10 @@ from tests.support import paths
 
 TESTS_ROOT = Path(__file__).resolve().parents[2]
 
-# Modules that still borrow from another test module. This list only ever
-# shrinks: an entry is removed when its shared setup moves into
-# tests/support, and nothing is ever added. The assertion below is an
-# equality, so both a new borrower and a fixed one fail the test -- the
-# second so that the record cannot silently fall out of date.
-KNOWN_CROSS_IMPORTS: dict[str, set[str]] = {
-    "conftest.py": {"test_reference_source_api", "test_reference_source_projection"},
-    "test_duplex_result_integration.py": {"test_duplex_observation_productivity"},
-    "test_ogrdb_source_coordinates.py": {"test_ogrdb_source_inventory"},
-    "test_ogrdb_source_evidence.py": {"test_ogrdb_source_coordinates", "test_ogrdb_source_inventory"},
-    "test_published_reference_acceptance.py": {"test_ogrdb_source_inventory"},
-    "test_published_reference_resources.py": {
-        "test_ogrdb_source_inventory", "test_reference_source_api", "test_reference_source_dossier"},
-    "test_reference_source_api.py": {
-        "test_ogrdb_source_coordinates", "test_ogrdb_source_inventory",
-        "test_reference_source_acquisition", "test_reference_source_projection"},
-    "test_reference_source_dossier.py": {"test_reference_source_api", "test_reference_source_projection"},
-    "test_reference_source_projection.py": {"test_ogrdb_source_coordinates", "test_ogrdb_source_inventory"},
-}
+# Modules that still borrow from another test module. Empty, and it stays
+# empty: shared setup belongs in tests/support. A new entry fails the test
+# below, so this cannot quietly refill.
+KNOWN_CROSS_IMPORTS: dict[str, set[str]] = {}
 
 
 def _python_files(root: Path):

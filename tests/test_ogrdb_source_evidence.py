@@ -26,11 +26,11 @@ from GenAIRR._reference_sources import evidence
 from GenAIRR._reference_sources import model as m
 from GenAIRR._reference_sources import ogrdb
 from GenAIRR._reference_sources import profiles
-from tests.test_ogrdb_source_coordinates import (
+from tests.support.fixtures.ogrdb_coordinates import (
     EVIDENCE, GAPPED, NOTE_LABELS, assert_status, at, candidate_of, claim_of, claims, findings, interpret,
     interpret_in_scope, interpreted, raw_gapped, raw_record, record_of, small, span_limiting_notes,
 )
-from tests.test_ogrdb_source_inventory import (
+from tests.support.fixtures.ogrdb_inventory import (
     EXPECT, IGH, IGK, IGL, SELECTION, SETS, _key, build, error, inventory_of, pinned, raw_records, seal,
 )
 

@@ -23,10 +23,11 @@ from GenAIRR import _artifact_io
 from GenAIRR._reference import artifact as artifact_module
 from GenAIRR._reference_sources import build as build_module
 from GenAIRR.reference_sources import ReferenceBuild
-from tests.test_reference_source_api import (
-    ALL, IGL, MINI, error, fixture_bytes, from_files, full_recipe, offline, pinned_asset, sha, tree,  # noqa: F401
+from tests.support.fixtures.source_api import (
+    ALL, IGL, error, fixture_bytes, from_files, full_recipe, offline, pinned_asset, sha, tree,  # noqa: F401
 )
 from tests.support.fixtures.source_dossier import OFFLINE_SCRIPT
+from tests.support.fixtures.source_projection import MINI  # noqa: F401
 
 T0 = datetime.datetime(2026, 10, 27, 9, 0, 0, tzinfo=datetime.timezone.utc)
 
@@ -435,8 +436,8 @@ V_RECORD, J_RECORD, OTHER = ("airr#/GermlineSet/0/allele_descriptions/1", "airr#
 def mini(tmp_path, monkeypatch):
     """A synthetic IGL source over V, J1 and J7 (registered as validated for the test); V and J1 are
     selected, J7 is outside the selection.  Returns ``(build, dossier directory)``."""
-    from tests.test_reference_source_api import mini_source
-    from tests.test_reference_source_projection import entry, recipe
+    from tests.support.fixtures.source_api import mini_source
+    from tests.support.fixtures.source_projection import entry, recipe
     source, blobs = mini_source(tmp_path, monkeypatch, labels=MINI + (J7,))
     build = source.build(recipe(source.lock, [entry(blobs, "airr", label) for label in MINI]))
     build.write_dossier(tmp_path / "dossier")
@@ -1549,8 +1550,8 @@ def failing_temporary_directory(monkeypatch, *, create=False, cleanup=False):
 
 
 def test_a_projection_without_a_temporary_directory_is_a_typed_io_error(tmp_path, monkeypatch):
-    from tests.test_reference_source_api import mini_source
-    from tests.test_reference_source_projection import entry, recipe
+    from tests.support.fixtures.source_api import mini_source
+    from tests.support.fixtures.source_projection import entry, recipe
     source, blobs = mini_source(tmp_path, monkeypatch)
     document = recipe(source.lock, [entry(blobs, "airr", label) for label in MINI])
     failing_temporary_directory(monkeypatch, create=True)
@@ -1560,8 +1561,8 @@ def test_a_projection_without_a_temporary_directory_is_a_typed_io_error(tmp_path
 
 def test_a_projection_that_cannot_write_its_inputs_is_a_typed_io_error(tmp_path, monkeypatch):
     import errno
-    from tests.test_reference_source_api import mini_source
-    from tests.test_reference_source_projection import entry, recipe
+    from tests.support.fixtures.source_api import mini_source
+    from tests.support.fixtures.source_projection import entry, recipe
     source, blobs = mini_source(tmp_path, monkeypatch)
     document = recipe(source.lock, [entry(blobs, "airr", label) for label in MINI])
 
@@ -1576,8 +1577,8 @@ def test_a_projection_that_cannot_write_its_inputs_is_a_typed_io_error(tmp_path,
 def test_failing_to_remove_a_temporary_directory_never_masks_or_fails_anything(tmp_path, monkeypatch):
     from GenAIRR._reference.artifact import Reference
     from GenAIRR._reference.errors import ReferenceArtifactError
-    from tests.test_reference_source_api import mini_source
-    from tests.test_reference_source_projection import entry, recipe
+    from tests.support.fixtures.source_api import mini_source
+    from tests.support.fixtures.source_projection import entry, recipe
     source, blobs = mini_source(tmp_path, monkeypatch)
     document = recipe(source.lock, [entry(blobs, "airr", label) for label in MINI])
     failing_temporary_directory(monkeypatch, cleanup=True)

@@ -42,7 +42,7 @@ from GenAIRR._reference_sources import api
 from GenAIRR._reference_sources.acquisition import HttpsTransport
 from GenAIRR.experimental import FamilyReplayError
 from GenAIRR.reference_sources import OgrdbSource, ReferenceBuild, ReferenceSourceError
-from tests.test_ogrdb_source_inventory import EXPECT, IGH, IGK, RECORDS, SELECTION, raw, raw_records
+from tests.support.fixtures.ogrdb_inventory import EXPECT, IGH, IGK, RECORDS, SELECTION, raw, raw_records
 
 TESTS = pathlib.Path(__file__).resolve().parent
 REPO = TESTS.parent
