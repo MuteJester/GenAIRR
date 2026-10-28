@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib.util
 import json
 import os
 from types import MappingProxyType
@@ -90,5 +91,12 @@ else:
 from tests.biology.catalog._plugin import (  # noqa: E402,F401
     pytest_addoption,
     pytest_collection_modifyitems,
+    pytest_sessionfinish,
     pytest_terminal_summary,
 )
+
+# pytest_testnodedown is declared by pytest-xdist, so implementing it without
+# xdist installed is an unknown hook and a plugin validation error. It is only
+# needed when the run is distributed, which is exactly when xdist is present.
+if importlib.util.find_spec("xdist") is not None:  # noqa: E402
+    from tests.biology.catalog._plugin import pytest_testnodedown  # noqa: E402,F401

@@ -24,6 +24,33 @@ def pytest_collection_modifyitems(items):
         _COVERED.setdefault(mechanism_id, set()).update(fields)
 
 
+def _merge(registrations: dict, covered: dict) -> None:
+    for mechanism_id, nodes in registrations.items():
+        existing = _REGISTRATIONS.setdefault(mechanism_id, [])
+        existing.extend(n for n in nodes if n not in existing)
+    for mechanism_id, fields in covered.items():
+        _COVERED.setdefault(mechanism_id, set()).update(fields)
+
+
+# ── crossing the xdist boundary ──────────────────────────────────────────────
+# Registrations are gathered during collection, which under xdist happens in
+# each worker, while the report is written by the controller. CI runs -n auto,
+# so without shipping them across that boundary the report would read
+# "unverified" the moment anyone annotated a test.
+
+def pytest_sessionfinish(session):
+    output = getattr(session.config, "workeroutput", None)
+    if output is None:
+        return                                  # controller, or no xdist
+    output["genairr_registrations"] = {k: list(v) for k, v in _REGISTRATIONS.items()}
+    output["genairr_covered"] = {k: sorted(v) for k, v in _COVERED.items()}
+
+
+def pytest_testnodedown(node, error):
+    output = getattr(node, "workeroutput", None) or {}
+    _merge(output.get("genairr_registrations", {}), output.get("genairr_covered", {}))
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     if not config.getoption("--biology-coverage", default=False):
         return

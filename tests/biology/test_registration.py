@@ -142,3 +142,50 @@ def test_a_typo_is_a_collection_error_in_a_real_module(tmp_path):
         capture_output=True, text=True, cwd=paths.repo_root())
     assert result.returncode != 0, result.stdout
     assert "junction.n_additon" in result.stdout + result.stderr
+
+
+def _coverage_line(tmp_path, *extra_args):
+    """Run a module with two registrations and return its report line."""
+    import subprocess
+    import sys
+    from tests.support import paths
+
+    module = tmp_path / "test_registered.py"
+    module.write_text(
+        "from tests.biology.catalog import verifies\n\n\n"
+        '@verifies("junction.p_nucleotide", claim="the 5\' V P length is recorded",\n'
+        '          fields=("p_v_3_length",))\n'
+        "def test_one():\n"
+        "    assert True\n\n\n"
+        '@verifies("junction.p_nucleotide", claim="the 3\' J P length is recorded",\n'
+        '          fields=("p_j_5_length",))\n'
+        "def test_two():\n"
+        "    assert True\n",
+        encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", str(module), "-q", "--biology-coverage",
+         "-p", "tests.biology.catalog._plugin", "-p", "no:cacheprovider", *extra_args],
+        capture_output=True, text=True, cwd=paths.repo_root())
+    lines = [ln for ln in result.stdout.splitlines() if "junction.p_nucleotide" in ln]
+    assert lines, f"no report line produced:\n{result.stdout}\n{result.stderr}"
+    return lines[0].split()
+
+
+def test_registrations_survive_distributed_collection(tmp_path):
+    """The report must say the same thing under -n as serial.
+
+    Registrations are gathered during collection, which happens in the xdist
+    workers, while the report is written by the controller. CI runs -n auto, so
+    without shipping them across that boundary the report would say
+    "unverified" the moment anyone annotated a test -- the inverted lie, by
+    default, under the project's own command.
+    """
+    serial = _coverage_line(tmp_path)
+    distributed = _coverage_line(tmp_path, "-n", "2")
+    assert serial == distributed, f"serial {serial} != distributed {distributed}"
+
+
+def test_two_registrations_on_one_mechanism_are_both_counted(tmp_path):
+    fields = _coverage_line(tmp_path)
+    assert "py:2" in fields, fields
+    assert "2/4" in fields, fields
