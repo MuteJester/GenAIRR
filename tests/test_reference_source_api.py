@@ -879,3 +879,23 @@ def test_a_decision_left_behind_by_a_recipe_edit_names_its_allele_and_the_remedy
     assert exc.path == f"/decisions/{index}/sequence_sha256"
     assert "IGHV3-21*05" in exc.message and f"decision {index}" in exc.message
     assert "remove" in exc.message and "update" in exc.message
+
+
+def test_an_unmet_requirement_groups_its_blockers_in_a_bounded_message(igh_starter, tmp_path):
+    import re
+    build, _ = igh_starter
+    document = build.recipe.to_dict()
+    document["requires"].append({"capability": "original_coding_ends", "evidence": "assertion"})
+    exc = error("capability", from_files(tmp_path, IGH).build, document)
+    assert exc.path == f"/requires/{len(document['requires']) - 1}"
+    assert len(exc.message) <= 4096
+    selected = {segment: len(labels) for segment, labels in SELECTION["selected"].items()}
+    blockers = selected["V"] + selected["J"] + 2 * selected["D"]                   # V 3', J 5', both D ends
+    named = re.findall(r"\b[VDJ]:IGH[VDJ][^\s,;)]*", exc.message)
+    shown = re.search(r"\.\.\. and (\d+) more", exc.message)
+    assert len(named) + (int(shown.group(1)) if shown else 0) == blockers
+    alleles = {f"{segment}:{label}" for segment, labels in SELECTION["selected"].items() for label in labels}
+    assert set(named) <= alleles                       # a D allele blocks both coding ends, so it can appear twice
+    groups = [int(n) for n in re.findall(r"unmet for (\d+) alleles", exc.message)]
+    assert sum(groups) == blockers and len(groups) == 2
+    assert 'accepted boundary_3 == "complete"' in exc.message and 'add "boundary_3"' in exc.message
