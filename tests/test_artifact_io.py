@@ -379,3 +379,42 @@ def test_family_replay_write_without_hard_links_is_a_family_replay_io_error(tmp_
     assert _temporaries(tmp_path) == []
     bundle.write_to(target, replace=True)
     assert target.read_text(encoding="utf-8") == "{}"
+
+
+class _RecordingReader:
+    """A file object that records every size asked of ``read``."""
+
+    def __init__(self, handle, asked):
+        self._handle, self._asked = handle, asked
+
+    def read(self, size=-1):
+        self._asked.append(size)
+        return self._handle.read(size)
+
+    def __getattr__(self, name):
+        return getattr(self._handle, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._handle.close()
+
+
+def test_a_bounded_read_asks_for_the_file_size_not_the_limit(tmp_path, monkeypatch):
+    path = tmp_path / "small.json"
+    path.write_bytes(b'{"small": true}\n')
+    asked = []
+    monkeypatch.setattr(_artifact_io, "open", lambda *a, **k: _RecordingReader(open(*a, **k), asked), raising=False)
+    assert _artifact_io.read_text_bounded(path, max_bytes=1 << 30) == '{"small": true}\n'
+    assert asked and max(asked) <= len(b'{"small": true}\n') + 1
+
+
+def test_a_bounded_read_without_a_known_size_reads_in_chunks_up_to_the_limit():
+    import io
+    asked = []
+    data = _artifact_io.read_bounded(_RecordingReader(io.BytesIO(b"x" * 5000), asked), 1 << 30)
+    assert data == b"x" * 5000 and max(asked) <= 1 << 20
+    asked.clear()
+    data = _artifact_io.read_bounded(_RecordingReader(io.BytesIO(b"y" * 5000), asked), 100)
+    assert data == b"y" * 101 and sum(asked) <= 101 + (1 << 20)

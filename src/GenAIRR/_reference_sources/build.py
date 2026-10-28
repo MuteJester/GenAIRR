@@ -18,7 +18,7 @@ import threading
 from types import MappingProxyType
 from typing import Callable, Mapping, Optional
 
-from GenAIRR._artifact_io import ArtifactIOError, canonical_json, write_atomic
+from GenAIRR._artifact_io import ArtifactIOError, canonical_json, read_bounded, write_atomic
 from GenAIRR._reference.artifact import MAX_BYTES as REFERENCE_MAX_BYTES, Reference
 from GenAIRR._reference.errors import ReferenceArtifactError
 from GenAIRR._reference.importer import FASTA_MAX_BYTES
@@ -173,7 +173,7 @@ def _read_file(root: Path, name: str, limit: int) -> bytes:
     with os.fdopen(descriptor, "rb") as handle:
         if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
             raise bad("/" + name, f"{name} is not a regular file", "io")
-        return handle.read(limit + 1)
+        return read_bounded(handle, limit)
 
 
 def _holds(root: Path, name: str, data: bytes) -> bool:
@@ -505,9 +505,17 @@ class ReferenceBuild:
         check (and :meth:`bundled`) needs a writable temporary directory.  The result holds the
         stored reference, report and manifest.
         """
+        root = _path(directory)
+        try:
+            return cls._read_dossier(root)
+        except MemoryError:
+            raise bad("", f"checking the dossier {root} needs more memory than this process may use (for example "
+                          "under an address-space limit such as ulimit -v)", "resource_limit") from None
+
+    @classmethod
+    def _read_dossier(cls, root: Path) -> "ReferenceBuild":
         import GenAIRR
         checking = GenAIRR.__version__
-        root = _path(directory)
         manifest = _read_manifest(root)
 
         # Exactly the listed members (plus receipts) are present, as regular files.
@@ -678,8 +686,12 @@ class ReferenceBuild:
                     raise bad("/" + MANIFEST_NAME, f"the dossier packaged as {exact_id!r} has manifest {found}, not "
                                                    f"the registered {entry.manifest_hash}", "digest_mismatch")
 
-            with bundled.dossier_directory(entry, pinned) as directory:
-                build = cls.read_dossier(directory)
+            try:
+                with bundled.dossier_directory(entry, pinned) as directory:
+                    build = cls.read_dossier(directory)
+            except MemoryError:
+                raise bad("", f"loading the bundled build {exact_id!r} needs more memory than this process may use "
+                              "(for example under an address-space limit such as ulimit -v)", "resource_limit") from None
             if manifest_hash(build.manifest) != entry.manifest_hash:
                 raise bad("/" + MANIFEST_NAME, f"the dossier packaged as {exact_id!r} changed while it was checked",
                           "digest_mismatch")

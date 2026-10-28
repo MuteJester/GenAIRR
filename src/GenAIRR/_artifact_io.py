@@ -7,6 +7,7 @@ format uses one implementation.
 from __future__ import annotations
 
 import errno
+import io
 import json
 import os
 from pathlib import Path
@@ -46,10 +47,39 @@ def strict_loads(text: str, *, max_bytes: int) -> Any:
     return json.loads(normalized)
 
 
+_READ_CHUNK = 1 << 20
+
+
+def read_bounded(handle, max_bytes: int) -> bytes:
+    """At most ``max_bytes + 1`` bytes of ``handle``, allocated as they arrive.
+
+    The first read asks for the file's own size when it is known (one more byte shows that it
+    grew), later reads at most 1 MiB, so a small file never costs a buffer the size of the
+    limit.  A result longer than ``max_bytes`` means the source is over the limit.
+    """
+    try:
+        size = os.fstat(handle.fileno()).st_size
+    except (AttributeError, OSError, ValueError, io.UnsupportedOperation):
+        size = 0
+    want = min(size, max_bytes) + 1 if size > 0 else _READ_CHUNK
+    parts, total = [], 0
+    while total <= max_bytes:
+        asked = min(want, max_bytes + 1 - total)
+        chunk = handle.read(asked)
+        if not chunk:
+            break
+        parts.append(chunk)
+        total += len(chunk)
+        if size > 0 and len(parts) == 1 and len(chunk) < asked:
+            break                                   # the file's own size, and no more: it is complete
+        want = _READ_CHUNK
+    return parts[0] if len(parts) == 1 else b"".join(parts)
+
+
 def read_text_bounded(path, *, max_bytes: int) -> str:
     try:
         with open(path, "rb") as handle:
-            data = handle.read(max_bytes + 1)
+            data = read_bounded(handle, max_bytes)
     except OSError as exc:
         raise ArtifactIOError("io", str(exc)) from exc
     if len(data) > max_bytes:

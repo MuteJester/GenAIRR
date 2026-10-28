@@ -1521,3 +1521,93 @@ def test_a_packaged_zip_declaring_too_many_entries_is_refused_before_zipfile_rea
                 pass
 
         error("resource_limit", enter)
+
+
+# ── memory: reads sized by the data, and a typed error when it runs out ─
+
+
+def test_dossier_members_are_read_by_their_own_size(mini, monkeypatch):
+    _, dossier = mini
+    asked = {}
+    real_fdopen = build_module.os.fdopen
+
+    class Recording:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def read(self, size=-1):
+            asked.setdefault(pathlib.Path(self._handle.name).name if isinstance(self._handle.name, str)
+                             else self._handle.fileno(), []).append(size)
+            return self._handle.read(size)
+
+        def __getattr__(self, name):
+            return getattr(self._handle, name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._handle.close()
+
+    monkeypatch.setattr(build_module.os, "fdopen", lambda fd, *a, **k: Recording(real_fdopen(fd, *a, **k)))
+    ReferenceBuild.read_dossier(dossier)
+    sizes = sorted(path.stat().st_size for path in dossier.rglob("*") if path.is_file())
+    assert max(size for sizes_asked in asked.values() for size in sizes_asked) <= sizes[-1] + 1
+
+
+def test_running_out_of_memory_while_checking_a_dossier_is_a_resource_limit(mini, monkeypatch):
+    _, dossier = mini
+
+    def exhausted(*args, **kwargs):
+        raise MemoryError()
+
+    monkeypatch.setattr(build_module, "project", exhausted)
+    exc = error("resource_limit", ReferenceBuild.read_dossier, dossier)
+    assert "memory" in exc.message
+
+
+def test_the_packaged_archive_is_read_by_its_own_size(monkeypatch):
+    import importlib.resources
+    from GenAIRR._reference_sources import bundled
+    monkeypatch.setattr(build_module, "_BUNDLED", {})
+    real_files = importlib.resources.files
+    asked = []
+
+    class Resource:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def joinpath(self, child):
+            return Resource(self._inner.joinpath(child))
+
+        def open(self, mode="r", *args, **kwargs):
+            handle = self._inner.open(mode, *args, **kwargs)
+            real_read = handle.read
+
+            def read(size=-1):
+                asked.append(size)
+                return real_read(size)
+
+            handle.read = read
+            return handle
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    monkeypatch.setattr(bundled.importlib.resources, "files", lambda package: Resource(real_files(package)))
+    build = ReferenceBuild.bundled(STARTER_ID)
+    archive = real_files("GenAIRR.data").joinpath("published_references", f"{STARTER_ID}.zip")
+    assert asked and max(asked) <= archive.stat().st_size + 1
+    assert build.manifest.runtime.execution_hash.startswith("sha256:")
+
+
+def test_running_out_of_memory_while_loading_a_packaged_build_is_a_resource_limit(monkeypatch):
+    from GenAIRR._reference_sources import bundled
+    monkeypatch.setattr(build_module, "_BUNDLED", {})
+
+    def exhausted(*args, **kwargs):
+        raise MemoryError()
+
+    monkeypatch.setattr(bundled, "_extract", exhausted)
+    exc = error("resource_limit", ReferenceBuild.bundled, STARTER_ID)
+    assert "memory" in exc.message and STARTER_ID in exc.message

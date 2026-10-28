@@ -20,6 +20,7 @@ from typing import Callable, Iterator, Mapping, Optional
 import unicodedata
 import zipfile
 
+from GenAIRR._artifact_io import read_bounded
 from GenAIRR._reference_sources._fields import bad, check_digest, check_member_path
 from GenAIRR._reference_sources.errors import ReferenceSourceError
 from GenAIRR._reference_sources.manifest import (
@@ -118,7 +119,7 @@ def _copy(source, target: Path, budget: list) -> None:
             _copy(item, target / name, budget)
             continue
         with item.open("rb") as handle:
-            data = handle.read(budget[1] + 1)
+            data = read_bounded(handle, budget[1])
         if len(data) > budget[1]:
             raise bad("", f"the packaged dossier holds more than {_MAX_BYTES} bytes", "resource_limit")
         budget[1] -= len(data)
@@ -256,7 +257,7 @@ def _extract(resource, target: Path, where: str, check: Optional[Callable[[Path]
     ``check(target)`` (when given), then every other member."""
     limit = _MAX_BYTES + _ARCHIVE_OVERHEAD
     with resource.open("rb") as handle:
-        data = handle.read(limit + 1)
+        data = read_bounded(handle, limit)
     if len(data) > limit:
         raise bad("", f"{where} holds more than {limit} bytes", "resource_limit")
     _check_directory_record(data, where)
