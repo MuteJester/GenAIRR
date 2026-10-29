@@ -269,3 +269,88 @@ def columns_compared(record, allele_sequences, *, inverted=(), segments=SEGMENTS
                         segment_end=span_end, inverted=segment in inverted) is not None:
                     counts[segment] += 1
     return counts
+
+
+# ── translation ──────────────────────────────────────────────────────────────
+#
+# The frame is not a property of `sequence_aa` alone, so it cannot be checked
+# by inspecting the field. Read from the engine (productivity.rs::coding_span,
+# builder.rs:397) and then confirmed against records:
+#
+#     native_phase = v_allele.anchor % 3          -- the allele's coding phase
+#     removed      = v_trim_5 + end_loss_5_length -- bases gone from V's 5' end
+#     phase        = (v_sequence_start + native_phase + 3 - removed % 3) % 3
+#     subject      = reverse_complement(sequence) if rev_comp else sequence
+#     sequence_aa == translate(subject[phase:])
+#
+# Measured: 150 of 150 records across the plain, indel, mutated and end-loss
+# stacks, and 30 of 30 reverse-complemented once the subject is taken in
+# germline orientation -- which is where the rest of the projection lives too.
+#
+# `native_phase` is passed in rather than derived here, because a curated
+# reference may carry explicit `coding_phase` evidence that overrides the
+# anchor, and this module must not reimplement that precedence.
+
+#: The standard genetic code. Written out rather than generated, because it is
+#: the thing that has to be right: a generated table shares any error in the
+#: ordering it was generated from, and the engine's table is the one under test.
+_CODON_TABLE = {
+    "TTT": "F", "TTC": "F", "TTA": "L", "TTG": "L",
+    "CTT": "L", "CTC": "L", "CTA": "L", "CTG": "L",
+    "ATT": "I", "ATC": "I", "ATA": "I", "ATG": "M",
+    "GTT": "V", "GTC": "V", "GTA": "V", "GTG": "V",
+    "TCT": "S", "TCC": "S", "TCA": "S", "TCG": "S",
+    "CCT": "P", "CCC": "P", "CCA": "P", "CCG": "P",
+    "ACT": "T", "ACC": "T", "ACA": "T", "ACG": "T",
+    "GCT": "A", "GCC": "A", "GCA": "A", "GCG": "A",
+    "TAT": "Y", "TAC": "Y", "TAA": "*", "TAG": "*",
+    "CAT": "H", "CAC": "H", "CAA": "Q", "CAG": "Q",
+    "AAT": "N", "AAC": "N", "AAA": "K", "AAG": "K",
+    "GAT": "D", "GAC": "D", "GAA": "E", "GAG": "E",
+    "TGT": "C", "TGC": "C", "TGA": "*", "TGG": "W",
+    "CGT": "R", "CGC": "R", "CGA": "R", "CGG": "R",
+    "AGT": "S", "AGC": "S", "AGA": "R", "AGG": "R",
+    "GGT": "G", "GGC": "G", "GGA": "G", "GGG": "G",
+}
+
+
+def codon_table() -> dict[str, str]:
+    """The table, so a test can assert it is complete before relying on it."""
+    return dict(_CODON_TABLE)
+
+
+def translate(sequence: str) -> str:
+    """Amino acids for the whole codons of ``sequence``, from position 0.
+
+    A trailing partial codon is dropped, as the engine drops it. An unknown
+    codon -- anything with an N or an ambiguity code in it -- becomes ``X``,
+    which is distinguishable from a stop.
+    """
+    upper = sequence.upper()
+    return "".join(_CODON_TABLE.get(upper[i:i + 3], "X")
+                   for i in range(0, len(upper) - 2, 3))
+
+
+def translation_phase(record, *, native_phase: int) -> int:
+    """The reading frame ``sequence_aa`` is written in."""
+    removed = _count(record, "v_trim_5") + _count(record, "end_loss_5_length")
+    return (record["v_sequence_start"] + native_phase % 3 + 3 - removed % 3) % 3
+
+
+def translation_disagreement(record, *, native_phase: int) -> tuple[str, str] | None:
+    """``(recorded, expected)`` if ``sequence_aa`` is not the translation.
+
+    ``None`` means it is. Raises when there is nothing to compare -- an empty
+    ``sequence_aa`` means the engine found no frame, which is a different
+    statement and the caller must decide what it expects.
+    """
+    recorded = record.get("sequence_aa")
+    if not recorded:
+        raise ValueError(
+            "sequence_aa is empty: the engine found no coding frame for this "
+            "record, so there is no translation to check. Gate on it.")
+    sequence = record.get("sequence") or ""
+    subject = reverse_complement(sequence) if record.get("rev_comp") else sequence
+    phase = translation_phase(record, native_phase=native_phase)
+    expected = translate(subject[phase:])
+    return None if recorded == expected else (recorded, expected)

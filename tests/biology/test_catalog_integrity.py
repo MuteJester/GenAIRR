@@ -393,10 +393,10 @@ def test_the_coverage_report_numbers_are_pinned():
               for r in rows for status in [r.status]}
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
     assert counts == {
-        "verified": 15,
+        "verified": 16,
         "gap-limited": 1,
         "partial": 2,
-        "unverified": 10,
+        "unverified": 9,
         "no-truth-exported": 3,
     }, (
         f"the declared coverage distribution changed to {counts}. If that was "
