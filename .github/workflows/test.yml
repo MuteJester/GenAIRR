@@ -40,19 +40,47 @@ jobs:
             engine_rs/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('engine_rs/Cargo.toml', 'engine_rs/Cargo.lock') }}
 
-      - name: Install maturin + test deps
+      - name: Install maturin
         run: |
           python -m pip install --upgrade pip
-          pip install "maturin>=1.5,<2.0" pytest pandas
+          pip install "maturin>=1.5,<2.0"
 
       - name: Build & install GenAIRR wheel
         run: maturin build --release --out dist
-      - name: Install built wheel
+      # Install with the test and mcp extras. Without [mcp] the MCP server
+      # tests are skipped at collection, which also made this workflow
+      # disagree with build-wheels.yml about what gets exercised.
+      - name: Install built wheel with test extras
         shell: bash
-        run: pip install dist/genairr-*.whl
+        run: pip install "$(echo dist/genairr-*.whl)[test,mcp]"
 
+      # -n auto distributes across the runner's cores. No -x: with xdist it
+      # truncates reporting across workers and hides which one failed.
+      # The wall-time budgets are excluded here and run on their own below:
+      # under xdist the other workers saturate the cores, which inflates the
+      # measured time and fails the budgets intermittently.
       - name: Run pytest
-        run: pytest tests/ -x -q
+        env:
+          HYPOTHESIS_PROFILE: ci
+        run: pytest tests/ -q -n auto -m "not performance"
+
+      - name: Run wall-time budgets
+        run: pytest tests/ -q -m performance
+
+      # The coverage report is the artifact anyone quotes about which
+      # biological mechanisms have verified truth, and it was reachable only
+      # by running the flag by hand. Printed here so a drop is visible in the
+      # log; the numbers themselves are pinned by a test in the run above, so
+      # this step reporting is not what enforces them.
+      - name: Report biological mechanism coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: pytest tests/biology -q --biology-coverage
+
+      # Scoped to tests/: see the per-file ignores in pyproject for why F401
+      # cannot be enforced on test modules while shared fixtures are imported
+      # by name.
+      - name: Lint the test suite
+        run: ruff check tests/
 
   # ── Rust unit + integration tests ──────────────────────────────
   # Direct `cargo test` against the engine crate. Cheaper and more

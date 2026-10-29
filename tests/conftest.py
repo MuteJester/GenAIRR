@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib.util
 import json
+import os
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -37,8 +39,8 @@ def igh_starter_session(tmp_path_factory) -> StarterSession:
     from GenAIRR._artifact_io import canonical_json
     from GenAIRR._reference_sources import model, projection
     from GenAIRR._reference_sources.build import ReferenceBuild
-    from tests.test_reference_source_api import ALL, IGH, fixture_bytes, from_files
-    from tests.test_reference_source_projection import interpreted, starter_recipe
+    from tests.support.fixtures.source_api import ALL, IGH, fixture_bytes, from_files
+    from tests.support.fixtures.source_projection import interpreted, starter_recipe
     source = from_files(tmp_path_factory.mktemp("igh-starter"), IGH)
     blobs = MappingProxyType({fmt: fixture_bytes(IGH, fmt) for fmt in ALL})
     inventory = interpreted(blobs, source.lock)
@@ -55,7 +57,47 @@ def igh_starter_session(tmp_path_factory) -> StarterSession:
 def igl_two_allele_session(tmp_path_factory) -> tuple:
     """``(source, build)``: two IGL alleles built once per session over the complete pinned IGL
     release 4 exports (recorded as local files; no scope patch).  Both are immutable."""
-    from tests.test_reference_source_api import from_files, full_recipe
+    from tests.support.fixtures.source_api import from_files, full_recipe
     root = tmp_path_factory.mktemp("igl-two-alleles")
     source = from_files(root)
     return source, source.build(full_recipe(root, source))
+
+
+# ── Hypothesis profiles ──────────────────────────────────────────────────────
+# Registered centrally so property-based tests get workable limits without
+# repeating settings at each call site. Guarded on the import: the suite must
+# still collect when the optional `test` extra is not installed.
+try:
+    from hypothesis import HealthCheck, settings
+except ImportError:  # the extra is optional
+    pass
+else:
+    _COMMON = {
+        # Building a simulated repertoire is orders of magnitude slower than
+        # Hypothesis's default deadline, which would flake rather than inform.
+        "deadline": None,
+        "suppress_health_check": [HealthCheck.too_slow],
+    }
+    settings.register_profile("dev", max_examples=25, **_COMMON)
+    # derandomize so a CI failure reproduces from the commit alone, with no
+    # seed to hunt for in the log.
+    settings.register_profile("ci", max_examples=100, derandomize=True, **_COMMON)
+    settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "dev"))
+
+
+# ── biology coverage ─────────────────────────────────────────────────────────
+# Hooks imported rather than defined here: the implementation lives with the
+# catalog it reports on.
+from tests.biology.catalog._plugin import (  # noqa: E402,F401
+    pytest_addoption,
+    pytest_collection_modifyitems,
+    pytest_runtest_logreport,
+    pytest_sessionfinish,
+    pytest_terminal_summary,
+)
+
+# pytest_testnodedown is declared by pytest-xdist, so implementing it without
+# xdist installed is an unknown hook and a plugin validation error. It is only
+# needed when the run is distributed, which is exactly when xdist is present.
+if importlib.util.find_spec("xdist") is not None:  # noqa: E402
+    from tests.biology.catalog._plugin import pytest_testnodedown  # noqa: E402,F401

@@ -224,7 +224,7 @@ final pool state. Therefore:
 
 Pinned by the parametrised
 `test_allele_call_replay_round_trip` in
-[`tests/test_allele_call_provenance.py`](../tests/test_allele_call_provenance.py).
+[`tests/components/engine/test_allele_call_provenance.py`](../tests/components/engine/test_allele_call_provenance.py).
 
 ---
 
@@ -313,7 +313,7 @@ benchmarking user asks.
 
 ## 7. Test coverage in this slice
 
-[`tests/test_allele_call_provenance.py`](../tests/test_allele_call_provenance.py)
+[`tests/components/engine/test_allele_call_provenance.py`](../tests/components/engine/test_allele_call_provenance.py)
 pins the current behaviour with golden tests. Coverage:
 
 - **Identical alleles tie**: `v_call` is the CSV of all identical

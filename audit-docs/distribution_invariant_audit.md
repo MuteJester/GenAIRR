@@ -4,7 +4,7 @@
 
 This audit proves the engine isn't merely producing **legal** sequences
 (the [productive_failure_mode](productive_failure_mode_audit.md) and
-[productive_stress_matrix](../tests/test_productive_stress_matrix.py)
+[productive_stress_matrix](../tests/components/engine/productivity/test_productive_stress_matrix.py)
 audits cover that), but sampling legal sequences with the **intended
 conditional distribution**.
 
@@ -213,7 +213,7 @@ the standard CI path. Flagged for awareness.
 
 ## 7. Test coverage in this slice
 
-[`tests/test_distribution_invariants.py`](../tests/test_distribution_invariants.py)
+[`tests/components/engine/test_distribution_invariants.py`](../tests/components/engine/test_distribution_invariants.py)
 pins the §5 invariants:
 
 - **D1**: NP length narrowing (uniform input → uniform on admissible

@@ -19,7 +19,7 @@ this audit documents:
 7. whether trimming still belongs on allele objects.
 
 The companion test file
-[`tests/test_allele_model_audit.py`](../tests/test_allele_model_audit.py)
+[`tests/components/reference/test_allele_model_audit.py`](../tests/components/reference/test_allele_model_audit.py)
 pins every behavioural claim made here. A future refactor that
 changes these behaviours should update both files in lockstep — the
 final test in that module asserts every section header below

@@ -14,8 +14,9 @@ from GenAIRR.dataconfig.enums import ChainType
 from GenAIRR.dataconfig._manifest import build_manifest
 # Backward-compat re-export: these two documented-gap tuples moved to
 # ``_manifest`` but are still imported from ``data_config`` by callers
-# (e.g. tests/test_cartridge_manifest.py). Re-exported to preserve the
-# import surface without duplicating the definitions.
+# (e.g. tests/components/cartridge/test_cartridge_manifest.py).
+# Re-exported to preserve the import surface without duplicating the
+# definitions.
 from GenAIRR.dataconfig._manifest import (
     _DOCUMENTED_DROPPED_ALLELE_FIELDS,
     _DOCUMENTED_ORPHAN_DATACONFIG_FIELDS,

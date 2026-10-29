@@ -23,7 +23,7 @@ they close the per-subregion SHM loop: targeting at simulate
 time, observability at projection time.
 
 Companion to
-[`tests/test_v_subregion_mutation_counters_contract.py`](../tests/test_v_subregion_mutation_counters_contract.py)
+[`tests/components/engine/mutation/v_subregion/test_counters_pins.py`](../tests/components/engine/mutation/v_subregion/test_counters_pins.py)
 which freezes today's surfaces (`pin_scaffold_*`) and the gaps
 the implementation slice would close (`pin_absence_*`).
 
@@ -697,7 +697,7 @@ plumbing. No precondition slice is needed.
 ## 13. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_v_subregion_mutation_counters_contract.py`](../tests/test_v_subregion_mutation_counters_contract.py).
+[`tests/components/engine/mutation/v_subregion/test_counters_pins.py`](../tests/components/engine/mutation/v_subregion/test_counters_pins.py).
 
 ### `pin_scaffold_*` — pre-existing surfaces the slice builds on
 

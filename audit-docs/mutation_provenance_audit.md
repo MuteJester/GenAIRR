@@ -15,7 +15,7 @@ byte-identically.
 Release-tier consolidation closed the slice the same way the
 targeted-SHM slice closed: full-stack productive IGH +
 non-default segment rates + sum-invariant check + corruption
-isolation in [`tests/test_release_validation.py`](../tests/test_release_validation.py),
+isolation in [`tests/components/result/test_release_validation.py`](../tests/components/result/test_release_validation.py),
 plus a row in [`docs/validation_matrix.md`](validation_matrix.md)
 naming the audit doc / contract file / implementation tests /
 Rust kernel sites.
@@ -35,7 +35,7 @@ each segment* — a question today's `n_mutations` global field
 can't answer.
 
 Companion to
-[`tests/test_mutation_provenance_contract.py`](../tests/test_mutation_provenance_contract.py)
+[`tests/components/engine/mutation/test_provenance_pins.py`](../tests/components/engine/mutation/test_provenance_pins.py)
 which freezes today's contract (`pin_scaffold_*`) and the gaps
 the future slice closes (`pin_absence_*`).
 
@@ -516,7 +516,7 @@ the cost of the mutations themselves.
 The existing indel counter walk is already in the projection
 path. Adding the SHM counter walk doesn't change the algorithmic
 complexity. Pin via the existing performance baseline
-(`tests/test_performance_budgets.py`).
+(`tests/performance/test_performance_budgets.py`).
 
 ---
 
@@ -587,7 +587,7 @@ Scope as built — matches the audit's recommendation exactly:
   kernel sites.
 - One release-tier test
   (`test_per_segment_mutation_counters_full_stack_validates_and_partitions`)
-  in [`tests/test_release_validation.py`](../tests/test_release_validation.py)
+  in [`tests/components/result/test_release_validation.py`](../tests/components/result/test_release_validation.py)
   asserting validator-clean, sum invariant, and corruption
   isolation under the canonical full IGH stack with non-default
   segment rates.
@@ -624,7 +624,7 @@ the implementation slice flips the relevant `pin_absence_*` to
 ## 12. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_mutation_provenance_contract.py`](../tests/test_mutation_provenance_contract.py).
+[`tests/components/engine/mutation/test_provenance_pins.py`](../tests/components/engine/mutation/test_provenance_pins.py).
 
 ### `pin_scaffold_*` — today's contract
 

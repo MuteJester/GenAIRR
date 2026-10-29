@@ -8,7 +8,7 @@ rearrangement data. Per the cartridge-authoring audit's
 next data-derived plane after trim distributions.
 
 Companion to
-[`tests/test_np_length_estimation_contract.py`](../tests/test_np_length_estimation_contract.py)
+[`tests/components/estimators/np_length/test_pins.py`](../tests/components/estimators/np_length/test_pins.py)
 which freezes (a) the AIRR fields GenAIRR populates for NP
 lengths, (b) the typed `ReferenceEmpiricalModels.np_lengths`
 plane the estimator writes into, (c) the engine surface
@@ -484,7 +484,7 @@ chain-type asymmetry in field availability:
    to-end + manifest exposure + report shape).
 
 4. **Doc + contract pin flip** — flip the absence pins in
-   `tests/test_np_length_estimation_contract.py` to
+   `tests/components/estimators/np_length/test_pins.py` to
    present-state. Mirror the trim slice's lockstep
    updates to the reference-cartridge-authoring
    estimator boundary pins.
@@ -507,7 +507,7 @@ Cost estimate:
 ## 10. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_np_length_estimation_contract.py`](../tests/test_np_length_estimation_contract.py).
+[`tests/components/estimators/np_length/test_pins.py`](../tests/components/estimators/np_length/test_pins.py).
 
 ### `pin_scaffold_*` — AIRR fields (live)
 

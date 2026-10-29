@@ -22,7 +22,7 @@ The audit's central question, restated for clarity:
 > choice is consumed?
 
 Companion to
-[`tests/test_plan_signature_completeness_contract.py`](../tests/test_plan_signature_completeness_contract.py)
+[`tests/components/engine/test_plan_signature_completeness_contract.py`](../tests/components/engine/test_plan_signature_completeness_contract.py)
 which pins the per-family change-detection invariant, the
 default-normalisation invariants, the canonicalization
 invariants, and the three documented soft-gap boundaries.
@@ -139,7 +139,7 @@ against the pass(es) it lowers to, and the folded parameters.
 
 For each parameter that changes proposal support or output,
 the following matrix records empirical verification (each row
-was tested in `tests/test_plan_signature_completeness_contract.py`
+was tested in `tests/components/engine/test_plan_signature_completeness_contract.py`
 via "change only this parameter; assert signature changes"):
 
 | Parameter | Folded? | Signature changes on parameter change | Replay across mismatched signature fails the gate? |
@@ -393,7 +393,7 @@ boundary AND the backstop behaviour.
 ## 10. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_plan_signature_completeness_contract.py`](../tests/test_plan_signature_completeness_contract.py).
+[`tests/components/engine/test_plan_signature_completeness_contract.py`](../tests/components/engine/test_plan_signature_completeness_contract.py).
 
 ### `pin_change_*` — per-parameter-family change-detection
 

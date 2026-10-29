@@ -9,7 +9,7 @@ indels (insertion + deletion events from
 AIRR fields each event affects, how the event ledger surfaces it,
 and where the user-visible projection might miss provenance the
 engine has internally. The companion test file
-[`tests/test_indel_provenance.py`](../tests/test_indel_provenance.py)
+[`tests/components/engine/indel/test_indel_provenance.py`](../tests/components/engine/indel/test_indel_provenance.py)
 pins current behaviour so a future fix doesn't silently change
 observable semantics.
 
@@ -221,7 +221,7 @@ FrameNeutral site, and FrameNeutral sites exist whenever the J
 region has any pool bases.
 
 Empirically pinned by
-[`test_productive_only_count_1_lands_outside_junction_and_anchors`](../tests/test_indel_provenance.py):
+[`test_productive_only_count_1_lands_outside_junction_and_anchors`](../tests/components/engine/indel/test_indel_provenance.py):
 on the 18-base baseline (V=9 with V_anchor=6, J=6 with J_anchor=0)
 single-indel sites under `productive_only` land in
 `[J_anchor_pool + 3, pool.len()] = [15, 18]` — past the J anchor
@@ -241,9 +241,9 @@ kind is "delete-only" (no end-of-pool insertion slot to use).
 ### 5.3 Strict vs. permissive in the unreachable-set case
 
 Pinned by the short-J fixture
-([`test_productive_only_count_1_delete_only_short_j_no_ops_permissive`](../tests/test_indel_provenance.py)
+([`test_productive_only_count_1_delete_only_short_j_no_ops_permissive`](../tests/components/engine/indel/test_indel_provenance.py)
 and
-[`...raises_strict`](../tests/test_indel_provenance.py)):
+[`...raises_strict`](../tests/components/engine/indel/test_indel_provenance.py)):
 J=3 bases with anchor=0 → J anchor codon = entire J → no
 post-anchor zone. Single-deletion candidates are all inadmissible.
 
@@ -259,7 +259,7 @@ post-anchor zone. Single-deletion candidates are all inadmissible.
 Switching the same fixture to *insertion-only* opens a single
 admissible site (`s = pool.len() = 15`, end-of-pool, FrameNeutral,
 outside both anchor codons) — pinned by
-[`test_productive_only_count_1_insert_only_short_j_applies_at_end_of_pool`](../tests/test_indel_provenance.py).
+[`test_productive_only_count_1_insert_only_short_j_applies_at_end_of_pool`](../tests/components/engine/indel/test_indel_provenance.py).
 Both modes succeed.
 
 ### 5.4 Count=2 and count=3
@@ -272,7 +272,7 @@ Both modes succeed.
   FrameNeutral, etc. Contract permits.
 
 The productive-contract stress matrix
-([`tests/test_productive_stress_matrix.py`](../tests/test_productive_stress_matrix.py))
+([`tests/components/engine/productivity/test_productive_stress_matrix.py`](../tests/components/engine/productivity/test_productive_stress_matrix.py))
 exercises `indel_count_0/2/3` under both `productive_only` and
 unconstrained, and confirms records stay productive under the
 contract. ✅
@@ -305,7 +305,7 @@ the `corrupt.indel` pass (to exclude `EndLossPass`'s reuse of
 `SimulationEvent::IndelInserted` / `IndelDeleted` variants.
 
 **Pinned by:** `test_n_indels_excludes_pool_empty_no_op_attempts`
-in [`tests/test_indel_provenance.py`](../tests/test_indel_provenance.py)
+in [`tests/components/engine/indel/test_indel_provenance.py`](../tests/components/engine/indel/test_indel_provenance.py)
 — uses `count=30, insertion_prob=0.2, seed=0` to drive a
 pool-emptying fixture where trace attempts (30) ≠ events fired
 (25), and asserts `n_indels == 25`.
@@ -389,7 +389,7 @@ catalogued in §7 adds the first round of boundary pins.
 
 ## 7. Test coverage in this slice
 
-[`tests/test_indel_provenance.py`](../tests/test_indel_provenance.py)
+[`tests/components/engine/indel/test_indel_provenance.py`](../tests/components/engine/indel/test_indel_provenance.py)
 pins the current behaviour with golden tests. Coverage:
 
 - **Single-event invariants:** insertion increments

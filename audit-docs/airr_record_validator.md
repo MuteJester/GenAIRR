@@ -284,7 +284,7 @@ The lower bound stays strict because a deletion just BEFORE the
 region shifts the region without changing its content.
 
 Pinned by `test_end_loss_three_prime_does_not_strand_stale_live_call`
-in `tests/test_release_validation.py`. All four release-tier
+in `tests/components/result/test_release_validation.py`. All four release-tier
 configurations (IGH VDJ, IGK / IGL VJ, IGH non-productive) now
 validate at 100% across 500 seeds.
 
@@ -307,7 +307,7 @@ dict per issue) would be friendlier for downstream tooling
 
 ## 6. Test coverage in this slice
 
-[`tests/test_airr_record_validator.py`](../tests/test_airr_record_validator.py)
+[`tests/components/result/test_airr_record_validator.py`](../tests/components/result/test_airr_record_validator.py)
 (20 tests):
 
 - **Clean records pass**: parametrised over 9 configurations

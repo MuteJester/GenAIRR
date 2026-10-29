@@ -13,18 +13,18 @@ cartridge-authoring audit's §11.2 recommended ordering.
 
 Companion artefacts:
 
-- [`tests/test_allele_usage_estimation_contract.py`](../tests/test_allele_usage_estimation_contract.py)
+- [`tests/components/estimators/allele_usage/test_pins.py`](../tests/components/estimators/allele_usage/test_pins.py)
   — 25 pins, flipped to post-slice present-state (scaffold,
   present, soft-gap-pin, and the five absence pins now
   flipped to present).
-- [`tests/test_allele_usage_estimation_implementation.py`](../tests/test_allele_usage_estimation_implementation.py)
+- [`tests/components/estimators/allele_usage/test_estimation.py`](../tests/components/estimators/allele_usage/test_estimation.py)
   — 15 behaviour tests covering: validation, lowering
   precedence, `gene_use_dict` orphan preservation,
   fractional / truth-first / reject policies, unknown-allele
   rejection, VJ-D warning, VDJ-missing-D rejection,
   `min_count` filter, stage entry shape, manifest, pickle
   round-trip, and contract pin flips.
-- [`tests/test_allele_usage_estimation_release.py`](../tests/test_allele_usage_estimation_release.py)
+- [`tests/components/estimators/allele_usage/test_composition.py`](../tests/components/estimators/allele_usage/test_composition.py)
   — release-tier smoke: tiny inline-FASTA VDJ cartridge,
   estimator on a synthetic AIRR record set, recombination
   exhibits the estimated bias, manifest + report carry the
@@ -59,7 +59,7 @@ rearrangement data. Per the cartridge-authoring audit's
 useful data-derived estimator to land first.
 
 Companion to
-[`tests/test_allele_usage_estimation_contract.py`](../tests/test_allele_usage_estimation_contract.py)
+[`tests/components/estimators/allele_usage/test_pins.py`](../tests/components/estimators/allele_usage/test_pins.py)
 which freezes (a) the engine's existing weighted-allele
 selection surface that the estimator's output lowers into,
 (b) the cartridge-state gaps the estimator does NOT
@@ -575,13 +575,13 @@ designed:
    (documented soft gap 1) / `source` (provenance label).
 
 6. **Tests** **[Shipped]** —
-   [`tests/test_allele_usage_estimation_implementation.py`](../tests/test_allele_usage_estimation_implementation.py)
+   [`tests/components/estimators/allele_usage/test_estimation.py`](../tests/components/estimators/allele_usage/test_estimation.py)
    ships 15 behaviour tests (fractional / truth-first /
    reject policies; missing D handling on VJ vs VDJ;
    `min_count` threshold; replay-through-built-cartridge
    end-to-end; manifest exposure; pickle round-trip;
    `gene_use_dict` orphan preservation).
-   [`tests/test_allele_usage_estimation_release.py`](../tests/test_allele_usage_estimation_release.py)
+   [`tests/components/estimators/allele_usage/test_composition.py`](../tests/components/estimators/allele_usage/test_composition.py)
    adds release-tier smoke covering the full slice
    composition.
 
@@ -599,7 +599,7 @@ Actual cost — close to the audit estimate:
 ## 10. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_allele_usage_estimation_contract.py`](../tests/test_allele_usage_estimation_contract.py).
+[`tests/components/estimators/allele_usage/test_pins.py`](../tests/components/estimators/allele_usage/test_pins.py).
 
 ### `pin_scaffold_*` — live surfaces the estimator builds on
 

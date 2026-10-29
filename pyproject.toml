@@ -47,6 +47,19 @@ classifiers = [
 dataconfig = ["numpy>=1.24", "scipy>=1.10"]
 viz = ["graphviz>=0.20"]
 mcp = ["fastmcp>=2.0,<4.0"]
+# Test-only. Not part of `all`: installing GenAIRR to use it should not
+# pull in a test runner.
+test = [
+    "pytest>=7.0",
+    "pandas",
+    "hypothesis>=6.100",
+    "pytest-xdist>=3.5",
+    # The official AIRR schema package. Six tests importorskip it, so without
+    # it the headline schema-compliance claim is silently skipped and passes
+    # only on machines that happen to have it installed.
+    "airr>=1.4",
+    "ruff>=0.6",
+]
 all = [
     "numpy>=1.24",
     "scipy>=1.10",
@@ -99,8 +112,78 @@ filterwarnings = [
     "ignore:Experiment bound to a raw RefDataConfig has no trim distributions.*:UserWarning",
 ]
 # Custom markers registered to silence PytestUnknownMarkWarning.
-# `performance` marks the budget tests in tests/test_performance_budgets.py;
+# `performance` marks the budget tests in tests/performance/test_performance_budgets.py;
 # skip with `pytest -m "not performance"` for fast CI.
+# Tier markers classify every test module. They are orthogonal to the
+# directory tree, so `-m pin` selects across the whole suite.
 markers = [
-    "performance: regression-guard wall-time budgets (see docs/performance_baseline.md)",
+    "performance: regression-guard wall-time budgets (see docs/performance_baseline.md).\n        Run serially, on their own: under xdist the other workers saturate the\n        cores and the measured time reflects contention, not the engine.",
+    "pin: pins a live surface a feature reuses; fails when that surface shifts",
+    "behavior: exercises a feature's own behavior",
+    "composition: runs the feature against the full release stack",
+    "slow: excluded from the fast path; run with the full suite",
+    "biology: verifies a declared biological mechanism (see tests/biology)",
 ]
+
+[tool.ruff]
+# Deliberately NOT scoped with `include`. An `include = ["tests/**/*.py"]` made
+# `ruff check src/` print "All checks passed!" having checked zero files, which
+# is worse than reporting nothing: the exit code and the message both say the
+# tree is clean. The rules the package does not yet satisfy are turned off for
+# it explicitly below, with their counts, so the exemption is visible in the
+# config rather than implied by a path filter.
+line-length = 110
+
+[tool.ruff.lint]
+# F401 unused-import is the rule that matters here: the module splitter copied
+# each source module's whole import block into every target, so several modules
+# imported 40+ names and used a third of them. F811 is the same mess seen from
+# the other side -- a name imported twice, once from the module's own block and
+# once from the shared support module.
+#
+# E501 is deliberately not selected. There are 541 over-long lines, essentially
+# all of them pre-existing in test bodies this work moved verbatim; enforcing it
+# would mean rewriting hundreds of assertions, which is exactly what the
+# restructure promised not to do. Reformatting them is its own change.
+select = ["F", "E711", "E712", "E713", "E714", "E721", "W605"]
+# F841 unused-variable: 13 instances, all pre-existing in test bodies, and
+# several have a side-effecting right-hand side (building refdata, importing
+# pandas). Deleting the assignment is a behaviour change dressed as a cleanup,
+# and editing the body is the rewrite this work promised not to do.
+ignore = ["F841"]
+
+[tool.ruff.lint.per-file-ignores]
+# Support packages re-export deliberately.
+"tests/support/**/__init__.py" = ["F401"]
+# F541 only: an f-string with no placeholder is harmless to leave, and dropping
+# the prefix edits a test body. The gate flagged exactly three such edits as
+# unexplained changes, which is the gate working -- a cosmetic rewrite is still
+# a rewrite, and bodies on this branch move verbatim.
+#
+# F401 and F811 ARE enforced here. They could not be while shared pytest
+# fixtures were imported by name: such an import is indistinguishable from dead
+# weight, and `ruff --fix` removed them and broke 177 tests. The fixtures now
+# live in a per-directory conftest, so every remaining import is genuinely
+# used -- and a fixture's dependency chain resolves without having to be
+# imported alongside it.
+"tests/**/test_*.py" = ["F541"]
+# The package and the build tooling, measured at 129 findings under the rules
+# above. Enforcing them is a separate change, not a test-suite restructure:
+#
+#   F401 (80)  unused imports, largely re-exports in the public __init__ layer
+#   F821 (40)  every one a quoted forward reference to a class the module does
+#              not import -- 39 in Experiment mixins, e.g.
+#              `-> "ReferenceCartridgeBuilder"`, and one in
+#              genotype/_sampling.py (`-> "Genotype"`). Harmless at runtime,
+#              since a string annotation is never evaluated, but
+#              typing.get_type_hints() raises on it and no type checker or IDE
+#              can resolve the return type. Worth its own pass; fixing it means
+#              deciding whether these modules import under TYPE_CHECKING or
+#              return a protocol.
+#   F541 (9)   f-strings with no placeholder
+"src/**/*.py" = ["F401", "F821", "F541"]
+"tools/**/*.py" = ["F401", "F821", "F541"]
+# A superseded, unreferenced copy of tools/build_imgt_configs.py. See
+# .private/scripts/README.md -- it would NameError if run, and the tracked
+# tool it was copied from does not have that defect.
+".private/scripts/build_imgt_configs.py" = ["F401", "F821"]

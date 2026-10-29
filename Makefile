@@ -75,7 +75,7 @@ validate-full:
 	cd engine_rs && cargo test --all-features
 
 validate-release: validate-full
-	$(PYTHON) -m pytest tests/test_trace_file_compat.py -q
+	$(PYTHON) -m pytest tests/components/io/test_trace_file_compat.py -q
 	maturin build --release
 
 # --- Docs (MkDocs Material — Phase 1 onwards) ---------------------
@@ -101,3 +101,37 @@ docs-serve:
 
 docs-clean:
 	rm -rf site/
+
+# ── test selections ─────────────────────────────────────────────────
+# Names say what they do. `test-fast` is the inner loop: it drops the
+# eight slowest modules and the wall-time budgets and distributes across
+# cores. The marker alone only buys about 2x -- most of the speed is
+# xdist -- so this is "parallel minus the heavy tail", not a serial
+# fast subset.
+.PHONY: test-fast test-parallel test-budgets test-lint
+
+test-fast:
+	pytest tests/ -q -m "not slow and not performance" -n auto
+
+test-parallel:
+	pytest tests/ -q -m "not performance" -n auto
+
+# Serially and on their own: under xdist the other workers saturate the
+# cores and the measured time reflects contention, not the engine.
+test-budgets:
+	pytest tests/ -q -m performance
+
+# .private/scripts is named explicitly because ruff respects .gitignore, so a
+# repo-wide run skips it -- which left the gate that enforces the migration
+# invariant unlinted. The path is skipped silently when the directory is absent,
+# as it is in any clone.
+test-lint:
+	ruff check tests/
+	@test -d .private/scripts && ruff check .private/scripts/ || true
+
+# The cross-platform reproducibility references. Regenerate only when the
+# output format changes on purpose, then commit them: they are what every CI
+# platform is checked against.
+.PHONY: goldens
+goldens:
+	python tools/regenerate_golden_files.py

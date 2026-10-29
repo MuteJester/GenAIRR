@@ -71,7 +71,7 @@ release:
 3. Pin what the closing line names: the manifest hash in
    `src/GenAIRR/_reference_sources/bundled.py` and in `MANIFEST_PIN`, the
    archive digest in `ARCHIVE_PIN` (both in
-   `tests/test_published_reference_resources.py`). The printed runtime
+   `tests/components/reference/test_published_reference_resources.py`). The printed runtime
    execution, catalogue and models hashes must equal `RUNTIME_PINS` and the
    printed lock `LOCK_PIN`: a version change alone does not move them, so if
    one does, stop and investigate before pinning anything.

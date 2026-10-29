@@ -15,7 +15,7 @@ strand / paired-end). The split between "biological SHM" and
 audit pins.
 
 Companion to
-[`tests/test_shm_model_contract.py`](../tests/test_shm_model_contract.py)
+[`tests/components/estimators/shm_model/test_pins.py`](../tests/components/estimators/shm_model/test_pins.py)
 which freezes every claim here as either `pin_scaffold_*`
 (today's contract) or `pin_absence_*` (deferred surface).
 
@@ -347,7 +347,7 @@ Sometimes the live call widens; sometimes it doesn't. The truth
 call is always present and always a single allele name. This is
 the design — already pinned by
 `test_g8_truth_retained_in_live_call_under_heavy_shm` in
-`tests/test_experiment.py`.
+`tests/components/experiment/test_fastq.py`.
 
 ### Identity-to-projected vs identity-to-truth gaps
 
@@ -457,7 +457,7 @@ chain pool:
 At `count=20`, this is ~7600 operations per record; in the
 release-tier benchmark suite this lands well inside the
 budget. The current performance budget tests in
-[`tests/test_performance_budgets.py`](../tests/test_performance_budgets.py)
+[`tests/performance/test_performance_budgets.py`](../tests/performance/test_performance_budgets.py)
 cover SHM under `count=10` and `rate=0.03` cases.
 
 ### Uniform per-site cost
@@ -580,7 +580,7 @@ each slice flips the relevant `pin_absence_*` to
 ## 12. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_shm_model_contract.py`](../tests/test_shm_model_contract.py).
+[`tests/components/estimators/shm_model/test_pins.py`](../tests/components/estimators/shm_model/test_pins.py).
 
 ### `pin_scaffold_*` — today's contract
 

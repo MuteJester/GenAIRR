@@ -14,7 +14,7 @@ boundary.
 Release-tier consolidation closed the slice the same way D
 inversion / receptor revision / paired-end closed: full-stack
 IGH + targeted-SHM + replay round-trip + zero-rate exclusion
-invariant in [`test_release_validation.py`](../tests/test_release_validation.py),
+invariant in [`test_release_validation.py`](../tests/components/result/test_release_validation.py),
 plus a row in [`docs/validation_matrix.md`](validation_matrix.md)
 naming the audit doc / contract file / implementation file /
 Rust kernel surfaces.
@@ -37,7 +37,7 @@ without breaking replay determinism, productive-only semantics,
 or the existing trace format.
 
 Companion to
-[`tests/test_shm_segment_rate_contract.py`](../tests/test_shm_segment_rate_contract.py)
+[`tests/components/estimators/segment_rates/test_pins.py`](../tests/components/estimators/segment_rates/test_pins.py)
 which freezes every claim — today's full-pool targeting,
 absence of `segment_rates` DSL surface, the no-per-segment-AIRR-
 counter status, replay determinism — as either `pin_scaffold_*`
@@ -370,9 +370,9 @@ What landed:
   equivalence preserved at the signature layer.
 
 Pinned at the surface by
-[`tests/test_pass_parameter_signature.py`](../tests/test_pass_parameter_signature.py)
+[`tests/components/engine/test_pass_parameter_signature.py`](../tests/components/engine/test_pass_parameter_signature.py)
 and inside the v_subregion_shm_rate contract
-([`tests/test_v_subregion_shm_rate_contract.py`](../tests/test_v_subregion_shm_rate_contract.py)
+([`tests/components/estimators/v_subregion_rates/test_pins.py`](../tests/components/estimators/v_subregion_rates/test_pins.py)
 `test_pin_present_pass_plan_signature_folds_compile_time_params`).
 
 ### Replay determinism under default rates
@@ -650,7 +650,7 @@ the implementation slice flips the relevant `pin_absence_*` to
 ## 12. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_shm_segment_rate_contract.py`](../tests/test_shm_segment_rate_contract.py).
+[`tests/components/estimators/segment_rates/test_pins.py`](../tests/components/estimators/segment_rates/test_pins.py).
 
 ### `pin_scaffold_*` — today's contract
 

@@ -39,6 +39,43 @@ class _MutationMixin:
         - ``"uniform"`` — position-independent SHM. Each mutated
           position gets a uniformly drawn A/C/G/T replacement.
 
+        **``n_mutations`` counts substitution events, not visible
+        differences from the germline.** Some events leave no
+        evidence, and no mutation caller can recover those. Three
+        separate causes, which do not apply equally to the two
+        models:
+
+        1. *The replacement base is not excluded.* ``"uniform"``
+           draws from A/C/G/T including the base already present, so
+           about a quarter of its events change nothing. ``"s5f"``
+           does not do this at all — 0 of 6,000 measured events.
+        2. *The event lands on an untemplated junction base.* An N or
+           P addition has no germline counterpart to differ from, so a
+           substitution there is unrecoverable whatever the model.
+           This is the whole of ``"s5f"``'s shortfall.
+        3. *Repeat hits on one position* can restore the germline
+           base, which only matters at higher counts.
+
+        Measured at ``count=1`` over 6,000 records (seed 101, human
+        IGH, counting positions whose final base differs from the
+        germline base recorded there):
+
+        ===========  =============  ============  ==========
+        model        unrecoverable  untemplated   identity
+        ===========  =============  ============  ==========
+        ``uniform``  28.7 %         3.0 %         25.7 %
+        ``s5f``      5.0 %          5.0 %         0.0 %
+        ===========  =============  ============  ==========
+
+        At ``count=20`` the totals rise to 29.2 % and 8.6 % as cause
+        3 begins to contribute.
+
+        If you are scoring a mutation caller, derive the expected
+        count from the sequence and its germline rather than from
+        ``n_mutations``, or the caller will be penalised for missing
+        substitutions that left no evidence. Note that switching from
+        ``"uniform"`` to ``"s5f"`` removes cause 1 but not cause 2.
+
         **Specify intensity with exactly one of ``rate`` or ``count``.**
 
         ``rate`` is the per-base mutation rate (e.g. ``0.03`` for 3 %

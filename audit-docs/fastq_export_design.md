@@ -3,7 +3,7 @@
 **Status: Slice shipped.** `SimulationResult.to_paired_fastq(
 r1_path, r2_path, *, quality="illumina", overwrite=False,
 **quality_kwargs)` landed alongside 13 implementation tests
-([`tests/test_to_paired_fastq.py`](../tests/test_to_paired_fastq.py))
+([`tests/components/result/test_to_paired_fastq.py`](../tests/components/result/test_to_paired_fastq.py))
 and pin flips in two contract files. Python-only; zero engine
 changes; no validator issue kinds, no manifest block, no trace
 addresses. The audit body below is preserved for traceability;
@@ -25,7 +25,7 @@ the same boundary the existing `to_fasta` / `to_fastq` /
 `to_csv` / `to_tsv` exporters live behind.
 
 Companion to
-[`tests/test_fastq_export_contract.py`](../tests/test_fastq_export_contract.py)
+[`tests/components/result/test_fastq_export_contract.py`](../tests/components/result/test_fastq_export_contract.py)
 which freezes today's surfaces (`pin_scaffold_*`) and the gaps
 the implementation slice would close (`pin_absence_*`).
 
@@ -52,7 +52,7 @@ shipped. No engine changes are needed.
 | `insert_size == r2_end` invariant | [`docs/paired_end_design.md`](paired_end_design.md) §8 | The insert size equals the R2 window's exclusive end position from the 5' molecule end. NOT an overlap / gap count. The FASTQ writer does not consult `insert_size` for record body content; it's metadata. |
 | `sequence_id` populated on every record | [`engine_rs/src/airr_record/record.rs:11-12`](../engine_rs/src/airr_record/record.rs#L11-L12) + [`src/GenAIRR/result.py`](../src/GenAIRR/result.py) | Assigned by `from_outcomes` as `f"{id_prefix}{i}"` (default `"seq0"`, `"seq1"`, …). Never empty after a successful run. The new paired-FASTQ writer uses this for read names. |
 | `n_quality_errors` is the only quality surface | [`engine_rs/src/passes/corrupt/quality.rs`](../engine_rs/src/passes/corrupt/quality.rs) + [`engine_rs/src/airr_record/record.rs:93`](../engine_rs/src/airr_record/record.rs#L93) | The quality pass records `(error_site[i], error_base[i])` pairs in the trace but **does not** project per-position Phred scores anywhere. v1 constant-quality FASTQ does not collide with any engine surface. |
-| Existing absence pin for `to_paired_fastq` | [`tests/test_paired_end_contract.py:125-141`](../tests/test_paired_end_contract.py#L125-L141) | `test_pin_absence_no_single_end_or_to_paired_fastq_aliases` already flags the surface as deferred. The implementation slice flips this pin in lockstep with this audit's pins. |
+| Existing absence pin for `to_paired_fastq` | [`tests/components/result/test_paired_end_contract.py:125-141`](../tests/components/result/test_paired_end_contract.py#L125-L141) | `test_pin_absence_no_single_end_or_to_paired_fastq_aliases` already flags the surface as deferred. The implementation slice flips this pin in lockstep with this audit's pins. |
 
 ---
 
@@ -136,7 +136,7 @@ Reasons:
   pattern.
 - Tests can read the file back via `path.read_text(...)`. The
   existing single-end FASTQ test suite uses this pattern
-  exclusively (`tests/test_experiment.py` lines 1502+).
+  exclusively (`tests/components/experiment/test_fastq.py`).
 - A user who wants in-memory FASTQ bytes can `open(path)` with
   a `tempfile.NamedTemporaryFile` or `io.StringIO` if they
   patch `open()`. The added API surface doesn't pay for
@@ -145,7 +145,7 @@ Reasons:
 ### Pinned
 
 - `pin_absence_no_to_paired_fastq_method` — carried from
-  `tests/test_paired_end_contract.py:125-141`.
+  `tests/components/result/test_paired_end_contract.py:125-141`.
 - `pin_absence_no_record_generator_fastq_form` — no
   `to_fastq_records()` / `to_paired_fastq_records()` exists.
 
@@ -603,10 +603,10 @@ Cost estimate: ~50 lines.
 ### Step 2 — Tests
 
 Mirror the existing single-end FASTQ test discipline in
-[`tests/test_experiment.py`](../tests/test_experiment.py)
+[`tests/components/experiment/test_fastq.py`](../tests/components/experiment/test_fastq.py)
 lines 1502+. New file
-`tests/test_to_paired_fastq.py` (or inline in
-`test_experiment.py` next to the single-end block).
+`tests/components/result/test_to_paired_fastq.py` (or inline in
+`test_fastq.py` next to the single-end block).
 
 Tests:
 
@@ -635,10 +635,10 @@ Cost estimate: ~150 lines.
 
 ### Step 3 — Pin flips
 
-- Flip `tests/test_paired_end_contract.py::test_pin_absence_no_single_end_or_to_paired_fastq_aliases`
+- Flip `tests/components/result/test_paired_end_contract.py::test_pin_absence_no_single_end_or_to_paired_fastq_aliases`
   → `pin_present_to_paired_fastq_method`.
 - Flip the four `pin_absence_*` entries in
-  `tests/test_fastq_export_contract.py` (this audit's
+  `tests/components/result/test_fastq_export_contract.py` (this audit's
   companion).
 
 Cost estimate: ~30 lines.
@@ -658,7 +658,7 @@ the result module + one new test file.
 ## 13. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_fastq_export_contract.py`](../tests/test_fastq_export_contract.py).
+[`tests/components/result/test_fastq_export_contract.py`](../tests/components/result/test_fastq_export_contract.py).
 
 ### `pin_scaffold_*` — pre-existing surfaces the slice builds on
 

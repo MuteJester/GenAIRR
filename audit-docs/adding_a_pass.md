@@ -34,7 +34,7 @@ For each new mutating pass:
   to keep boilerplate low.
 - [ ] **Biological coverage** (if the pass can break productivity).
   Add an entry to
-  [`tests/test_productive_stress_matrix.py`](../tests/test_productive_stress_matrix.py).
+  [`tests/components/engine/productivity/test_productive_stress_matrix.py`](../tests/components/engine/productivity/test_productive_stress_matrix.py).
 
 ---
 
@@ -274,7 +274,7 @@ matches record-for-record.
 ## Biological coverage (if relevant)
 
 If your pass can break productivity, add a stack to
-[`tests/test_productive_stress_matrix.py`](../tests/test_productive_stress_matrix.py):
+[`tests/components/engine/productivity/test_productive_stress_matrix.py`](../tests/components/engine/productivity/test_productive_stress_matrix.py):
 
 ```python
 def stack_my_mechanism(config: str, *, productive: bool) -> ga.Experiment:
@@ -328,7 +328,7 @@ mechanism specifically requires D-segment behaviour — the C4
 allele oracle is currently incomplete on D under non-zero trim
 (known gap, follow-up slice). For VDJ-specific testing, filter
 out `AlleleCallTieSetMismatch` on D as the release-tier test
-does (see [`tests/test_release_validation.py`](../tests/test_release_validation.py)).
+does (see [`tests/components/result/test_release_validation.py`](../tests/components/result/test_release_validation.py)).
 
 This is the **final required step** in the contributor checklist:
 

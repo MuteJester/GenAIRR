@@ -8,7 +8,7 @@ rearrangement data. Per the cartridge-authoring audit's
 final remains `estimate_shm_rates`).
 
 Companion to
-[`tests/test_p_nucleotide_length_estimation_contract.py`](../tests/test_p_nucleotide_length_estimation_contract.py)
+[`tests/components/estimators/p_nucleotide_length/test_pins.py`](../tests/components/estimators/p_nucleotide_length/test_pins.py)
 which freezes (a) the AIRR `p_*_length` fields the
 estimator consumes, (b) the typed
 `p_nucleotide_lengths` plane it writes into, (c) the
@@ -490,7 +490,7 @@ estimator discipline almost exactly:
    min_count + pseudocount + replay + manifest + the
    per-key auto-warning for P-naïve input). Flip the
    absence pins in
-   `tests/test_p_nucleotide_length_estimation_contract.py`
+   `tests/components/estimators/p_nucleotide_length/test_pins.py`
    to present-state. Lockstep update to the
    reference-cartridge-authoring estimator boundary pins.
 
@@ -517,7 +517,7 @@ slices.
 ## 11. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_p_nucleotide_length_estimation_contract.py`](../tests/test_p_nucleotide_length_estimation_contract.py).
+[`tests/components/estimators/p_nucleotide_length/test_pins.py`](../tests/components/estimators/p_nucleotide_length/test_pins.py).
 
 ### `pin_scaffold_*` — AIRR P-length fields (live)
 

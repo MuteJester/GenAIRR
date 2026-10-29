@@ -12,11 +12,11 @@ deliverables:
 | A — IR primitives | `SimulationEvent::SegmentReplaced`, `SimulationBuilder::replace_segment`, `Simulation::with_segment_replaced` setter, `PoolRange::after_segment_replacement` kernel | `engine_rs/src/passes/receptor_revision.rs` + `airr_record/tests/projection.rs` (Slice A unit tests) |
 | B — Refresh plan | `LiveCallRefreshStep::SegmentReplaced(Segment)` + per-segment dedup + AllStructural-equivalent hook execution | `engine_rs/src/live_call/refresh_plan.rs::tests`, `engine_rs/src/live_call/refresh_hook.rs::tests` |
 | C — Pass + trace + replay | `ReceptorRevisionPass`, three `receptor_revision.*` trace addresses, replay path validating retained length | `engine_rs/src/passes/receptor_revision.rs::tests` (17 unit tests) |
-| D — DSL | `Experiment.receptor_revision(prob=…)` (VDJ-only, at-most-once), inline-lowering after `assemble.j` | [`tests/test_receptor_revision_dsl.py`](../tests/test_receptor_revision_dsl.py) (16 e2e tests) |
+| D — DSL | `Experiment.receptor_revision(prob=…)` (VDJ-only, at-most-once), inline-lowering after `assemble.j` | [`tests/components/experiment/test_receptor_revision_dsl.py`](../tests/components/experiment/test_receptor_revision_dsl.py) (16 e2e tests) |
 | E — AIRR provenance | `receptor_revision_applied: bool` + `original_v_call: String` fields, `ReceptorRevisionAppliedMismatch` + `OriginalVCallMismatch` validator issues, structured PyO3 dict / source strings | `airr_record/tests/projection.rs` (8 unit tests) + DSL Slice E tests |
-| Consolidation | README row, validation-matrix row, release-tier IGH stack test + full-stack replay round-trip, Bernoulli draw distribution test (prob=0.25, N=4000, ±5σ) | [`tests/test_release_validation.py`](../tests/test_release_validation.py), [`tests/test_distribution_invariants.py`](../tests/test_distribution_invariants.py) |
+| Consolidation | README row, validation-matrix row, release-tier IGH stack test + full-stack replay round-trip, Bernoulli draw distribution test (prob=0.25, N=4000, ±5σ) | [`tests/components/result/test_release_validation.py`](../tests/components/result/test_release_validation.py), [`tests/components/engine/test_distribution_invariants.py`](../tests/components/engine/test_distribution_invariants.py) |
 
-The 19-test [`tests/test_receptor_revision_contract.py`](../tests/test_receptor_revision_contract.py)
+The 19-test [`tests/components/engine/receptor_revision/test_pins.py`](../tests/components/engine/receptor_revision/test_pins.py)
 finished the arc as a fully-green scaffold suite — every pin-the-
 absence test flipped to pin-the-presence in lockstep with its
 implementation slice.
@@ -26,7 +26,7 @@ implementation slice.
 A read-only architecture review of every engine surface that
 V-replacement receptor revision will touch, written **before**
 any implementation. Companion to
-[`tests/test_receptor_revision_contract.py`](../tests/test_receptor_revision_contract.py)
+[`tests/components/engine/receptor_revision/test_pins.py`](../tests/components/engine/receptor_revision/test_pins.py)
 which pins today's absence + the existing scaffolding and will
 flip to behavior-pinning as implementation slices land.
 
@@ -535,7 +535,7 @@ slices to land in the same shape.
 ## 13. Test surface — what the implementation slices must pin
 
 A non-exhaustive list, mirrored as TODO markers in the companion
-[`tests/test_receptor_revision_contract.py`](../tests/test_receptor_revision_contract.py):
+[`tests/components/engine/receptor_revision/test_pins.py`](../tests/components/engine/receptor_revision/test_pins.py):
 
 1. **Engine round-trip.** `SegmentReplaced(V)` event payload
    carries the correct `(old_region, new_region, bytes_delta)`

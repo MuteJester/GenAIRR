@@ -27,14 +27,14 @@ compile artefact (out of the live import path).
 
 Companion artefacts:
 
-- [`tests/test_reference_cartridge_authoring_contract.py`](../tests/test_reference_cartridge_authoring_contract.py)
+- [`tests/components/reference/cartridge_authoring/test_pins.py`](../tests/components/reference/cartridge_authoring/test_pins.py)
   — 25 pins, flipped to post-implementation present-state.
-- [`tests/test_reference_cartridge_authoring_implementation.py`](../tests/test_reference_cartridge_authoring_implementation.py)
+- [`tests/components/reference/cartridge_authoring/test_authoring.py`](../tests/components/reference/cartridge_authoring/test_authoring.py)
   — 15 behaviour tests covering the user-brief 12-item
   finish-condition plus three error-path bonus tests
   (`d_fasta` on VJ chain, missing `d_fasta` on VDJ chain,
   duplicate allele name).
-- [`tests/test_reference_cartridge_authoring_release.py`](../tests/test_reference_cartridge_authoring_release.py)
+- [`tests/components/reference/cartridge_authoring/test_composition.py`](../tests/components/reference/cartridge_authoring/test_composition.py)
   — release-tier composition: tiny inline-FASTA VDJ cartridge,
   build, manifest JSON-clean, build-report JSON-clean, compile
   path works under `allow_curatable_refdata()`, report
@@ -57,7 +57,7 @@ report surface that makes cartridge creation reproducible and
 auditable.
 
 Companion to
-[`tests/test_reference_cartridge_authoring_contract.py`](../tests/test_reference_cartridge_authoring_contract.py)
+[`tests/components/reference/cartridge_authoring/test_pins.py`](../tests/components/reference/cartridge_authoring/test_pins.py)
 which pins (a) the absence of the proposed builder surface
 today, (b) the live inference-adjacent helpers the new
 builder will reuse, and (c) the dead/historical references
@@ -100,8 +100,8 @@ three dead-reference sites in lockstep.
 |---|---|---|---|
 | **Bundled `DataConfig` pickle load** | `GenAIRR.HUMAN_IGH_OGRDB` (and 105 others) via [`src/GenAIRR/data/__init__.py::_load_dataconfig`](../src/GenAIRR/data/__init__.py) | ✓ public (`GenAIRR.list_configs()`) | Lazy `__getattr__` resolves a name → pickle path → `pickle.load()` → `verify_integrity()`. Cartridges produced by an out-of-tree process; **no live in-tree path produces them.** |
 | **Pickle-load arbitrary `.pkl` path** | n/a — no public helper; users `pickle.load()` themselves | ✗ (no public surface) | Plain Python pickle works because `DataConfig` is a normal dataclass. Round-trip survives `verify_integrity()` as long as the schema matches. |
-| **Manual `DataConfig(...)` construction** | `DataConfig(name="…")` + field-by-field assignment | ✓ public (it's a dataclass) | Used by [`tests/test_cartridge_views.py`](../tests/test_cartridge_views.py) and a handful of integration tests. **No safety net** — a user can construct a malformed `DataConfig` that crashes at compile time. |
-| **Manual `RefDataConfig` (Rust-backed) construction** | `ga.RefDataConfig.vj()` / `.vdj()` + `add_v_allele(...)` / `add_d_allele(...)` / `add_j_allele(...)` | ✓ public | Bridge layer; same surface used by [`tests/test_performance_budgets.py`](../tests/test_performance_budgets.py). Carries V/J/D pool only — does NOT carry `ReferenceEmpiricalModels` (NP, P, trim distributions). User must attach those via `cfg.reference_models = ReferenceEmpiricalModels(...)`. |
+| **Manual `DataConfig(...)` construction** | `DataConfig(name="…")` + field-by-field assignment | ✓ public (it's a dataclass) | Used by [`tests/components/cartridge/test_cartridge_views.py`](../tests/components/cartridge/test_cartridge_views.py) and a handful of integration tests. **No safety net** — a user can construct a malformed `DataConfig` that crashes at compile time. |
+| **Manual `RefDataConfig` (Rust-backed) construction** | `ga.RefDataConfig.vj()` / `.vdj()` + `add_v_allele(...)` / `add_d_allele(...)` / `add_j_allele(...)` | ✓ public | Bridge layer; same surface used by [`tests/performance/test_performance_budgets.py`](../tests/performance/test_performance_budgets.py). Carries V/J/D pool only — does NOT carry `ReferenceEmpiricalModels` (NP, P, trim distributions). User must attach those via `cfg.reference_models = ReferenceEmpiricalModels(...)`. |
 | **Typed empirical-models authoring** | `ReferenceEmpiricalModels(np_lengths=..., trims=..., np_bases=..., p_nucleotide_lengths=...)` | ✓ public | Validates at construction time via `EmpiricalDistributionSpec.validate` / `NpBaseModelSpec.validate`. Top-level + per-key + per-spec error paths exercised by `test_*_implementation.py`. |
 | **Typed rules authoring** | `ReferenceRulesSpec(allowed_bases=..., v_anchor=..., j_anchor=...)` | ✓ public | Programmable interpretation layer; folded into `RefDataConfig.rules` by the bridge. |
 
@@ -131,7 +131,7 @@ reuse them rather than reinvent them.
 | Reference site | Pre-slice state | Post-slice state |
 |---|---|---|
 | [`dataconfig/data_config.py:159-166`](../src/GenAIRR/dataconfig/data_config.py#L159-L166) — `DataConfig.build_report` field docstring | "Populated by `RandomDataConfigBuilder.make_from_reference`" (named a removed class) | **[Cleaned]** Docstring now references `GenAIRR.cartridge_builder.ReferenceCartridgeBuilder.build`. Pinned by `test_pin_present_build_report_docstring_now_references_new_builder`. |
-| [`tools/build_imgt_configs.py`](../tools/build_imgt_configs.py) | The legacy build script imported the removed `from GenAIRR.dataconfig.make.random import RandomDataConfigBuilder` | **[Ported]** Rewritten as a first-class, tracked maintainer tool using `ReferenceCartridgeBuilder` (`from_fasta → infer_identity → infer_v_subregions → build`), producing structural cartridges. Pinned by `test_pin_present_imgt_build_tool_uses_reference_cartridge_builder` + `tests/test_build_imgt_configs.py`. |
+| [`tools/build_imgt_configs.py`](../tools/build_imgt_configs.py) | The legacy build script imported the removed `from GenAIRR.dataconfig.make.random import RandomDataConfigBuilder` | **[Ported]** Rewritten as a first-class, tracked maintainer tool using `ReferenceCartridgeBuilder` (`from_fasta → infer_identity → infer_v_subregions → build`), producing structural cartridges. Pinned by `test_pin_present_imgt_build_tool_uses_reference_cartridge_builder` + `tests/components/reference/test_build_imgt_configs.py`. |
 | `docs/build/lib.linux-x86_64-cpython-312/GenAIRR/dataconfig/make/...` | Historical implementation of `RandomDataConfigBuilder` / `CustomDataConfigBuilder` as a compile artefact | **Unchanged.** Build-cache mirror is not on the import path; regenerated by the next wheel build. Pinned absent by `test_pin_scaffold_historical_random_builder_module_is_gone` (verifies `ModuleNotFoundError` on import). |
 
 ### 3.2 Historical shape (for design inspiration only)
@@ -391,7 +391,7 @@ preserves:
 - Compile-time validation — the existing
   `dataconfig_to_refdata` bridge validates the cartridge
   shape and the compile-gate test
-  ([`test_refdata_validation_compile_gate.py`](../tests/test_refdata_validation_compile_gate.py))
+  ([`test_refdata_validation_compile_gate.py`](../tests/components/reference/test_refdata_validation_compile_gate.py))
   surfaces malformed cartridges.
 - Round-trip preservation — `pickle.dump(cfg)` /
   `pickle.load(path)` works because `DataConfig` is a normal
@@ -547,7 +547,7 @@ Single self-contained slice.
 ## 12. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_reference_cartridge_authoring_contract.py`](../tests/test_reference_cartridge_authoring_contract.py).
+[`tests/components/reference/cartridge_authoring/test_pins.py`](../tests/components/reference/cartridge_authoring/test_pins.py).
 
 ### `pin_scaffold_*` — pre-existing live surfaces the new
 builder reuses

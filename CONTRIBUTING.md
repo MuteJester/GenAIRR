@@ -10,10 +10,10 @@ Large changes should be discussed first via [GitHub Issues](https://github.com/M
 git clone https://github.com/MuteJester/GenAIRR.git
 cd GenAIRR
 python -m venv .venv && source .venv/bin/activate
-pip install maturin pytest pandas
+pip install -e ".[test,mcp]"
 maturin develop --release -m engine_rs/Cargo.toml   # builds the Rust kernel
 pip install -e .                                    # editable Python install
-pytest tests/ -x -q                                 # run the test suite
+make test-fast                                 # run the test suite
 ```
 
 Or, if you prefer the Makefile:
@@ -49,7 +49,7 @@ make test-rust   # cargo test
 ## Running Tests
 
 ```bash
-pytest tests/ -x -q                  # Python tests (DSL + integration)
+make test-fast                  # Python tests (DSL + integration)
 cd engine_rs && cargo test           # Rust tests (unit + integration)
 ```
 
@@ -80,3 +80,7 @@ GitHub Actions handles CI and publishing:
 ### Prerequisites
 
 - `PYPI_API_TOKEN` secret must be configured in GitHub repository settings.
+
+
+See [tests/README.md](tests/README.md) for where a new test goes, how to
+pick a tier, and how to register a biological mechanism.

@@ -311,7 +311,7 @@ the failure reason).
 
 ## 7. Test coverage in this slice
 
-[`tests/test_junction_call_provenance.py`](../tests/test_junction_call_provenance.py)
+[`tests/components/engine/test_junction_call_provenance.py`](../tests/components/engine/test_junction_call_provenance.py)
 pins the §2–§5 rules:
 
 - **Field exposure (§1)**: assert `junction`, `junction_aa`,

@@ -8,7 +8,7 @@ rearrangement data. Per the cartridge-authoring audit's
 land after NP length distributions.
 
 Companion to
-[`tests/test_np_base_model_estimation_contract.py`](../tests/test_np_base_model_estimation_contract.py)
+[`tests/components/estimators/np_base_model/test_pins.py`](../tests/components/estimators/np_base_model/test_pins.py)
 which freezes (a) the AIRR `np1` / `np2` string fields the
 estimator consumes, (b) the typed `np_bases` plane it
 writes into, (c) the engine `NpBaseGenerator` family that
@@ -526,7 +526,7 @@ sub-steps:
    default + the two estimable kinds + chain behaviour +
    replay + manifest + validators). Flip the three
    absence pins in
-   `tests/test_np_base_model_estimation_contract.py` to
+   `tests/components/estimators/np_base_model/test_pins.py` to
    present-state. Lockstep update to the
    reference-cartridge-authoring estimator boundary pins
    (allowing the fourth shipped estimator).
@@ -549,7 +549,7 @@ Lightest manifest impact of any estimator slice so far.
 ## 11. Test surface — what this audit pins
 
 Mirrored in
-[`tests/test_np_base_model_estimation_contract.py`](../tests/test_np_base_model_estimation_contract.py).
+[`tests/components/estimators/np_base_model/test_pins.py`](../tests/components/estimators/np_base_model/test_pins.py).
 
 ### `pin_scaffold_*` — AIRR np1/np2 fields (live)
 

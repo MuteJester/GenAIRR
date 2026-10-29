@@ -2,7 +2,7 @@
 
 Each preset is a dict of parameters consumed directly by simulate_repertoire
 -- no other indirection. Adding a preset means appending an entry to PRESETS
-and adding a happy-path test in tests/test_mcp_server.py.
+and adding a happy-path test in tests/components/mcp/test_mcp_server.py.
 
 Per the spec (section 3), presets give an LLM agent a way to call
 "realistic scenario by name" without needing to know every parameter knob:
