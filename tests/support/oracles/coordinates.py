@@ -221,3 +221,44 @@ def _chain_disagreements(record, identifier, allele_lengths, segments):
             recorded=record[f"{last}_sequence_end"],
             expected=_count(record, "sequence_length")))
     return out
+
+
+#: What a both-sides perturbation produces, per identity. See the package
+#: docstring for why this is required and what it does not guarantee.
+#:
+#: The result here is the interesting one: EVERY identity is individually
+#: circular -- perturb both of its own sides and it stays silent -- and the
+#: SET is not, because perturbing one pair breaks a different identity. The
+#: strength is in the over-determination, not in any single comparison, which
+#: is the opposite of how the first draft of this module described itself.
+CIRCULARITY = {
+    "germline_start == trim_5 + end_loss_5_length":
+        "CIRCULAR alone: +3 to both germline_start and trim_5 leaves this "
+        "identity silent. Caught by the set -- 1 other identity fires.",
+    "germline_end == allele_length - trim_3 - end_loss_3_length":
+        "CIRCULAR alone: -3 to germline_end with +3 to trim_3 leaves this "
+        "identity silent. Caught by the set -- 1 other identity fires. This "
+        "one does additionally cross the reference's own LENGTH: stretching "
+        "the allele by 3 fires it, which no other identity here does.",
+    "germline span == read span":
+        "CIRCULAR alone: -2 to both spans leaves this identity silent. Caught "
+        "by the set -- 3 other identities fire.",
+    "alignment coordinates == read coordinates":
+        "CIRCULAR alone: +2 or +5 to all four of a segment's alignment and "
+        "read coordinates leaves this identity silent, because both pairs "
+        "come from the walk. Caught by the set -- 2 other identities fire, "
+        "the leading anchor and the inter-segment gap.",
+    "the first segment starts at read position 0":
+        "NOT CIRCULAR -- an absolute anchor, with no second side to move. "
+        "Displacing the whole rearrangement by 5 fires it 1 time of 2 total "
+        "disagreements, and every difference-based identity above preserves "
+        "that displacement, which is why the anchor exists.",
+    "the gap between segments is the untemplated length recorded there":
+        "NOT CIRCULAR against np1/np2, which are a different producer: "
+        "np1_length - 1 fires it 1 time of 1 total disagreement. Circular if "
+        "the coordinates and the np length move together.",
+    "the read ends where the last segment ends":
+        "NOT CIRCULAR -- the second absolute anchor. The same +5 displacement "
+        "fires it 1 time of 2, against sequence_length, which the segment "
+        "coordinates do not produce.",
+}

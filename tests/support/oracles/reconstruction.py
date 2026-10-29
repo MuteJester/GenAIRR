@@ -284,3 +284,23 @@ def p_tip_disagreement(sequence: str, boundary: int, p_length: int) -> tuple[str
     found = sequence[boundary:boundary + p_length].upper()
     expected = reverse_complement(sequence[boundary - p_length:boundary])
     return None if found == expected else (found, expected)
+
+
+#: What a both-sides perturbation produces, per identity. See the package
+#: docstring for why this is required and what it does not guarantee.
+CIRCULARITY = {
+    "recorded germline base == reference base at the claimed coordinate":
+        "CIRCULAR. Shift the germline coordinate by one and re-read each byte "
+        "from its own segment's reference: 0 mismatches of 366 compared. The "
+        "engine lays byte and coordinate down from the same two numbers "
+        "(Nucleotide::germline(slice[i], slice_start + i)), so a mis-trimmed "
+        "segment moves both together. What this identity establishes is "
+        "ALLELE IDENTITY -- a rotated reference breaks it -- and nothing about "
+        "the coordinates. They are checked by the coordinates oracle against "
+        "the allele's length, which this walk does not produce.",
+    "an inverted segment's byte == complement of the reference base":
+        "NOT CIRCULAR in orientation. Declaring the segment forward when it is "
+        "inverted gives mismatches on every inverted position (16 of 16 on the "
+        "measured record), and declaring it inverted agrees on 501 of 501. The "
+        "coordinate circularity above still applies.",
+}

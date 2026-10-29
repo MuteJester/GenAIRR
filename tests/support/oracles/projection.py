@@ -443,3 +443,53 @@ def translation_disagreement(record, *, native_phase: int) -> tuple[str, str] | 
     phase = translation_phase(record, native_phase=native_phase)
     expected = translate(subject[phase:])
     return None if recorded == expected else (recorded, expected)
+
+
+#: What a both-sides perturbation produces, per identity. See the package
+#: docstring for why this is required and what it does not guarantee.
+CIRCULARITY = {
+    "a column consuming a germline base carries the reference's base there":
+        "CIRCULAR on the coordinate. Shift v_germline_start/end by one AND "
+        "re-render the germline columns from the shifted reference slice: this "
+        "identity stays silent, with 226 columns now carrying a different "
+        "base. *_germline_start/end come from the same column walk that emits "
+        "the cigar and the germline string (builder.rs sets them from "
+        "walk.ref_ranges). What it establishes is ALLELE IDENTITY -- a rotated "
+        "reference breaks it on every V column -- not the coordinates.",
+    "a column declared M/D/I has that op's gap pattern":
+        "CIRCULAR on deletion PLACEMENT. Move a D in the cigar and move the "
+        "matching gap in sequence_alignment together: 0 disagreements. So this "
+        "pins the cigar relative to the alignment strings, and all three come "
+        "from one walk. A consistently relocated deletion is a different but "
+        "internally consistent alignment of the same read to the same "
+        "germline, and which one actually happened is recorded only in the "
+        "engine's per-base provenance -- so establishing placement needs an "
+        "identity against the IR, which this module does not have. It IS "
+        "load-bearing against an inconsistent relocation: moving the cigar's D "
+        "alone gives 2 disagreements where it gave 0 before this check.",
+    "cigar M+I == read span / cigar M+D == germline span":
+        "CIRCULAR. True by construction in the engine, which says so itself: "
+        "'This guarantees germline_span == M + D by construction.' Measured: "
+        "+2 to the cigar's M run alone gives 5 disagreements, and +2 to the "
+        "cigar AND both coordinates still gives 3 -- from the gap-pattern and "
+        "column checks, not from this identity, which goes quiet. What it "
+        "catches on its own is a field-plumbing error in the builder, such as "
+        "one segment's range written into another's.",
+    "len(sequence_alignment) == len(germline_alignment)":
+        "CIRCULAR. One alignment, one length, emitted together: truncating "
+        "germline_alignment alone gives 3 disagreements, truncating both gives "
+        "4 -- all of them from the other identities, this one silent.",
+    "sequence_alignment without gaps is the read":
+        "NOT CIRCULAR against the assembled sequence, which is a different "
+        "producer: corrupting 1 base of sequence_alignment fires it, 1 of 1 "
+        "disagreement. It does not constrain where the gaps ARE -- relocating "
+        "a gap fires it 0 times of 2 -- because removing them gives the same "
+        "string wherever they sat.",
+    "the D mask covers exactly the D span":
+        "CIRCULAR. The mask is built in the same walk whose span boundaries "
+        "become d_alignment_start/end, so this restates the construction: "
+        "handing the oracle the unmasked germline string gives 1 disagreement, "
+        "which is this identity noticing a mask that was never applied -- not "
+        "evidence that an applied mask is in the right place. The claim says "
+        "so.",
+}
