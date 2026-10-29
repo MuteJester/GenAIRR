@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import pytest
 
 from tests.support.builders import experiment as experiment_builder
-from tests.support.oracles import coordinates, reconstruction
+from tests.support.oracles import coordinates, projection, reconstruction
 
 pytestmark = pytest.mark.pin
 
@@ -419,3 +419,151 @@ def test_a_reference_too_short_for_the_coordinates_is_not_reported_clean():
             f"{check.out_of_range} were reported")
         assert not check.clean, (
             f"a reference {missing} bases short of the assembly reported clean")
+
+
+# ── the projection oracle ────────────────────────────────────────────────────
+#
+# The cigars and alignment strings are what a benchmarked annotator is compared
+# to, and the existing cigar tests read the reference zero times -- their
+# strongest member re-derives the cigar from the production helpers and says
+# "equivalence is guaranteed by construction". These mutants are the measure of
+# whether crossing to the reference actually catches anything.
+
+
+def _projection_case(*, invert=False):
+    """``(record, allele_sequences, inverted)`` for one indel-bearing record."""
+    exp = experiment_builder.recombined().polymerase_indels(count=3)
+    if invert:
+        exp = experiment_builder.recombined().invert_d(prob=1.0)
+    refdata = exp.refdata
+    getters = {"v": refdata.v_allele, "d": refdata.d_allele, "j": refdata.j_allele}
+    for outcome in exp.run(n=30, seed=53):
+        record = dict(outcome.airr_record(refdata))
+        if not invert and (record.get("n_indels") or 0) == 0:
+            continue
+        simulation = outcome.final_simulation()
+        sequences = {}
+        for segment, getter in getters.items():
+            identifier = {"v": simulation.v_allele_id(), "d": simulation.d_allele_id(),
+                          "j": simulation.j_allele_id()}[segment]
+            if identifier is None:
+                continue
+            allele = getter(identifier)
+            raw = allele.seq() if callable(allele.seq) else allele.seq
+            sequences[segment] = raw.decode().upper()
+        inverted = {"d"} if record.get("d_inverted") else set()
+        return record, sequences, inverted
+    pytest.fail("no suitable record was produced; the fixture is wrong")
+
+
+def test_the_projection_oracle_passes_on_an_uncorrupted_record():
+    """The control, with the coverage check beside it: a record whose columns
+    were never compared would also report no disagreements."""
+    record, sequences, inverted = _projection_case()
+    assert projection.disagreements(record, sequences, inverted=inverted) == ()
+    columns = projection.columns_compared(record, sequences, inverted=inverted)
+    assert sum(columns.values()) > 200, (
+        f"only {sum(columns.values())} alignment columns were compared; the "
+        "mutants below would not mean much")
+
+
+@pytest.mark.parametrize("name, corrupt, identity", [
+    ("germline alignment truncated",
+     lambda r: {**r, "germline_alignment": r["germline_alignment"][:-1]},
+     "len(sequence_alignment) == len(germline_alignment)"),
+    ("a read coordinate moved",
+     lambda r: {**r, "v_sequence_end": r["v_sequence_end"] + 2},
+     "cigar M+I == read span"),
+    ("a germline coordinate moved",
+     lambda r: {**r, "j_germline_end": r["j_germline_end"] + 2},
+     "cigar M+D == germline span"),
+    ("the alignment shifted against the read",
+     lambda r: {**r, "sequence_alignment": "A" + r["sequence_alignment"][1:]},
+     "sequence_alignment without gaps is the read"),
+    ("the D mask left a base unmasked",
+     lambda r: {**r, "germline_alignment_d_mask": r["germline_alignment"]},
+     "the D mask is the germline alignment with the D span's bases replaced by N"),
+])
+def test_each_projection_identity_is_sensitive_to_its_own_producer(name, corrupt, identity):
+    record, sequences, inverted = _projection_case()
+    found = projection.disagreements(corrupt(record), sequences, inverted=inverted)
+    assert found, f"{name} went undetected"
+    assert any(identity in d.identity for d in found), (
+        f"{name} was detected, but not by {identity!r}; "
+        f"got {sorted({d.identity for d in found})}")
+
+
+def test_a_cigar_with_the_right_op_lengths_in_the_wrong_place_is_caught():
+    """The defect no existing cigar test can see.
+
+    Every structural property survives moving a segment's alignment start: the
+    ops are still M/I/D, the run-lengths still collapse, the op counts still
+    sum to the same spans. Only the comparison against the reference notices
+    that the M columns now land on the wrong germline bases.
+    """
+    record, sequences, inverted = _projection_case()
+    assert projection.disagreements(record, sequences, inverted=inverted) == ()
+    shifted = {**record, "v_alignment_start": record["v_alignment_start"] + 3}
+    found = projection.disagreements(shifted, sequences, inverted=inverted)
+    assert found, "a V alignment shifted three columns went undetected"
+    assert any("carries the reference base" in d.identity for d in found), (
+        f"caught, but not by the reference comparison; "
+        f"got {sorted({d.identity for d in found})}")
+
+
+def test_an_assembly_from_the_wrong_allele_is_caught_in_the_projection_too():
+    """Models the record naming one allele while the alignment was built from
+    another -- the projection equivalent of the IR-level allele-identity check."""
+    record, sequences, inverted = _projection_case()
+    wrong = dict(sequences)
+    reference = wrong["v"]
+    # Rotate the reference so it is a real sequence of the right length that is
+    # not the one the alignment was built from.
+    wrong["v"] = reference[7:] + reference[:7]
+    found = projection.disagreements(record, wrong, inverted=inverted)
+    assert found, "a rotated V reference went undetected"
+    assert {d.segment for d in found} == {"v"}
+
+
+def test_an_inverted_d_compared_as_if_forward_is_caught():
+    """The orientation has to be told to the oracle, so the oracle must fail
+    when it is told the wrong thing -- otherwise passing the right thing proves
+    nothing.
+
+    This is also the shape of the defect found in the oracle next door: its
+    `skip_inverted` read an attribute a Simulation does not have, so it skipped
+    nothing and claimed to skip inverted D by default.
+    """
+    record, sequences, inverted = _projection_case(invert=True)
+    assert inverted == {"d"}, "the fixture did not invert D"
+    assert projection.disagreements(record, sequences, inverted=inverted) == ()
+    found = projection.disagreements(record, sequences, inverted=())
+    assert found, "an inverted D compared against the forward reference agreed"
+    assert {d.segment for d in found} == {"d"}
+
+
+def test_an_inverted_d_is_compared_by_the_base_level_oracle_rather_than_skipped():
+    """`skip_inverted` was dead: it read `getattr(simulation, "d_inverted")`,
+    a Simulation has no such attribute, so it always found None. The docstring
+    said inverted D was skipped by default; nothing was skipped, and no
+    registered test ran an inverting stack to notice.
+
+    The IR stores the complement of the reference base at the original allele
+    coordinate, so the comparison applies with the expectation complemented.
+    """
+    exp = experiment_builder.recombined().invert_d(prob=1.0)
+    outcome = exp.run(n=1, seed=43)[0]
+    simulation = outcome.final_simulation()
+    record = outcome.airr_record(exp.refdata)
+    assert record["d_inverted"] is True, "the fixture did not invert D"
+
+    told = reconstruction.templated_check(simulation, exp.refdata, inverted={"D"})
+    assert told.clean, f"an inverted D disagreed when declared: {told.mismatches[:2]}"
+    assert told.inverted_compared > 0, (
+        "no inverted position was compared, so this passed by skipping")
+
+    not_told = reconstruction.templated_check(simulation, exp.refdata)
+    assert not_told.mismatches, (
+        "an inverted D compared against the forward reference agreed, which "
+        "means the comparison is not reading the reference")
+    assert {m.segment for m in not_told.mismatches} == {"D"}

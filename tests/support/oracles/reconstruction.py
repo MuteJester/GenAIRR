@@ -108,7 +108,12 @@ class TemplatedCheck:
 
     mismatches: tuple[Mismatch, ...]
     checked: int
-    skipped_inverted: int
+    #: Positions in a segment assembled in reverse orientation. Counted rather
+    #: than skipped: the IR stores the complement of the reference base at the
+    #: original allele coordinate, so the comparison applies with that
+    #: expectation. Measured 501 of 501 against the complement and 0 of 501
+    #: against the plain reference.
+    inverted_compared: int
     #: Positions whose segment names an allele the reference does not have.
     unresolved_allele: int = 0
     #: Positions whose germline coordinate falls outside the allele it names.
@@ -126,7 +131,7 @@ class TemplatedCheck:
                 and self.unresolved_allele == 0 and self.out_of_range == 0)
 
 
-def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> TemplatedCheck:
+def templated_check(simulation, refdata, *, inverted=()) -> TemplatedCheck:
     """Compare every recorded germline base to the reference's base.
 
     This catches a wrong allele assembled with internally consistent
@@ -138,24 +143,32 @@ def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> Templ
     mutant can do and a trimming defect cannot. Use the ``coordinates`` oracle
     for that.
 
-    Inverted D is skipped by default: its coordinates are forward-reference
-    while the sequence carries the reverse complement, so a direct lookup does
-    not apply and comparing it needs its own claim.
+    ``inverted`` names the segments the simulation assembled in reverse
+    orientation, which the caller reads from the record's ``d_inverted``. It
+    has to be passed in: a ``Simulation`` exposes no orientation at all, which
+    is why the previous ``skip_inverted`` could not work. It read
+    ``getattr(simulation, "d_inverted", None)``, always found ``None``, and so
+    skipped nothing while its docstring said inverted D was skipped by default.
+    Nothing caught it because no registered test ran an inverting stack.
+
+    An inverted segment is now compared rather than passed over. The IR stores
+    the complement of the reference base at the original allele coordinate --
+    ``Nucleotide::germline(complement(seq[pos]), pos)`` -- so the comparison
+    applies with the expectation complemented. Measured: 501 of 501 positions
+    match the complement, 0 of 501 match the plain reference.
     """
     germline = simulation.germline_bases()
     segments = segments_by_position(simulation)
     cache: dict[str, bytes | None] = {}
     out: list[Mismatch] = []
-    checked = skipped = unresolved = out_of_range = 0
+    checked = inverted_seen = unresolved = out_of_range = 0
+    inverted = {s.upper() for s in inverted}
     for index in range(len(germline)):
         position = simulation.germline_position(index)
         if position is None:
             continue
         segment = segments.get(index, "?")
         if segment not in ("V", "D", "J"):
-            continue
-        if skip_inverted and segment == "D" and _is_inverted(simulation):
-            skipped += 1
             continue
         if segment not in cache:
             cache[segment] = _allele_sequence(refdata, simulation, segment)
@@ -169,21 +182,15 @@ def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> Templ
         checked += 1
         recorded = chr(germline[index]).upper()
         expected = chr(reference[position]).upper()
+        if segment in inverted:
+            inverted_seen += 1
+            expected = COMPLEMENT.get(expected, "N")
         if recorded != expected:
             out.append(Mismatch(index=index, germline_position=position, segment=segment,
                                 recorded=recorded, reference=expected))
-    return TemplatedCheck(mismatches=tuple(out), checked=checked, skipped_inverted=skipped,
+    return TemplatedCheck(mismatches=tuple(out), checked=checked,
+                          inverted_compared=inverted_seen,
                           unresolved_allele=unresolved, out_of_range=out_of_range)
-
-
-def _is_inverted(simulation) -> bool:
-    for region in simulation.regions():
-        segment = region.segment() if callable(region.segment) else region.segment
-        if segment == "D":
-            inverted = getattr(simulation, "d_inverted", None)
-            if inverted is not None:
-                return bool(inverted() if callable(inverted) else inverted)
-    return False
 
 
 def untemplated_runs(simulation) -> tuple[UntemplatedRun, ...]:

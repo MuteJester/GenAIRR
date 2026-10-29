@@ -31,7 +31,10 @@ def test_every_templated_base_matches_the_reference_at_its_claimed_coordinate(lo
     checked = 0
     for outcome in exp.run(n=25, seed=0):
         simulation = outcome.final_simulation()
-        check = reconstruction.templated_check(simulation, exp.refdata)
+        record = outcome.airr_record(exp.refdata)
+        inverted = {"D"} if record.get("d_inverted") else set()
+        check = reconstruction.templated_check(simulation, exp.refdata,
+                                               inverted=inverted)
         assert check.mismatches == (), (
             f"{locus}: recorded germline disagrees with the reference at "
             f"{len(check.mismatches)} position(s); first: {check.mismatches[0]}")
@@ -43,7 +46,6 @@ def test_every_templated_base_matches_the_reference_at_its_claimed_coordinate(lo
             "carries hundreds of templated bases")
         # Tie the IR-level check to the exported field, so the claim on
         # `sequence` is something the body establishes rather than implies.
-        record = outcome.airr_record(exp.refdata)
         assert record["sequence"].upper() == simulation.bases().decode().upper(), (
             f"{locus}: the exported sequence is not the assembled bases")
         checked += 1
