@@ -13,37 +13,65 @@ LOCI = ("human_igh", "human_igk", "human_tcrb")
 
 
 @verifies("recombination.assembly",
-          claim="every base carrying a germline coordinate matches the reference "
-                "allele's base at that coordinate, so the bases copied are the "
-                "allele's own -- an allele-identity claim about the assembled "
-                "sequence, not about the record's coordinate fields, which come "
-                "from the column walker and are not read here",
+          claim="every base carrying a germline coordinate is the reference "
+                "allele's base at that coordinate -- its COMPLEMENT for a "
+                "segment assembled in reverse orientation, which half these "
+                "parametrizations exercise -- so the bases copied are the "
+                "allele's own. An allele-identity claim about the assembled "
+                "sequence and nothing about the record's coordinate fields: "
+                "the engine lays each byte down beside its coordinate from the "
+                "same two numbers, so shifting both agrees, measured 0 "
+                "mismatches of 366",
           fields=("sequence",))
+@pytest.mark.parametrize("invert_d", [False, True])
 @pytest.mark.parametrize("locus", LOCI)
-def test_every_templated_base_matches_the_reference_at_its_claimed_coordinate(locus):
+def test_every_templated_base_matches_the_reference_at_its_claimed_coordinate(locus, invert_d):
     """Checked against the reference tables, not against the engine's own record.
 
     This is what catches a wrong allele assembled with internally consistent
-    provenance, or a germline coordinate shifted by one -- neither of which the
-    engine's own bookkeeping can reveal.
+    provenance. It does NOT catch a germline coordinate shifted by one: the
+    engine lays each byte down beside its coordinate from the same two numbers,
+    so a shift moves both together and every comparison here still agrees --
+    measured, zero mismatches over 366 such positions. An earlier version of
+    this docstring claimed otherwise. The coordinates are checked by the
+    ``coordinates`` oracle, which compares them to the reference allele's own
+    length instead of to its bases.
+
+    The inverting parametrization is the point of the ``inverted`` argument
+    below. Without it the argument was always an empty set: a previous commit
+    added the plumbing and claimed "the assembly truth test now runs the
+    inverting stack", and `d_inverted` was False on 25 of 25 records for every
+    locus. The condition that let the original defect survive -- no registered
+    test running an inverting stack -- was still true after the fix.
     """
+    if invert_d and locus == "human_igk":
+        pytest.skip("a VJ locus has no D to invert")
     exp = experiment_builder.recombined(locus=locus)
+    if invert_d:
+        exp = exp.invert_d(prob=1.0)
     checked = 0
     for outcome in exp.run(n=25, seed=0):
         simulation = outcome.final_simulation()
-        check = reconstruction.templated_check(simulation, exp.refdata)
+        record = outcome.airr_record(exp.refdata)
+        inverted = {"D"} if record.get("d_inverted") else set()
+        check = reconstruction.templated_check(simulation, exp.refdata,
+                                               inverted=inverted)
         assert check.mismatches == (), (
             f"{locus}: recorded germline disagrees with the reference at "
             f"{len(check.mismatches)} position(s); first: {check.mismatches[0]}")
         # An empty mismatch tuple also describes a record where nothing was
         # compared, so the count is asserted rather than assumed.
         assert check.clean, f"{locus}: no templated position was compared"
+        if invert_d:
+            assert record["d_inverted"] is True, "the inverting stack did not invert"
+            assert check.inverted_compared > 0, (
+                "no inverted position was compared, so the inverted case "
+                "passed by being skipped -- the original defect")
         assert check.checked > 50, (
             f"{locus}: only {check.checked} positions compared; a rearrangement "
             "carries hundreds of templated bases")
         # Tie the IR-level check to the exported field, so the claim on
         # `sequence` is something the body establishes rather than implies.
-        record = outcome.airr_record(exp.refdata)
         assert record["sequence"].upper() == simulation.bases().decode().upper(), (
             f"{locus}: the exported sequence is not the assembled bases")
         checked += 1

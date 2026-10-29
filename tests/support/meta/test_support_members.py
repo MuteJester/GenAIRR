@@ -125,3 +125,111 @@ def test_builders_do_not_import_hypothesis():
     offenders = [p.name for p in _modules(TESTS_ROOT / "support" / "builders")
                  if any(m.split(".")[0] == "hypothesis" for m in _imports(p))]
     assert offenders == []
+
+
+# ── the circularity rule ─────────────────────────────────────────────────────
+# The third rule in the oracles package docstring. It exists because the same
+# over-claim was made twice: the reconstruction oracle's coordinate
+# circularity was found, written down, and then the projection oracle asserted
+# the opposite of it. Both times a review caught it after the claim was
+# committed.
+
+import re  # noqa: E402
+
+
+def _reporting_oracles():
+    """Oracle modules that report disagreements, so the rule applies to them."""
+    import importlib
+
+    root = TESTS_ROOT / "support" / "oracles"
+    found = {}
+    for module in sorted(root.glob("*.py")):
+        if module.name == "__init__.py":
+            continue
+        source = module.read_text(encoding="utf-8")
+        if "class Disagreement" not in source and "class Mismatch" not in source:
+            continue
+        found[module.stem] = importlib.import_module(
+            f"tests.support.oracles.{module.stem}")
+    return found
+
+
+def test_every_reporting_oracle_declares_what_its_identities_do_under_a_both_sides_probe():
+    """An identity nobody probed is an identity nobody knows the strength of.
+
+    What this enforces: the mapping exists, covers something, and every note
+    carries a measurement rather than a reassurance.
+
+    Where a module declares ``IDENTITIES``, coverage IS enforced: the mapping
+    must cover exactly those keys. Two modules were found emitting identities
+    absent from their mapping -- projection documented 6 of 13, coordinates 7
+    of 8 -- which is the blind spot the first version of this docstring
+    described as a limitation, realized. Both now declare their keys and
+    validate every reported identity against them at construction.
+
+    What is still NOT enforced: a module that declares no ``IDENTITIES`` gets
+    only the weak checks below, and nothing makes declaring them mandatory.
+    ``reconstruction`` is in that position -- its result type carries no
+    identity field -- so its two notes are the author's judgement of what it
+    compares, and a reviewer should check that rather than trust this test.
+    """
+    oracles = _reporting_oracles()
+    assert len(oracles) >= 3, (
+        f"only found {sorted(oracles)}; the scan is not reading the oracles")
+    for name, module in sorted(oracles.items()):
+        mapping = getattr(module, "CIRCULARITY", None)
+        assert isinstance(mapping, dict) and mapping, (
+            f"{name} reports disagreements but declares no CIRCULARITY "
+            "mapping. Perturb both sides of each identity, measure what the "
+            "oracle says, and record it -- see the oracles package docstring.")
+        declared = getattr(module, "IDENTITIES", None)
+        if declared is not None:
+            # Where the module declares its identity keys, coverage is checked
+            # rather than trusted. A review found two modules emitting
+            # identities absent from their mapping -- the blind spot the
+            # package docstring describes, realized -- so the modules now
+            # declare the keys and this closes it for them.
+            assert set(mapping) == set(declared), (
+                f"{name}: CIRCULARITY and IDENTITIES disagree.\n"
+                f"  emitted but unprobed: {sorted(set(declared) - set(mapping))}\n"
+                f"  probed but not emitted: {sorted(set(mapping) - set(declared))}")
+        for identity, note in mapping.items():
+            assert identity.strip(), f"{name}: an identity with no name"
+            assert len(note.split()) >= 12, (
+                f"{name}/{identity!r}: the note is too short to be a "
+                f"measurement: {note!r}")
+            # Any digit satisfies this, including an incidental "3 loci". It
+            # catches a note with no measurement at all, which is what five of
+            # the first drafts were; it cannot tell a measurement from a
+            # mention.
+            assert re.search(r"\d", note), (
+                f"{name}/{identity!r}: the note carries no number, so no "
+                f"probe was measured: {note!r}")
+            # "NOT CIRCULAR" already contains "CIRCULAR", so the alternation
+            # is for readability rather than matching. The load-bearing check
+            # is the startswith() in the test below; a note phrased "This
+            # identity is CIRCULAR..." would satisfy this one and evade that,
+            # which is a known weakness rather than a guarded one.
+            assert re.search(r"\b(CIRCULAR|NOT CIRCULAR)\b", note), (
+                f"{name}/{identity!r}: the note does not say whether the "
+                "identity is circular, which is the thing being recorded")
+
+
+def test_the_circularity_notes_do_not_all_claim_independence():
+    """A mapping that says every identity is independent is the shape of the
+    defect, not evidence against it.
+
+    Three of the oracles' identities are genuinely circular and say so. If
+    that ever became zero, either the oracles were rewritten or somebody
+    softened the notes.
+    """
+    oracles = _reporting_oracles()
+    circular = [f"{name}/{identity}"
+                for name, module in oracles.items()
+                for identity, note in getattr(module, "CIRCULARITY", {}).items()
+                if note.lstrip().startswith("CIRCULAR")]
+    assert len(circular) >= 3, (
+        f"only {len(circular)} identities are recorded as circular: "
+        f"{circular}. The coordinate comparisons in reconstruction and "
+        "projection are both circular on the coordinate, measured, and the "
+        "cigar span identities are true by construction.")

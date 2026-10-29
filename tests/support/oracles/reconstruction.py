@@ -108,7 +108,13 @@ class TemplatedCheck:
 
     mismatches: tuple[Mismatch, ...]
     checked: int
-    skipped_inverted: int
+    #: Positions in a segment assembled in reverse orientation. Counted rather
+    #: than skipped: the IR stores the complement of the reference base at the
+    #: original allele coordinate, so the comparison applies with that
+    #: expectation. Measured 417 of 417 against the complement and 0 against
+    #: the plain reference, on the assembly truth test's own fixture
+    #: (invert_d(prob=1.0), n=25, seed=0).
+    inverted_compared: int
     #: Positions whose segment names an allele the reference does not have.
     unresolved_allele: int = 0
     #: Positions whose germline coordinate falls outside the allele it names.
@@ -126,7 +132,7 @@ class TemplatedCheck:
                 and self.unresolved_allele == 0 and self.out_of_range == 0)
 
 
-def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> TemplatedCheck:
+def templated_check(simulation, refdata, *, inverted=()) -> TemplatedCheck:
     """Compare every recorded germline base to the reference's base.
 
     This catches a wrong allele assembled with internally consistent
@@ -138,24 +144,33 @@ def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> Templ
     mutant can do and a trimming defect cannot. Use the ``coordinates`` oracle
     for that.
 
-    Inverted D is skipped by default: its coordinates are forward-reference
-    while the sequence carries the reverse complement, so a direct lookup does
-    not apply and comparing it needs its own claim.
+    ``inverted`` names the segments the simulation assembled in reverse
+    orientation, which the caller reads from the record's ``d_inverted``. It
+    has to be passed in: a ``Simulation`` exposes no orientation at all, which
+    is why the previous ``skip_inverted`` could not work. It read
+    ``getattr(simulation, "d_inverted", None)``, always found ``None``, and so
+    skipped nothing while its docstring said inverted D was skipped by default.
+    Nothing caught it because no registered test ran an inverting stack.
+
+    An inverted segment is now compared rather than passed over. The IR stores
+    the complement of the reference base at the original allele coordinate --
+    ``Nucleotide::germline(complement(seq[pos]), pos)`` -- so the comparison
+    applies with the expectation complemented. Measured on the assembly truth test's own fixture (n=25, seed=0):
+    417 inverted positions compared, all agreeing with the complement, and
+    0 agreeing with the plain reference.
     """
     germline = simulation.germline_bases()
     segments = segments_by_position(simulation)
     cache: dict[str, bytes | None] = {}
     out: list[Mismatch] = []
-    checked = skipped = unresolved = out_of_range = 0
+    checked = inverted_seen = unresolved = out_of_range = 0
+    inverted = {s.upper() for s in inverted}
     for index in range(len(germline)):
         position = simulation.germline_position(index)
         if position is None:
             continue
         segment = segments.get(index, "?")
         if segment not in ("V", "D", "J"):
-            continue
-        if skip_inverted and segment == "D" and _is_inverted(simulation):
-            skipped += 1
             continue
         if segment not in cache:
             cache[segment] = _allele_sequence(refdata, simulation, segment)
@@ -169,21 +184,15 @@ def templated_check(simulation, refdata, *, skip_inverted: bool = True) -> Templ
         checked += 1
         recorded = chr(germline[index]).upper()
         expected = chr(reference[position]).upper()
+        if segment in inverted:
+            inverted_seen += 1
+            expected = COMPLEMENT.get(expected, "N")
         if recorded != expected:
             out.append(Mismatch(index=index, germline_position=position, segment=segment,
                                 recorded=recorded, reference=expected))
-    return TemplatedCheck(mismatches=tuple(out), checked=checked, skipped_inverted=skipped,
+    return TemplatedCheck(mismatches=tuple(out), checked=checked,
+                          inverted_compared=inverted_seen,
                           unresolved_allele=unresolved, out_of_range=out_of_range)
-
-
-def _is_inverted(simulation) -> bool:
-    for region in simulation.regions():
-        segment = region.segment() if callable(region.segment) else region.segment
-        if segment == "D":
-            inverted = getattr(simulation, "d_inverted", None)
-            if inverted is not None:
-                return bool(inverted() if callable(inverted) else inverted)
-    return False
 
 
 def untemplated_runs(simulation) -> tuple[UntemplatedRun, ...]:
@@ -277,3 +286,34 @@ def p_tip_disagreement(sequence: str, boundary: int, p_length: int) -> tuple[str
     found = sequence[boundary:boundary + p_length].upper()
     expected = reverse_complement(sequence[boundary - p_length:boundary])
     return None if found == expected else (found, expected)
+
+
+#: What a both-sides perturbation produces, per identity. See the package
+#: docstring for why this is required and what it does not guarantee.
+#:
+#: SCOPE, stated because it is narrower than the module: this covers
+#: ``templated_check``'s comparison only. ``np_fields_disagreement`` and
+#: ``p_tip_disagreement`` also report, and the ``unresolved_allele`` and
+#: ``out_of_range`` counters can each sink a verdict, and none of those is
+#: probed here. They are checked by their own mutants in
+#: tests/biology/test_oracle_sensitivity.py, which is weaker than a probe:
+#: a mutant shows the check can fire, a probe shows what it cannot see. This
+#: module declares no IDENTITIES because its result type carries no identity
+#: field, so the meta test cannot enforce coverage for it.
+CIRCULARITY = {
+    "recorded germline base == reference base at the claimed coordinate":
+        "CIRCULAR. Shift the germline coordinate by one and re-read each byte "
+        "from its own segment's reference: 0 mismatches of 366 compared. The "
+        "engine lays byte and coordinate down from the same two numbers "
+        "(Nucleotide::germline(slice[i], slice_start + i)), so a mis-trimmed "
+        "segment moves both together. What this identity establishes is "
+        "ALLELE IDENTITY -- a rotated reference breaks it -- and nothing about "
+        "the coordinates. They are checked by the coordinates oracle against "
+        "the allele's length, which this walk does not produce.",
+    "an inverted segment's byte == complement of the reference base":
+        "NOT CIRCULAR in orientation. Declaring the segment forward when it is "
+        "inverted gives mismatches on every inverted position (16 of 16 on the "
+        "measured record), and declaring it inverted agrees on 417 of 417 "
+        "across the assembly test's fixture. The "
+        "coordinate circularity above still applies.",
+}

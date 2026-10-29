@@ -68,13 +68,19 @@ jobs:
         run: pytest tests/ -q -m performance
 
       # The coverage report is the artifact anyone quotes about which
-      # biological mechanisms have verified truth, and it was reachable only
-      # by running the flag by hand. Printed here so a drop is visible in the
-      # log; the numbers themselves are pinned by a test in the run above, so
-      # this step reporting is not what enforces them.
+      # biological mechanisms have verified truth. Collected over the WHOLE
+      # suite, not tests/biology: coverage is claimed by registration and not
+      # by location, so a registration living under components/ is invisible
+      # to a biology-only run. The first version of this step ran
+      # `pytest tests/biology` and published 15 verified where the suite
+      # establishes 16, under-counting the one mechanism registered outside
+      # that directory -- the exact thing "registration, not location" exists
+      # to allow.
       - name: Report biological mechanism coverage
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        run: pytest tests/biology -q --biology-coverage
+        env:
+          HYPOTHESIS_PROFILE: ci
+        run: pytest tests/ -q -n auto -m "not performance" --biology-coverage
 
       # Scoped to tests/: see the per-file ignores in pyproject for why F401
       # cannot be enforced on test modules while shared fixtures are imported

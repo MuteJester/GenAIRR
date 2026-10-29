@@ -338,6 +338,29 @@ def test_every_claimed_field_is_read_by_the_test_that_claims_it():
           "through an f-string, so this check can see them.")
 
 
+def _has_non_establishing_marker(node) -> bool:
+    """Whether a test carries xfail, skip or skipif, by any spelling.
+
+    Matched on the attribute path's last two names, so ``pytest.mark.xfail``,
+    ``mark.xfail`` and a bare decorator or a call all read the same.
+    """
+    import ast
+
+    from tests.biology.catalog._plugin import NON_ESTABLISHING
+
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        names = []
+        while isinstance(target, ast.Attribute):
+            names.append(target.attr)
+            target = target.value
+        if isinstance(target, ast.Name):
+            names.append(target.id)
+        if any(name in NON_ESTABLISHING for name in names):
+            return True
+    return False
+
+
 def _declared_registrations():
     """Every ``@verifies`` in the suite, read from the source.
 
@@ -366,6 +389,13 @@ def _declared_registrations():
                 # not coverage, and counting it would make the typo the scan is
                 # supposed to catch indistinguishable from a real one.
                 continue
+            # A registration on an xfailed or skipped test does not establish
+            # its fields, and the plugin that prints the report discounts it
+            # (catalog/_plugin.NON_ESTABLISHING). Ignoring markers here made
+            # this scan disagree with the artifact it pins: the scan said 16
+            # verified while the report printed 15.
+            if _has_non_establishing_marker(node):
+                continue
             for decorator in node.decorator_list:
                 if not (isinstance(decorator, ast.Call)
                         and getattr(decorator.func, "id", "") == "verifies"):
@@ -393,10 +423,10 @@ def test_the_coverage_report_numbers_are_pinned():
               for r in rows for status in [r.status]}
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
     assert counts == {
-        "verified": 13,
+        "verified": 16,
         "gap-limited": 1,
         "partial": 2,
-        "unverified": 12,
+        "unverified": 9,
         "no-truth-exported": 3,
     }, (
         f"the declared coverage distribution changed to {counts}. If that was "
@@ -416,3 +446,44 @@ def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():
         "distribution is pinned above.")
     unknown = sorted(set(tests) - {m.id for m in catalog.all_mechanisms()})
     assert unknown == [], f"registrations naming no known mechanism: {unknown}"
+
+
+def test_the_published_report_is_collected_over_the_whole_suite():
+    """Coverage is claimed by registration, not by location -- so the command
+    that publishes the report has to collect everywhere registrations live.
+
+    The first version of the CI step ran `pytest tests/biology
+    --biology-coverage` and published 15 verified where the suite establishes
+    16, because one mechanism's registration lives under components/. That is
+    the one thing "registration, not location" exists to allow, under-counted
+    by the artifact meant to report it.
+    """
+    from tests.support import paths
+
+    workflow = (paths.repo_root() / ".github" / "workflows" / "test.yml")
+    assert workflow.exists(), "the test workflow is missing"
+    lines = [line.strip() for line in workflow.read_text(encoding="utf-8").splitlines()
+             if "--biology-coverage" in line]
+    assert lines, "no CI step publishes the coverage report"
+    for line in lines:
+        assert " tests/ " in line or " tests " in line, (
+            f"the report is collected from a subdirectory, so it under-counts "
+            f"any mechanism registered outside it: {line!r}")
+
+
+def test_registrations_live_outside_the_biology_directory():
+    """The guard above only matters while that is true, and it is the design.
+
+    If every registration moved under biology/, the location-independence
+    would be untested and the guard would be protecting nothing.
+    """
+    from tests.support import paths
+
+    tests, _ = _declared_registrations()
+    outside = {module for module in
+               (m.name for m in sorted(paths.tests_root().rglob("test_*.py"))
+                if "__pycache__" not in m.parts and "biology" not in m.parts)
+               if any(module in entry for entries in tests.values() for entry in entries)}
+    assert outside, (
+        "every registration lives under biology/, so coverage-by-registration "
+        "is not actually exercised and the workflow guard protects nothing")
