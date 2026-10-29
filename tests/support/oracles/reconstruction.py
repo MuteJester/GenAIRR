@@ -111,8 +111,9 @@ class TemplatedCheck:
     #: Positions in a segment assembled in reverse orientation. Counted rather
     #: than skipped: the IR stores the complement of the reference base at the
     #: original allele coordinate, so the comparison applies with that
-    #: expectation. Measured 501 of 501 against the complement and 0 of 501
-    #: against the plain reference.
+    #: expectation. Measured 417 of 417 against the complement and 0 against
+    #: the plain reference, on the assembly truth test's own fixture
+    #: (invert_d(prob=1.0), n=25, seed=0).
     inverted_compared: int
     #: Positions whose segment names an allele the reference does not have.
     unresolved_allele: int = 0
@@ -154,8 +155,9 @@ def templated_check(simulation, refdata, *, inverted=()) -> TemplatedCheck:
     An inverted segment is now compared rather than passed over. The IR stores
     the complement of the reference base at the original allele coordinate --
     ``Nucleotide::germline(complement(seq[pos]), pos)`` -- so the comparison
-    applies with the expectation complemented. Measured: 501 of 501 positions
-    match the complement, 0 of 501 match the plain reference.
+    applies with the expectation complemented. Measured on the assembly truth test's own fixture (n=25, seed=0):
+    417 inverted positions compared, all agreeing with the complement, and
+    0 agreeing with the plain reference.
     """
     germline = simulation.germline_bases()
     segments = segments_by_position(simulation)
@@ -288,6 +290,16 @@ def p_tip_disagreement(sequence: str, boundary: int, p_length: int) -> tuple[str
 
 #: What a both-sides perturbation produces, per identity. See the package
 #: docstring for why this is required and what it does not guarantee.
+#:
+#: SCOPE, stated because it is narrower than the module: this covers
+#: ``templated_check``'s comparison only. ``np_fields_disagreement`` and
+#: ``p_tip_disagreement`` also report, and the ``unresolved_allele`` and
+#: ``out_of_range`` counters can each sink a verdict, and none of those is
+#: probed here. They are checked by their own mutants in
+#: tests/biology/test_oracle_sensitivity.py, which is weaker than a probe:
+#: a mutant shows the check can fire, a probe shows what it cannot see. This
+#: module declares no IDENTITIES because its result type carries no identity
+#: field, so the meta test cannot enforce coverage for it.
 CIRCULARITY = {
     "recorded germline base == reference base at the claimed coordinate":
         "CIRCULAR. Shift the germline coordinate by one and re-read each byte "
@@ -301,6 +313,7 @@ CIRCULARITY = {
     "an inverted segment's byte == complement of the reference base":
         "NOT CIRCULAR in orientation. Declaring the segment forward when it is "
         "inverted gives mismatches on every inverted position (16 of 16 on the "
-        "measured record), and declaring it inverted agrees on 501 of 501. The "
+        "measured record), and declaring it inverted agrees on 417 of 417 "
+        "across the assembly test's fixture. The "
         "coordinate circularity above still applies.",
 }

@@ -160,13 +160,18 @@ def test_every_reporting_oracle_declares_what_its_identities_do_under_a_both_sid
     What this enforces: the mapping exists, covers something, and every note
     carries a measurement rather than a reassurance.
 
-    What it does NOT enforce, stated because this suite's whole subject is
-    claims that outrun their checks: the keys are the author's own names for
-    the identities, and nothing here ties them to the identity strings the
-    module can actually emit. A module could document six identities and emit
-    a seventh. That judgement is still the author's -- which is exactly the
-    judgement that was wrong twice -- so a reviewer should check the list
-    rather than trust this test.
+    Where a module declares ``IDENTITIES``, coverage IS enforced: the mapping
+    must cover exactly those keys. Two modules were found emitting identities
+    absent from their mapping -- projection documented 6 of 13, coordinates 7
+    of 8 -- which is the blind spot the first version of this docstring
+    described as a limitation, realized. Both now declare their keys and
+    validate every reported identity against them at construction.
+
+    What is still NOT enforced: a module that declares no ``IDENTITIES`` gets
+    only the weak checks below, and nothing makes declaring them mandatory.
+    ``reconstruction`` is in that position -- its result type carries no
+    identity field -- so its two notes are the author's judgement of what it
+    compares, and a reviewer should check that rather than trust this test.
     """
     oracles = _reporting_oracles()
     assert len(oracles) >= 3, (
@@ -177,14 +182,34 @@ def test_every_reporting_oracle_declares_what_its_identities_do_under_a_both_sid
             f"{name} reports disagreements but declares no CIRCULARITY "
             "mapping. Perturb both sides of each identity, measure what the "
             "oracle says, and record it -- see the oracles package docstring.")
+        declared = getattr(module, "IDENTITIES", None)
+        if declared is not None:
+            # Where the module declares its identity keys, coverage is checked
+            # rather than trusted. A review found two modules emitting
+            # identities absent from their mapping -- the blind spot the
+            # package docstring describes, realized -- so the modules now
+            # declare the keys and this closes it for them.
+            assert set(mapping) == set(declared), (
+                f"{name}: CIRCULARITY and IDENTITIES disagree.\n"
+                f"  emitted but unprobed: {sorted(set(declared) - set(mapping))}\n"
+                f"  probed but not emitted: {sorted(set(mapping) - set(declared))}")
         for identity, note in mapping.items():
             assert identity.strip(), f"{name}: an identity with no name"
             assert len(note.split()) >= 12, (
                 f"{name}/{identity!r}: the note is too short to be a "
                 f"measurement: {note!r}")
+            # Any digit satisfies this, including an incidental "3 loci". It
+            # catches a note with no measurement at all, which is what five of
+            # the first drafts were; it cannot tell a measurement from a
+            # mention.
             assert re.search(r"\d", note), (
                 f"{name}/{identity!r}: the note carries no number, so no "
                 f"probe was measured: {note!r}")
+            # "NOT CIRCULAR" already contains "CIRCULAR", so the alternation
+            # is for readability rather than matching. The load-bearing check
+            # is the startswith() in the test below; a note phrased "This
+            # identity is CIRCULAR..." would satisfy this one and evade that,
+            # which is a known weakness rather than a guarded one.
             assert re.search(r"\b(CIRCULAR|NOT CIRCULAR)\b", note), (
                 f"{name}/{identity!r}: the note does not say whether the "
                 "identity is circular, which is the thing being recorded")

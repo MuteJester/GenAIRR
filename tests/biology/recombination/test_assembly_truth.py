@@ -13,11 +13,15 @@ LOCI = ("human_igh", "human_igk", "human_tcrb")
 
 
 @verifies("recombination.assembly",
-          claim="every base carrying a germline coordinate matches the reference "
-                "allele's base at that coordinate, so the bases copied are the "
-                "allele's own -- an allele-identity claim about the assembled "
-                "sequence, not about the record's coordinate fields, which come "
-                "from the column walker and are not read here",
+          claim="every base carrying a germline coordinate is the reference "
+                "allele's base at that coordinate -- its COMPLEMENT for a "
+                "segment assembled in reverse orientation, which half these "
+                "parametrizations exercise -- so the bases copied are the "
+                "allele's own. An allele-identity claim about the assembled "
+                "sequence and nothing about the record's coordinate fields: "
+                "the engine lays each byte down beside its coordinate from the "
+                "same two numbers, so shifting both agrees, measured 0 "
+                "mismatches of 366",
           fields=("sequence",))
 @pytest.mark.parametrize("invert_d", [False, True])
 @pytest.mark.parametrize("locus", LOCI)

@@ -107,7 +107,12 @@ def _alignment_fields_present(record):
                 "construction in the engine and catches a field-plumbing "
                 "error, not a disagreement between producers; the germline "
                 "COORDINATES are not established here, because they come from "
-                "the same column walk as the cigar",
+                "the same column walk as the cigar -- and neither is deletion "
+                "PLACEMENT: the cigar, both alignment strings and the "
+                "coordinates all come from that one walk, so a deletion moved "
+                "consistently across all of them is accepted. Establishing "
+                "placement needs an identity against the engine's per-base "
+                "provenance, which does not exist yet",
           fields=("v_cigar", "d_cigar", "j_cigar"))
 @pytest.mark.parametrize("stack", sorted(STACKS))
 @pytest.mark.parametrize("locus", LOCI)
@@ -146,10 +151,14 @@ def test_every_cigar_describes_the_span_it_claims_against_the_reference(locus, s
                 "complement when the read is on the other strand, because the "
                 "alignment is in germline orientation -- and every column that "
                 "consumes a germline base carries the reference's base there, "
-                "deletion columns included. The D mask is checked only for "
-                "covering exactly the D span: that its bases become N is how "
-                "the engine builds it in the same walk, so asserting it "
-                "restates the construction rather than establishing it",
+                "deletion columns included. The D mask is reconstructed and "
+                "compared whole -- the germline alignment with the D span's "
+                "bases replaced by N and its gaps left alone -- which catches "
+                "a mask that was never applied or applied to the wrong span. "
+                "It is NOT independent evidence that an applied mask sits in "
+                "the right place: the mask is built in the same walk whose "
+                "boundaries become d_alignment_start/end, so the span it "
+                "covers and the span it is compared against are one number",
           fields=("sequence_alignment", "germline_alignment",
                   "germline_alignment_d_mask"))
 @pytest.mark.parametrize("stack", sorted(STACKS))
@@ -161,6 +170,7 @@ def test_the_alignment_strings_reduce_to_the_read_and_the_reference(locus, stack
         pytest.skip(f"{locus} is a VJ locus, so there is no D to invert")
     exp = STACKS[stack](experiment_builder.recombined(locus=locus))
     saw_gap = False
+    checked = 0
     for record, sequences, inverted in _observed(exp, n=25, seed=41):
         found = projection.disagreements(record, sequences, inverted=inverted)
         assert found == (), (
@@ -171,6 +181,10 @@ def test_the_alignment_strings_reduce_to_the_read_and_the_reference(locus, stack
         assert sum(columns.values()) > 100, (
             f"{locus}/{stack}: only {sum(columns.values())} columns compared")
         saw_gap |= "-" in record["germline_alignment"] or "-" in record["sequence_alignment"]
+        checked += 1
+    assert checked == 25, (
+        f"{locus}/{stack}: only {checked} records were examined; a loop that "
+        "never ran would otherwise pass this test")
     if stack == "indels":
         assert saw_gap, (
             f"{locus}: no gap appeared in either alignment string, so the "

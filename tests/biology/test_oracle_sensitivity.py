@@ -439,13 +439,22 @@ def _projection_case(*, invert=False):
         # gap-free record and the reflection-with-gaps path had no mutant.
         exp = (experiment_builder.recombined()
                .invert_d(prob=1.0)
-               .polymerase_indels(count=2))
+               .polymerase_indels(count=10))
     refdata = exp.refdata
     getters = {"v": refdata.v_allele, "d": refdata.d_allele, "j": refdata.j_allele}
     for outcome in exp.run(n=30, seed=53):
         record = dict(outcome.airr_record(refdata))
         if not invert and (record.get("n_indels") or 0) == 0:
             continue
+        if invert:
+            # Select a record whose INVERTED segment's own cigar carries a
+            # gap. Taking the first record gave d_cigar == "11M", so the
+            # reflection-with-gaps path -- the whole reason this fixture
+            # composes indels with inversion -- went unexercised while a
+            # guard looking at any segment's cigar passed on V's.
+            cigar = record.get("d_cigar") or ""
+            if "D" not in cigar and "I" not in cigar:
+                continue
         simulation = outcome.final_simulation()
         sequences = {}
         for segment, getter in getters.items():
@@ -498,22 +507,70 @@ def test_each_projection_identity_is_sensitive_to_its_own_producer(name, corrupt
         f"got {sorted({d.identity for d in found})}")
 
 
-def test_a_cigar_with_the_right_op_lengths_in_the_wrong_place_is_caught():
-    """The defect no existing cigar test can see.
+@pytest.mark.parametrize("rewrite", ["leading", "trailing", "middle"])
+def test_a_deletion_declared_in_the_wrong_place_is_caught(rewrite):
+    """The defect no existing cigar test can see, and the one the first version
+    of this test did not actually exercise.
 
-    Every structural property survives moving a segment's alignment start: the
-    ops are still M/I/D, the run-lengths still collapse, the op counts still
-    sum to the same spans. Only the comparison against the reference notices
-    that the M columns now land on the wrong germline bases.
+    That version shifted ``v_alignment_start`` and claimed every structural
+    property survived it. Two pre-existing tests in
+    components/experiment/test_alignment_strings.py reject exactly that state,
+    so it demonstrated sensitivity to a corrupted alignment start rather than
+    to a misplaced cigar. This rewrites the cigar instead: same op multiset,
+    same run-length collapse, same spans, deletion declared somewhere else.
+    Before the gap-pattern check all three gave 0 disagreements.
     """
     record, sequences, inverted = _projection_case()
     assert projection.disagreements(record, sequences, inverted=inverted) == ()
-    shifted = {**record, "v_alignment_start": record["v_alignment_start"] + 3}
-    found = projection.disagreements(shifted, sequences, inverted=inverted)
-    assert found, "a V alignment shifted three columns went undetected"
-    assert any("carries the reference base" in d.identity for d in found), (
-        f"caught, but not by the reference comparison; "
+    ops = projection.cigar_ops(record["v_cigar"])
+    matches = sum(n for n, op in ops if op == "M")
+    deletions = sum(n for n, op in ops if op == "D")
+    if not deletions:
+        pytest.fail("the fixture's V cigar carries no deletion to move")
+    alternative = {
+        "leading": f"{deletions}D{matches}M",
+        "trailing": f"{matches}M{deletions}D",
+        "middle": f"{matches // 2}M{deletions}D{matches - matches // 2}M",
+    }[rewrite]
+    assert alternative != record["v_cigar"], "the rewrite is not a relocation"
+    found = projection.disagreements({**record, "v_cigar": alternative},
+                                     sequences, inverted=inverted)
+    assert found, f"{alternative} went undetected"
+    assert any(d.identity == "a column declared M/D/I has that op's gap pattern"
+               for d in found), (
+        f"caught, but not by the gap-pattern check; "
         f"got {sorted({d.identity for d in found})}")
+
+
+def test_a_consistently_relocated_deletion_is_accepted_and_recorded_as_such():
+    """The limit of the above, asserted so the claim cannot drift back.
+
+    Move the cigar's D and the matching gap in sequence_alignment together and
+    the oracle agrees: the cigar, both alignment strings and the coordinates
+    all come from one column walk, so a consistent relocation is a different
+    but internally consistent alignment. Which one happened is recorded only
+    in the engine's per-base provenance, so establishing placement needs an
+    identity against the IR that does not exist yet. The CIRCULARITY note says
+    this; this test is what keeps it true.
+    """
+    record, sequences, inverted = _projection_case()
+    aligned = record["sequence_alignment"]
+    ops = projection.cigar_ops(record["v_cigar"])
+    matches = sum(n for n, op in ops if op == "M")
+    deletions = sum(n for n, op in ops if op == "D")
+    start = record["v_alignment_start"]
+    gaps = [start + k for k in range(matches + deletions)
+            if start + k < len(aligned) and aligned[start + k] == "-"]
+    if not gaps or deletions != 1:
+        pytest.skip("this record has no single V deletion to relocate")
+    column = gaps[0]
+    moved = (aligned[:start] + "-" + aligned[start:column] + aligned[column + 1:])
+    assert len(moved) == len(aligned)
+    consistent = {**record, "v_cigar": f"{deletions}D{matches}M",
+                  "sequence_alignment": moved}
+    assert projection.disagreements(consistent, sequences, inverted=inverted) == (), (
+        "a consistently relocated deletion was rejected, which would mean the "
+        "circularity note is wrong and placement IS established")
 
 
 def test_an_assembly_from_the_wrong_allele_is_caught_in_the_projection_too():
@@ -541,10 +598,16 @@ def test_an_inverted_d_compared_as_if_forward_is_caught():
     """
     record, sequences, inverted = _projection_case(invert=True)
     assert inverted == {"d"}, "the fixture did not invert D"
-    assert any("D" in (record.get(f"{s}_cigar") or "") or "I" in (record.get(f"{s}_cigar") or "")
-               for s in "vdj"), (
-        "the inverted fixture carries no gap, so the reflection-with-gaps path "
-        "is still untested")
+    # The gap has to be inside the INVERTED segment's own cigar: the
+    # reflection in _expected_germline_base is coordinate-based, so a gap in V
+    # exercises nothing about it. The first version of this guard accepted any
+    # segment's gap and passed on V's, leaving the path it names untested --
+    # 0 of 25 records in the registered inverted stack have a gap inside
+    # d_cigar. At count=10 roughly 8 of 25 do.
+    inverted_cigar = record.get("d_cigar") or ""
+    assert "D" in inverted_cigar or "I" in inverted_cigar, (
+        f"the inverted segment's own cigar is {inverted_cigar!r}, so the "
+        "reflection-with-gaps path is still untested")
     assert projection.disagreements(record, sequences, inverted=inverted) == ()
     found = projection.disagreements(record, sequences, inverted=())
     assert found, "an inverted D compared against the forward reference agreed"

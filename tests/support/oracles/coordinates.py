@@ -61,6 +61,21 @@ from dataclasses import dataclass
 
 SEGMENTS = ("v", "d", "j")
 
+#: Every identity this module can report. Declared so the circularity mapping
+#: can be checked to cover them: a review found the indel-path variant below
+#: emitted and unprobed, which is the blind spot that mapping's docstring
+#: describes, realized.
+IDENTITIES = (
+    "germline_start == trim_5 + end_loss_5_length",
+    "germline_end == allele_length - trim_3 - end_loss_3_length",
+    "germline span == read span",
+    "alignment coordinates == read coordinates",
+    "alignment coordinates are at or after the read coordinates",
+    "the first segment starts at read position 0",
+    "the gap between segments is the untemplated length recorded there",
+    "the read ends where the last segment ends",
+)
+
 
 @dataclass(frozen=True)
 class Disagreement:
@@ -248,6 +263,12 @@ CIRCULARITY = {
         "read coordinates leaves this identity silent, because both pairs "
         "come from the walk. Caught by the set -- 2 other identities fire, "
         "the leading anchor and the inter-segment gap.",
+    "alignment coordinates are at or after the read coordinates":
+        "CIRCULAR alone, and it is the identity in force on every "
+        "indel-bearing record -- the non-equality variant the equality above "
+        "gives way to. Pulling v_alignment_start 2 before the read start "
+        "fires it 1 of 1; moving the alignment start and the read start -2 "
+        "together leaves it silent, 0 of 1. Caught by the set.",
     "the first segment starts at read position 0":
         "NOT CIRCULAR -- an absolute anchor, with no second side to move. "
         "Displacing the whole rearrangement by 5 fires it 1 time of 2 total "

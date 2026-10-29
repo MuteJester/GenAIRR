@@ -43,9 +43,6 @@ STACKS = {
 }
 B_CELL_ONLY = frozenset({"mutated"})
 
-#: Filled by the parametrized test above, read by the test below.
-_PHASES_SEEN: dict[str, set[int]] = {}
-
 
 def _native_phase(refdata, simulation):
     """The V allele's own coding phase, from the reference table.
@@ -112,10 +109,7 @@ def test_sequence_aa_is_the_translation_in_the_derived_frame(locus, stack):
     assert checked, (
         f"{locus}/{stack}: every record was frameless ({frameless}), so "
         "nothing was translated and this establishes nothing")
-    # Recorded so the module-level test below can confirm the frame is
-    # exercised at more than one value across the stacks, rather than every
-    # case being satisfied by phase = 0.
-    _PHASES_SEEN.setdefault(stack, set()).update(phases)
+    assert phases, f"{locus}/{stack}: no phase was derived"
 
 
 def test_a_frameless_record_is_refused_rather_than_reported_as_agreeing():
@@ -163,17 +157,30 @@ def test_the_frame_is_exercised_at_more_than_one_value():
     """Otherwise the whole claim is satisfied by ``phase = 0``.
 
     Two of the frame's three terms are identically zero on every packaged
-    reference, so a stack set that never removes a non-multiple of three from
-    V's 5' end tests nothing about the frame. The first version of this module
-    had exactly that shape: 12 of its 14 running cases agreed with phase = 0.
+    reference -- ``anchor % 3`` is 0 for all 464 V alleles across IGH, IGK and
+    TCRB, and ``v_sequence_start`` is 0 on every record -- so a stack set that
+    never removes a non-multiple of three from V's 5' end tests nothing about
+    the frame. The first version of this module had exactly that shape: 12 of
+    its 14 running cases agreed with phase = 0.
 
-    Depends on the parametrized test above having run, so it asserts that too
-    rather than passing vacuously on an empty dict.
+    Self-contained on purpose. The first version of this test collected phases
+    into a module-level dict filled by the parametrized test above, which
+    xdist workers do not share -- so it failed under ``-n auto``, the command
+    both CI and the Makefile run, while passing in a serial run. A test whose
+    result depends on which worker picked up its siblings is not a check.
     """
-    assert _PHASES_SEEN, (
-        "no phase was recorded, so the parametrized test did not run and this "
-        "establishes nothing")
-    observed = set().union(*_PHASES_SEEN.values())
+    seen = {}
+    for stack in ("plain", "end-loss", "primer-trim"):
+        exp = STACKS[stack](experiment_builder.recombined())
+        for outcome in exp.run(n=5, seed=61):
+            record = outcome.airr_record(exp.refdata)
+            native = _native_phase(exp.refdata, outcome.final_simulation())
+            if not record["sequence_aa"]:
+                continue
+            seen.setdefault(stack, set()).add(
+                projection.translation_phase(record, native_phase=native))
+    assert seen, "no phase was derived, so this establishes nothing"
+    observed = set().union(*seen.values())
     assert observed == {0, 1, 2}, (
-        f"the frame took only {sorted(observed)} across {sorted(_PHASES_SEEN)}; "
-        "a claim about a reading frame needs all three residues")
+        f"the frame took only {sorted(observed)} across {sorted(seen)}; a claim "
+        "about a reading frame needs all three residues")

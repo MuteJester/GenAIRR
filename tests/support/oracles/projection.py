@@ -40,9 +40,11 @@ away.
 - It does **not** establish the germline coordinates. ``*_germline_start/end``
   come from the same column walk that emits the cigar and the germline string
   (``builder.rs`` sets them from ``walk.ref_ranges``), so shifting the
-  coordinate and the string together agrees: measured, 226 columns carrying a
-  different germline base produce one complaint, and that one is a boundary
-  artifact. The coordinates are checked by the ``coordinates`` oracle, which
+  coordinate and the string together agrees: shifting them by +1 leaves 226
+  columns carrying a different germline base and produces 0 disagreements. (At
+  -1 there is 1, from the bounds guard reaching position -1, which is an
+  artifact of the probe rather than the identity noticing.) The coordinates are
+  checked by the ``coordinates`` oracle, which
   compares them to the reference allele's own *length* -- a number the walk
   does not produce.
 - Identities 3 and 4 are **true by construction** relative to that same walk:
@@ -76,6 +78,29 @@ import re
 from dataclasses import dataclass
 
 SEGMENTS = ("v", "d", "j")
+
+#: Every identity this module can report, as a stable key. The formatted
+#: detail goes in ``Disagreement.detail``; the key is what CIRCULARITY is
+#: keyed by and what the meta test checks coverage against. Declared because
+#: the first version formatted the column number into the identity itself, so
+#: no two reports shared a key and nothing could check that the circularity
+#: mapping covered them -- the blind spot that mapping's own docstring
+#: described, realized.
+IDENTITIES = (
+    "the alignment strings are present to be checked",
+    "a segment the record names is checkable",
+    "len(sequence_alignment) == len(germline_alignment)",
+    "len(sequence_alignment) == len(sequence) + deletions",
+    "the cigar uses only M, I and D",
+    "cigar M+I == read span",
+    "cigar M+D == germline span",
+    "every cigar column is inside the alignment",
+    "a column declared M/D/I has that op's gap pattern",
+    "a column's germline coordinate is inside the allele",
+    "a column consuming a germline base carries the reference's base there",
+    "sequence_alignment without gaps is the read",
+    "the D mask is the germline alignment with the D span's bases replaced by N",
+)
 GAP = "-"
 COMPLEMENT = {"A": "T", "T": "A", "C": "G", "G": "C", "N": "N", GAP: GAP}
 
@@ -91,9 +116,20 @@ class Disagreement:
     identity: str
     recorded: object
     expected: object
+    #: Where, specifically -- the column, the op, the field name. Kept out of
+    #: ``identity`` so the identity stays a stable key.
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        if self.identity not in IDENTITIES:
+            raise ValueError(
+                f"{self.identity!r} is not a declared identity. Add it to "
+                "IDENTITIES and probe it for circularity, or reuse the key it "
+                "belongs to and put the specifics in `detail`.")
 
     def __str__(self) -> str:
-        return (f"{self.sequence_id}: {self.segment} {self.identity}: "
+        where = f" [{self.detail}]" if self.detail else ""
+        return (f"{self.sequence_id}: {self.segment} {self.identity}{where}: "
                 f"recorded {self.recorded!r}, expected {self.expected!r}")
 
 
@@ -182,19 +218,21 @@ def disagreements(record, allele_sequences, *, inverted=(), segments=SEGMENTS
     # None, so the only place the claimed field names were visible to the
     # catalog's gate was an assertion that accepts the field being absent.
     missing = [name for name, value in (("sequence_alignment", aligned),
-                                        ("germline_alignment", germline))
+                                        ("germline_alignment", germline),
+                                        ("germline_alignment_d_mask",
+                                         record.get("germline_alignment_d_mask")))
                if value is None]
     if missing:
         return tuple(
             Disagreement(sequence_id=identifier, segment="-",
-                         identity=f"{name} is present to be checked",
-                         recorded=None, expected="a string")
+                         identity="the alignment strings are present to be checked",
+                         recorded=None, expected="a string", detail=name)
             for name in missing)
 
-    def report(segment, identity, recorded, expected):
+    def report(segment, identity, recorded, expected, detail=""):
         out.append(Disagreement(sequence_id=identifier, segment=segment,
                                 identity=identity, recorded=recorded,
-                                expected=expected))
+                                expected=expected, detail=detail))
 
     # 1. The two strings are one alignment, so they have one length.
     if len(aligned) != len(germline):
@@ -204,7 +242,19 @@ def disagreements(record, allele_sequences, *, inverted=(), segments=SEGMENTS
     deletions = 0
     for segment in segments:
         reference = allele_sequences.get(segment)
+        assembled = record.get(f"{segment}_call")
         if reference is None or record.get(f"{segment}_alignment_start") is None:
+            # A VJ locus has no D and that is not a gap. A segment the record
+            # says it assembled, with no reference to check it against or no
+            # coordinates to check it at, is: dropping J from the reference
+            # map used to give 0 disagreements over 314 compared columns, with
+            # both column floors satisfied by V alone.
+            if assembled:
+                report(segment,
+                       "a segment the record names is checkable",
+                       "no reference sequence" if reference is None
+                       else "no alignment coordinates",
+                       f"both, for {assembled}")
             continue
         ops = cigar_ops(record.get(f"{segment}_cigar"))
         unknown = sorted({op for _, op in ops} - {"M", "I", "D", "=", "X"})
@@ -231,8 +281,9 @@ def disagreements(record, allele_sequences, *, inverted=(), segments=SEGMENTS
         # _walk advances the column and the germline position together for M
         # and for D, so the column-to-position mapping is identical wherever
         # the D runs sit, and `13M1D277M` -> `1D290M` -> `290M1D` all agreed.
-        # Measured over 29,323 columns, the pattern is exact and has no
-        # exceptions: M is base/base, D is gap/base, I is base/gap.
+        # The pattern is exact and has no exceptions: measured over
+        # 112,802 cigar-declared columns, which is what the registered tests
+        # examine in one run across the 13 locus-and-stack combinations.
         span_start = record[f"{segment}_germline_start"]
         span_end = record[f"{segment}_germline_end"]
         is_inverted = segment in inverted
@@ -249,12 +300,12 @@ def disagreements(record, allele_sequences, *, inverted=(), segments=SEGMENTS
                           "D": (True, False), "I": (False, True)}.get(op)
                 if wanted is not None and (read_gap, germline_gap) != wanted:
                     report(segment,
-                           f"column {index} declared {op} has the gap pattern of "
-                           f"that op",
+                           "a column declared M/D/I has that op's gap pattern",
                            f"read={'gap' if read_gap else 'base'}, "
                            f"germline={'gap' if germline_gap else 'base'}",
                            f"read={'gap' if wanted[0] else 'base'}, "
-                           f"germline={'gap' if wanted[1] else 'base'}")
+                           f"germline={'gap' if wanted[1] else 'base'}",
+                           detail=f"column {index}, op {op}")
                     continue
                 # M and D both consume a germline base, so both are compared
                 # against the reference. Only comparing M left the deletion
@@ -277,8 +328,9 @@ def disagreements(record, allele_sequences, *, inverted=(), segments=SEGMENTS
                     coordinate = (span_end - 1 - (position + offset - span_start)
                                   if is_inverted else position + offset)
                     report(segment,
-                           f"{op} column {index} carries the reference base at "
-                           f"germline {coordinate}", found, expected)
+                           "a column consuming a germline base carries the "
+                           "reference's base there", found, expected,
+                           detail=f"{op} column {index}, germline {coordinate}")
 
     # 2. The alignment is longer than the read by exactly the deletions.
     if len(aligned) != len(sequence) + deletions:
@@ -300,7 +352,7 @@ def disagreements(record, allele_sequences, *, inverted=(), segments=SEGMENTS
 
     # 7. The D mask replaces the D span's bases and leaves its gaps.
     mask = record.get("germline_alignment_d_mask")
-    if mask is not None:
+    if True:          # absence is reported above, not skipped here
         start = record.get("d_alignment_start")
         end = record.get("d_alignment_end")
         if start is None or end is None:
@@ -467,14 +519,43 @@ CIRCULARITY = {
         "identity against the IR, which this module does not have. It IS "
         "load-bearing against an inconsistent relocation: moving the cigar's D "
         "alone gives 2 disagreements where it gave 0 before this check.",
-    "cigar M+I == read span / cigar M+D == germline span":
+    "the alignment strings are present to be checked":
+        "NOT CIRCULAR -- a presence guard, with no second side to move. Each "
+        "of the 3 strings absent fires it 1 of 1. It exists because the first "
+        "version returned () for an absent alignment, which a registered test "
+        "read as agreement.",
+    "a segment the record names is checkable":
+        "NOT CIRCULAR -- a presence guard. Dropping J from the reference map "
+        "fires it 1 of 1, where it previously gave 0 disagreements over 314 "
+        "compared columns with both column floors satisfied by V alone.",
+    "len(sequence_alignment) == len(sequence) + deletions":
+        "NOT CIRCULAR against the assembled sequence, a different producer: "
+        "shortening both alignment strings by 1 fires it 1 time of 4. "
+        "CIRCULAR once the cigar moves too -- shortening both strings AND "
+        "removing a D from the cigar leaves it silent, 0 of 5 -- because the "
+        "deletion count comes from the same walk as the strings.",
+    "the cigar uses only M, I and D":
+        "NOT CIRCULAR -- a format guard, no second side. Injecting an S op "
+        "fires it 1 time of 212, the rest being the column checks the bad op "
+        "then displaces.",
+    "every cigar column is inside the alignment":
+        "NOT CIRCULAR -- a bounds guard. A cigar claiming 500 columns more "
+        "than the alignment holds fires it 1 time of 78.",
+    "a column's germline coordinate is inside the allele":
+        "NOT CIRCULAR -- a bounds guard against the reference's own length, "
+        "which the walk does not produce. Putting germline_start past the "
+        "allele end fires it 291 times of 292.",
+    "cigar M+I == read span":
         "CIRCULAR. True by construction in the engine, which says so itself: "
-        "'This guarantees germline_span == M + D by construction.' Measured: "
-        "+2 to the cigar's M run alone gives 5 disagreements, and +2 to the "
-        "cigar AND both coordinates still gives 3 -- from the gap-pattern and "
-        "column checks, not from this identity, which goes quiet. What it "
-        "catches on its own is a field-plumbing error in the builder, such as "
-        "one segment's range written into another's.",
+        "'This guarantees germline_span == M + D by construction.' Measured on "
+        "the indel-bearing IGH record the sensitivity fixture selects "
+        "(seed 53, cigar 241M1I28M1D22M): +2 to a V M-run alone fires it 1 "
+        "time of 5 total, and moving the cigar AND the coordinates together "
+        "leaves it silent. What it catches alone is a field-plumbing error in the "
+        "builder, such as one segment's range written into another's.",
+    "cigar M+D == germline span":
+        "CIRCULAR, for the same reason and from the same closure: +2 to a V "
+        "M-run alone fires it 1 time of 5 total, on the same record.",
     "len(sequence_alignment) == len(germline_alignment)":
         "CIRCULAR. One alignment, one length, emitted together: truncating "
         "germline_alignment alone gives 3 disagreements, truncating both gives "
@@ -485,11 +566,11 @@ CIRCULARITY = {
         "disagreement. It does not constrain where the gaps ARE -- relocating "
         "a gap fires it 0 times of 2 -- because removing them gives the same "
         "string wherever they sat.",
-    "the D mask covers exactly the D span":
-        "CIRCULAR. The mask is built in the same walk whose span boundaries "
-        "become d_alignment_start/end, so this restates the construction: "
-        "handing the oracle the unmasked germline string gives 1 disagreement, "
-        "which is this identity noticing a mask that was never applied -- not "
-        "evidence that an applied mask is in the right place. The claim says "
-        "so.",
+    "the D mask is the germline alignment with the D span's bases replaced by N":
+        "CIRCULAR on the span. Handing the oracle the unmasked germline string "
+        "gives 1 disagreement, so the identity does catch a mask that was "
+        "never applied or applied to the wrong span. It is not evidence that "
+        "an applied mask sits in the right PLACE: the mask is built in the "
+        "same walk whose boundaries become d_alignment_start/end, so the span "
+        "it covers and the span it is compared against are one number.",
 }
