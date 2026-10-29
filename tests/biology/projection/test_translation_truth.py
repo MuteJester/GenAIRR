@@ -21,14 +21,30 @@ pytestmark = pytest.mark.behavior
 
 LOCI = ("human_igh", "human_igk", "human_tcrb")
 
+#: The frame has three terms and two of them are identically zero on every
+#: packaged reference: anchor % 3 is 0 for all 464 V alleles across IGH, IGK
+#: and TCRB, and v_sequence_start is 0 on every record. So only the removed
+#: term discriminates, and a test that never varies it is satisfied by
+#: phase = 0 -- which 12 of the first version's 14 running cases were. These
+#: stacks drive the removed term to each of its three residues, and compose
+#: two 5' truncations, which is where the field this used to read diverges
+#: from the truth.
 STACKS = {
-    "plain": lambda exp: exp,
+    "plain": lambda exp: exp,                                   # removed % 3 == 0
     "indels": lambda exp: exp.polymerase_indels(count=2),
     "mutated": lambda exp: exp.mutate(model="s5f", count=5),
     "reverse-complemented": lambda exp: exp.random_strand_orientation(prob=1.0),
-    "end-loss": lambda exp: exp.end_loss_5prime(length=4),
+    "end-loss": lambda exp: exp.end_loss_5prime(length=4),      # removed % 3 == 1
+    "primer-trim": lambda exp: exp.primer_trim_5prime(length=5),  # == 2
+    "composed-trims": lambda exp: (exp.end_loss_5prime(length=4)
+                                      .primer_trim_5prime(length=5)),
+    "composed-trims-reversed": lambda exp: (exp.primer_trim_5prime(length=7)
+                                               .end_loss_5prime(length=2)),
 }
 B_CELL_ONLY = frozenset({"mutated"})
+
+#: Filled by the parametrized test above, read by the test below.
+_PHASES_SEEN: dict[str, set[int]] = {}
 
 
 def _native_phase(refdata, simulation):
@@ -61,11 +77,14 @@ def test_the_codon_table_is_complete_before_anything_relies_on_it():
 
 @verifies("projection.translation",
           claim="sequence_aa is the translation of the rearrangement in the "
-                "frame the V allele's coding phase and the bases removed from "
-                "its 5' end imply -- taken in germline orientation, so the "
-                "reverse complement of the read when the read is on the other "
-                "strand. Checked against an independent codon table, not "
-                "against the engine's",
+                "frame implied by how much of V's 5' end is gone, taken in "
+                "germline orientation -- the reverse complement of the read "
+                "when the read is on the other strand -- and checked against "
+                "an independent codon table rather than the engine's. The "
+                "frame's other two terms are not established: the V allele's "
+                "coding phase is 0 on all 464 packaged V alleles and "
+                "v_sequence_start is 0 on every record, so this exercises one "
+                "term of three, driven to all three of its residues",
           fields=("sequence_aa",))
 @pytest.mark.parametrize("stack", sorted(STACKS))
 @pytest.mark.parametrize("locus", LOCI)
@@ -74,6 +93,7 @@ def test_sequence_aa_is_the_translation_in_the_derived_frame(locus, stack):
         pytest.skip("somatic hypermutation does not occur in TCR sequences")
     exp = STACKS[stack](experiment_builder.recombined(locus=locus))
     checked = frameless = 0
+    phases = set()
     for outcome in exp.run(n=25, seed=61):
         record = outcome.airr_record(exp.refdata)
         native = _native_phase(exp.refdata, outcome.final_simulation())
@@ -87,10 +107,15 @@ def test_sequence_aa_is_the_translation_in_the_derived_frame(locus, stack):
         assert found is None, (
             f"{locus}/{stack}: sequence_aa is {found[0][:40]!r} but the "
             f"translation of its own bases is {found[1][:40]!r}")
+        phases.add(projection.translation_phase(record, native_phase=native))
         checked += 1
     assert checked, (
         f"{locus}/{stack}: every record was frameless ({frameless}), so "
         "nothing was translated and this establishes nothing")
+    # Recorded so the module-level test below can confirm the frame is
+    # exercised at more than one value across the stacks, rather than every
+    # case being satisfied by phase = 0.
+    _PHASES_SEEN.setdefault(stack, set()).update(phases)
 
 
 def test_a_frameless_record_is_refused_rather_than_reported_as_agreeing():
@@ -132,3 +157,23 @@ def test_a_translation_of_the_wrong_strand_is_caught():
     forward = {**record, "rev_comp": False}
     assert projection.translation_disagreement(forward, native_phase=native) is not None, (
         "translating the read strand instead of the germline strand agreed")
+
+
+def test_the_frame_is_exercised_at_more_than_one_value():
+    """Otherwise the whole claim is satisfied by ``phase = 0``.
+
+    Two of the frame's three terms are identically zero on every packaged
+    reference, so a stack set that never removes a non-multiple of three from
+    V's 5' end tests nothing about the frame. The first version of this module
+    had exactly that shape: 12 of its 14 running cases agreed with phase = 0.
+
+    Depends on the parametrized test above having run, so it asserts that too
+    rather than passing vacuously on an empty dict.
+    """
+    assert _PHASES_SEEN, (
+        "no phase was recorded, so the parametrized test did not run and this "
+        "establishes nothing")
+    observed = set().union(*_PHASES_SEEN.values())
+    assert observed == {0, 1, 2}, (
+        f"the frame took only {sorted(observed)} across {sorted(_PHASES_SEEN)}; "
+        "a claim about a reading frame needs all three residues")

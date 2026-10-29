@@ -434,7 +434,12 @@ def _projection_case(*, invert=False):
     """``(record, allele_sequences, inverted)`` for one indel-bearing record."""
     exp = experiment_builder.recombined().polymerase_indels(count=3)
     if invert:
-        exp = experiment_builder.recombined().invert_d(prob=1.0)
+        # Compose the two: the first version built the indel experiment and
+        # then discarded it, so the inverted mutant only ever ran on a
+        # gap-free record and the reflection-with-gaps path had no mutant.
+        exp = (experiment_builder.recombined()
+               .invert_d(prob=1.0)
+               .polymerase_indels(count=2))
     refdata = exp.refdata
     getters = {"v": refdata.v_allele, "d": refdata.d_allele, "j": refdata.j_allele}
     for outcome in exp.run(n=30, seed=53):
@@ -536,6 +541,10 @@ def test_an_inverted_d_compared_as_if_forward_is_caught():
     """
     record, sequences, inverted = _projection_case(invert=True)
     assert inverted == {"d"}, "the fixture did not invert D"
+    assert any("D" in (record.get(f"{s}_cigar") or "") or "I" in (record.get(f"{s}_cigar") or "")
+               for s in "vdj"), (
+        "the inverted fixture carries no gap, so the reflection-with-gaps path "
+        "is still untested")
     assert projection.disagreements(record, sequences, inverted=inverted) == ()
     found = projection.disagreements(record, sequences, inverted=())
     assert found, "an inverted D compared against the forward reference agreed"

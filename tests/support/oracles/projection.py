@@ -24,22 +24,48 @@ being written down:
 7. ``germline_alignment_d_mask`` is ``germline_alignment`` with the bases in
    the D span replaced by ``N``, and the gaps in that span left alone
 
-Identities 3 and 4 tie the cigar to the coordinate fields, which are a
-different producer. Identity 5 is the one that matters: it crosses the cigar,
-the alignment coordinates, the germline alignment and the reference table, so a
-wrong allele, a shifted alignment, or a cigar whose op lengths are right and
-whose placement is wrong each break it.
+**What these do and do not establish.** Being specific about this, because an
+earlier version of this docstring claimed the opposite of the truth and the
+caveat was already written out correctly in the sibling oracle one directory
+away.
 
-**Nothing is skipped.** An inverted D is checked rather than passed over: the
-germline alignment carries the reverse complement for an inverted segment, as
-it must to align with the read, so identity 5 applies with the expectation
-reverse-complemented within that segment's own germline span. Measured, that
-matches 320 of 320 columns where the plain reference matches 62. The
-base-level oracle next door cannot do this, because the IR holds forward
-coordinates with complemented bases.
+- Identity 5 establishes **allele identity**: that the germline string was laid
+  down from the allele the record names. A rotated reference breaks it.
+- It also establishes **column consistency**: with the gap-pattern check, the
+  cigar's op placement is pinned to where the two strings actually have gaps.
+  Without that check the placement of ``D`` runs was entirely unconstrained --
+  ``13M1D277M`` could be rewritten ``1D290M``, ``290M1D`` or ``145M1D145M``
+  and all three agreed, because the walk advances column and germline position
+  together for both ``M`` and ``D``.
+- It does **not** establish the germline coordinates. ``*_germline_start/end``
+  come from the same column walk that emits the cigar and the germline string
+  (``builder.rs`` sets them from ``walk.ref_ranges``), so shifting the
+  coordinate and the string together agrees: measured, 226 columns carrying a
+  different germline base produce one complaint, and that one is a boundary
+  artifact. The coordinates are checked by the ``coordinates`` oracle, which
+  compares them to the reference allele's own *length* -- a number the walk
+  does not produce.
+- Identities 3 and 4 are **true by construction** relative to that same walk:
+  ``M+I`` equals the read span because every column with a pool position is one
+  pool position, and ``M+D`` equals the ref range because both come from one
+  closure. The engine says so itself -- ``builder.rs``: *"This guarantees
+  germline_span == M + D by construction."* What they catch is a field-plumbing
+  error in the builder, such as writing one segment's range into another's.
+  That is worth catching and is less than it looks.
 
-Validated over 330 records across IGH, IGK and TCRB and the plain, indel,
-mutated, reverse-complemented and inverted-D stacks.
+**Nothing is skipped.** Every column is checked, not only the ``M`` runs: a
+``D`` column's germline base is the one place the projector fills from its own
+cursor rather than from a nucleotide's recorded provenance, so skipping it left
+the most error-prone arithmetic unchecked. An inverted D is checked rather than
+passed over, with the expectation reverse-complemented within that segment's
+own germline span: measured 407 of 407 columns, against 100 for the plain
+reference. The base-level oracle next door cannot do this, because the IR
+holds forward coordinates with complemented bases.
+
+Validated over 325 records -- 13 of the 15 locus-and-stack combinations at 25
+records each, the other two being skipped as a VJ locus with no D to invert --
+across IGH, IGK and TCRB and the plain, indel, mutated, reverse-complemented
+and inverted-D stacks.
 
 Imports nothing from GenAIRR: the reference sequences and the set of inverted
 segments are handed in by the caller.
@@ -118,9 +144,11 @@ def _walk(record, segment: str):
         if op in ("M", "=", "X", "D"):
             column += length
             position += length
-        elif op == "I":
-            column += length
         else:
+            # I, and anything else -- an unknown op is separately reported by
+            # the caller, and advancing the column without the germline
+            # position is the only sane thing to do with a column that
+            # consumes no reference base.
             column += length
 
 
@@ -138,14 +166,30 @@ def disagreements(record, allele_sequences, *, inverted=(), segments=SEGMENTS
     coordinates, is skipped -- that is how a VJ locus's missing D is handled.
     """
     out: list[Disagreement] = []
-    identifier = record.get("sequence_id", "<unidentified>")
-    inverted = set(inverted)
+    identifier = record.get("sequence_id") or "<unidentified>"
+    # Normalized like the sibling oracle, so a caller passing {"D"} and one
+    # passing {"d"} behave the same. Two oracles with one parameter name and
+    # opposite case conventions is how a silently-ignored argument happens,
+    # which is the defect this branch fixed in reconstruction.py.
+    inverted = {s.lower() for s in inverted}
     sequence = record.get("sequence") or ""
     aligned = record.get("sequence_alignment")
     germline = record.get("germline_alignment")
 
-    if aligned is None or germline is None:
-        return ()
+    # An absent alignment used to return () -- indistinguishable from "every
+    # identity held". The registered tests were green on records with all
+    # three strings None, because their field-presence helpers also pass on
+    # None, so the only place the claimed field names were visible to the
+    # catalog's gate was an assertion that accepts the field being absent.
+    missing = [name for name, value in (("sequence_alignment", aligned),
+                                        ("germline_alignment", germline))
+               if value is None]
+    if missing:
+        return tuple(
+            Disagreement(sequence_id=identifier, segment="-",
+                         identity=f"{name} is present to be checked",
+                         recorded=None, expected="a string")
+            for name in missing)
 
     def report(segment, identity, recorded, expected):
         out.append(Disagreement(sequence_id=identifier, segment=segment,
@@ -180,29 +224,61 @@ def disagreements(record, allele_sequences, *, inverted=(), segments=SEGMENTS
         if germline_span != recorded_germline:
             report(segment, "cigar M+D == germline span", germline_span, recorded_germline)
 
-        # 5. The content check: every M column against the reference.
+        # 5. Every column, against both strings and against the reference.
+        #
+        # The op is checked against the gap pattern first, which is what pins
+        # its *placement*. Without it the cigar's op order is unconstrained:
+        # _walk advances the column and the germline position together for M
+        # and for D, so the column-to-position mapping is identical wherever
+        # the D runs sit, and `13M1D277M` -> `1D290M` -> `290M1D` all agreed.
+        # Measured over 29,323 columns, the pattern is exact and has no
+        # exceptions: M is base/base, D is gap/base, I is base/gap.
         span_start = record[f"{segment}_germline_start"]
         span_end = record[f"{segment}_germline_end"]
         is_inverted = segment in inverted
         for column, position, length, op in _walk(record, segment):
-            if op not in ("M", "=", "X"):
-                continue
             for offset in range(length):
-                if column + offset >= len(germline):
+                index = column + offset
+                if index >= len(germline) or index >= len(aligned):
+                    report(segment, "every cigar column is inside the alignment",
+                           index, f"0..{min(len(germline), len(aligned)) - 1}")
                     break
+                read_gap = aligned[index] == GAP
+                germline_gap = germline[index] == GAP
+                wanted = {"M": (False, False), "=": (False, False), "X": (False, False),
+                          "D": (True, False), "I": (False, True)}.get(op)
+                if wanted is not None and (read_gap, germline_gap) != wanted:
+                    report(segment,
+                           f"column {index} declared {op} has the gap pattern of "
+                           f"that op",
+                           f"read={'gap' if read_gap else 'base'}, "
+                           f"germline={'gap' if germline_gap else 'base'}",
+                           f"read={'gap' if wanted[0] else 'base'}, "
+                           f"germline={'gap' if wanted[1] else 'base'}")
+                    continue
+                # M and D both consume a germline base, so both are compared
+                # against the reference. Only comparing M left the deletion
+                # columns unchecked -- and a D column's germline base is the
+                # one place the projector fills from its own cursor rather
+                # than from a nucleotide's recorded provenance, which is the
+                # arithmetic most likely to be wrong.
+                if op not in ("M", "=", "X", "D"):
+                    continue
                 expected = _expected_germline_base(
                     reference, position + offset, segment_start=span_start,
                     segment_end=span_end, inverted=is_inverted)
                 if expected is None:
                     report(segment,
-                           "an M column's germline coordinate is inside the allele",
+                           "a column's germline coordinate is inside the allele",
                            position + offset, f"0..{len(reference) - 1}")
                     continue
-                found = germline[column + offset].upper()
+                found = germline[index].upper()
                 if found != expected:
+                    coordinate = (span_end - 1 - (position + offset - span_start)
+                                  if is_inverted else position + offset)
                     report(segment,
-                           f"M column {column + offset} carries the reference base "
-                           f"at germline {position + offset}", found, expected)
+                           f"{op} column {index} carries the reference base at "
+                           f"germline {coordinate}", found, expected)
 
     # 2. The alignment is longer than the read by exactly the deletions.
     if len(aligned) != len(sequence) + deletions:
@@ -332,9 +408,22 @@ def translate(sequence: str) -> str:
 
 
 def translation_phase(record, *, native_phase: int) -> int:
-    """The reading frame ``sequence_aa`` is written in."""
-    removed = _count(record, "v_trim_5") + _count(record, "end_loss_5_length")
-    return (record["v_sequence_start"] + native_phase % 3 + 3 - removed % 3) % 3
+    """The reading frame ``sequence_aa`` is written in.
+
+    ``removed`` is taken from ``v_germline_start``, which is where the engine's
+    ``trim_5 + observation_loss_5`` lands. The first version of this reproduced
+    that sum as ``v_trim_5 + end_loss_5_length`` and was wrong whenever two 5'
+    truncations compose: with a 4-base end loss and a 5-base primer trim,
+    ``end_loss_5_length`` reads 4 while 9 bases are gone, so the frame came out
+    2 instead of 0 and the expected translation was nonsense with stop codons
+    in it -- a false failure, on 30 of 30 records.
+
+    ``v_germline_start`` is correct in every case measured, including both
+    composition orders. It is also the field the engine's own ``coding_span``
+    is consistent with, rather than a reconstruction of it.
+    """
+    return (record["v_sequence_start"] + native_phase % 3
+            + 3 - _count(record, "v_germline_start") % 3) % 3
 
 
 def translation_disagreement(record, *, native_phase: int) -> tuple[str, str] | None:

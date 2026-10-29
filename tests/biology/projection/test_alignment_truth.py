@@ -98,13 +98,16 @@ def _alignment_fields_present(record):
 
 
 @verifies("projection.cigar",
-          claim="each cigar's op lengths account for exactly the spans the "
-                "coordinate fields report -- M+I for the read, M+D for the "
-                "germline -- and every M column lands on the reference base at "
-                "the germline coordinate it walks to, read from the reference "
-                "table rather than from the projector. A cigar with correct op "
-                "lengths in the wrong place breaks the second of those and no "
-                "existing cigar test",
+          claim="every column a cigar declares has the gap pattern that op "
+                "requires in the two alignment strings -- M base/base, D "
+                "gap/base, I base/gap -- so an op cannot be declared in a "
+                "place the strings do not agree with, and every column "
+                "consuming a germline base carries the reference's base there. "
+                "The op lengths matching the recorded spans is true by "
+                "construction in the engine and catches a field-plumbing "
+                "error, not a disagreement between producers; the germline "
+                "COORDINATES are not established here, because they come from "
+                "the same column walk as the cigar",
           fields=("v_cigar", "d_cigar", "j_cigar"))
 @pytest.mark.parametrize("stack", sorted(STACKS))
 @pytest.mark.parametrize("locus", LOCI)
@@ -114,25 +117,39 @@ def test_every_cigar_describes_the_span_it_claims_against_the_reference(locus, s
     if stack in NEEDS_D and locus not in VDJ_LOCI:
         pytest.skip(f"{locus} is a VJ locus, so there is no D to invert")
     exp = STACKS[stack](experiment_builder.recombined(locus=locus))
-    checked = 0
+    checked = compared = 0
     for record, sequences, inverted in _observed(exp, n=25, seed=37):
         found = projection.disagreements(record, sequences, inverted=inverted)
         assert found == (), (
             f"{locus}/{stack}: {len(found)} projection disagreement(s); "
             f"first: {found[0]}")
         _cigar_fields_present(record)
+        # Without this the test is green on records where not one column was
+        # compared: the oracle returned () for an absent alignment and the
+        # presence helper passes on None, so the whole body agreed about
+        # nothing. Both are fixed, and this is the floor that keeps them so.
+        columns = projection.columns_compared(record, sequences, inverted=inverted)
+        assert sum(columns.values()) > 100, (
+            f"{locus}/{stack}: only {sum(columns.values())} columns compared")
+        compared += sum(columns.values())
         checked += 1
     assert checked == 25, f"{locus}/{stack}: only {checked} records were checked"
+    assert compared > 5000, (
+        f"{locus}/{stack}: {compared} columns compared across 25 records, which "
+        "is too few for the claim to rest on")
 
 
 @verifies("projection.germline_alignment",
           claim="the two alignment strings are the same length, are longer than "
-                "the read by exactly the deletions the cigars record, and reduce "
-                "to the read itself once gaps are removed -- to its reverse "
-                "complement when the read is reported on the other strand, "
-                "because the alignment is in germline orientation. The D mask is "
-                "the germline alignment with the D span's bases replaced by N "
-                "and its gaps left alone",
+                "the read by exactly the deletions the cigars record, reduce to "
+                "the read itself once gaps are removed -- to its reverse "
+                "complement when the read is on the other strand, because the "
+                "alignment is in germline orientation -- and every column that "
+                "consumes a germline base carries the reference's base there, "
+                "deletion columns included. The D mask is checked only for "
+                "covering exactly the D span: that its bases become N is how "
+                "the engine builds it in the same walk, so asserting it "
+                "restates the construction rather than establishing it",
           fields=("sequence_alignment", "germline_alignment",
                   "germline_alignment_d_mask"))
 @pytest.mark.parametrize("stack", sorted(STACKS))
@@ -150,6 +167,9 @@ def test_the_alignment_strings_reduce_to_the_read_and_the_reference(locus, stack
             f"{locus}/{stack}: {len(found)} projection disagreement(s); "
             f"first: {found[0]}")
         _alignment_fields_present(record)
+        columns = projection.columns_compared(record, sequences, inverted=inverted)
+        assert sum(columns.values()) > 100, (
+            f"{locus}/{stack}: only {sum(columns.values())} columns compared")
         saw_gap |= "-" in record["germline_alignment"] or "-" in record["sequence_alignment"]
     if stack == "indels":
         assert saw_gap, (
@@ -163,10 +183,10 @@ def test_an_inverted_d_is_checked_rather_than_skipped():
     a direct lookup does not apply.
 
     The projection can be checked, because the germline alignment carries the
-    reverse complement too -- it has to, to align with the read. Measured: at
-    an inverted D's M columns the germline alignment matches the reference
-    reverse-complemented within the D's own span on 320 of 320 columns, against
-    62 for the plain reference. This asserts the oracle uses that and is not
+    reverse complement too -- it has to, to align with the read. Measured with
+    this fixture: the germline alignment matches the reference
+    reverse-complemented within the D's own span on 407 of 407 columns, against
+    100 for the plain reference. This asserts the oracle uses that and is not
     quietly passing because it skipped the segment.
     """
     exp = experiment_builder.recombined().invert_d(prob=1.0)
