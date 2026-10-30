@@ -152,25 +152,52 @@ pub fn policy_name(view: &impl SequenceView) -> &'static str {
     view.productivity_policy()
 }
 
-fn base_mask(base: u8) -> u8 {
-    match base.to_ascii_uppercase() {
-        b'A' => 1,
-        b'C' => 2,
-        b'G' => 4,
-        b'T' | b'U' => 8,
-        b'R' => 5,
-        b'Y' => 10,
-        b'S' => 6,
-        b'W' => 9,
-        b'K' => 12,
-        b'M' => 3,
-        b'B' => 14,
-        b'D' => 13,
-        b'H' => 11,
-        b'V' => 7,
-        b'N' => 15,
-        _ => 0,
+/// IUPAC code -> the set of A/C/G/T it admits, as a 4-bit mask, for every
+/// byte value in both cases.
+///
+/// Built once at compile time instead of matching per call. `base_mask` is the
+/// hottest function on the `productive_only()` path -- 12.1% of samples in a
+/// native profile of the indel-plus-productive workload, 7.6% of them in the
+/// function itself -- because it runs per base inside the productivity checks
+/// AND inside the feasibility solver's inner loop, through `codon_stop`. Most
+/// of that was the `to_ascii_uppercase()` call: its `is_ascii_lowercase` test
+/// alone accounted for 4.7% of all samples. Folding the case into the table
+/// removes both the branch chain and the conversion.
+const BASE_MASK: [u8; 256] = {
+    let mut table = [0u8; 256];
+    let codes: [(u8, u8); 16] = [
+        (b'A', 1),
+        (b'C', 2),
+        (b'G', 4),
+        (b'T', 8),
+        (b'U', 8),
+        (b'R', 5),
+        (b'Y', 10),
+        (b'S', 6),
+        (b'W', 9),
+        (b'K', 12),
+        (b'M', 3),
+        (b'B', 14),
+        (b'D', 13),
+        (b'H', 11),
+        (b'V', 7),
+        (b'N', 15),
+    ];
+    let mut i = 0;
+    while i < codes.len() {
+        let (code, mask) = codes[i];
+        table[code as usize] = mask;
+        // Case is a separate channel in this engine: a templated base is
+        // stored lowercase and an SHM write emits uppercase, so both spellings
+        // must map to the same mask.
+        table[code.to_ascii_lowercase() as usize] = mask;
+        i += 1;
     }
+    table
+};
+
+fn base_mask(base: u8) -> u8 {
+    BASE_MASK[base as usize]
 }
 
 /// Amino-acid possibility bitset (ASCII bit positions), without interpreting
@@ -1278,5 +1305,61 @@ mod tests {
         assert!(issues.iter().any(|i| matches!(i,
             RecordValidationIssue::ProductivityAssessmentMismatch { field, .. } if *field == "junction_end")),
             "{issues:?}");
+    }
+}
+
+#[cfg(test)]
+mod base_mask_tests {
+    use super::base_mask;
+
+    /// Characterization over the whole byte range, written so a lookup-table
+    /// rewrite of `base_mask` has to reproduce it exactly rather than
+    /// approximately. It passes before and after that rewrite on purpose:
+    /// there is no new behaviour here, only a faster way to compute the same
+    /// mapping, and the only thing worth asserting is that it IS the same.
+    ///
+    /// The IUPAC rows are spelled out rather than generated from the function
+    /// under test, which would make the test a tautology.
+    #[test]
+    fn base_mask_is_the_iupac_table_in_both_cases_and_zero_elsewhere() {
+        let expected: [(u8, u8); 16] = [
+            (b'A', 1),
+            (b'C', 2),
+            (b'G', 4),
+            (b'T', 8),
+            (b'U', 8),
+            (b'R', 5),
+            (b'Y', 10),
+            (b'S', 6),
+            (b'W', 9),
+            (b'K', 12),
+            (b'M', 3),
+            (b'B', 14),
+            (b'D', 13),
+            (b'H', 11),
+            (b'V', 7),
+            (b'N', 15),
+        ];
+        for byte in 0u8..=255 {
+            let want = expected
+                .iter()
+                .find(|(code, _)| *code == byte.to_ascii_uppercase())
+                .map(|(_, mask)| *mask)
+                .unwrap_or(0);
+            assert_eq!(
+                base_mask(byte),
+                want,
+                "base_mask({byte}) = {:?} as a char",
+                byte as char
+            );
+        }
+        // The case channel specifically: a templated base is stored lowercase
+        // and an SHM write emits uppercase, so every code must agree across
+        // case or the productivity checks would read mutated bases differently
+        // from germline ones.
+        for (code, mask) in expected {
+            assert_eq!(base_mask(code.to_ascii_lowercase()), mask);
+            assert_eq!(base_mask(code), mask);
+        }
     }
 }

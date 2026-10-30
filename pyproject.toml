@@ -80,6 +80,11 @@ manifest-path = "engine_rs/Cargo.toml"
 python-source = "src"
 module-name = "GenAIRR._engine"
 features = ["pyo3/extension-module"]
+# Ship a stripped .so: 4 MB rather than 65 MB. This overrides the
+# `strip = "none"` in engine_rs/Cargo.toml for anything maturin builds,
+# including `maturin develop`, so an installed build cannot be profiled with
+# native symbols. See that file's [profile.release] comment for the cargo
+# recipe that produces a profiled build.
 strip = true
 # Include reference data shipped inside the GenAIRR package. maturin
 # would pick up most of this automatically since it lives under the
