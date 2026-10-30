@@ -119,19 +119,30 @@ pub(super) fn check_counters(
             .unwrap_or(0)
     };
 
-    let pcr_attempts = trace_int(ChoiceAddress::CorruptPcrCount);
-    if record.n_pcr_errors != pcr_attempts {
+    // Recomputed from each pass's own BaseChanged events, not from its drawn
+    // count in the trace. Reading the trace here made the validator agree with
+    // the record BECAUSE it reproduced the record's defect: both counted
+    // draws, so a counter reporting errors that never happened validated
+    // clean. The same shape as the `n_mutations` check before it was fixed.
+    let pcr_realized = crate::airr_record::builder::realized_substitutions(
+        outcome,
+        crate::address::CORRUPT_PCR,
+    );
+    if record.n_pcr_errors != pcr_realized {
         issues.push(RecordValidationIssue::NPcrErrorsMismatch {
             reported: record.n_pcr_errors,
-            trace_count: pcr_attempts,
+            trace_count: pcr_realized,
         });
     }
 
-    let quality_attempts = trace_int(ChoiceAddress::CorruptQualityCount);
-    if record.n_quality_errors != quality_attempts {
+    let quality_realized = crate::airr_record::builder::realized_substitutions(
+        outcome,
+        crate::address::CORRUPT_QUALITY,
+    );
+    if record.n_quality_errors != quality_realized {
         issues.push(RecordValidationIssue::NQualityErrorsMismatch {
             reported: record.n_quality_errors,
-            trace_count: quality_attempts,
+            trace_count: quality_realized,
         });
     }
 

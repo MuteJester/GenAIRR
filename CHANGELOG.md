@@ -88,6 +88,23 @@ All notable changes to GenAIRR are documented here.
 
 ### Fixed
 
+- `n_pcr_errors` and `n_quality_errors` now count the substitutions each
+  corruption pass **applied that changed a base**, not the number it was asked
+  to introduce. A replacement is drawn from A/C/G/T including the base already
+  present, so some draws write a byte and introduce no error: measured at 500
+  reported against 371 realized over 100 records at `count=5`, for each pass.
+  This is the same defect `n_mutations` carried, in the counters beside it, and
+  the record validator read the drawn count too — so it agreed with the record
+  because it reproduced the record's error. Fixed on the native and
+  duplex-observed planes; the duplex ledger already tracked the applied counts
+  separately, and its attempt counts are retained under
+  `duplex_repair.sampled_error_attempts`.
+
+  The documentation attributed `n_quality_errors` to `ambiguous_base_calls()`.
+  It is populated by `sequencing_errors()`. `ambiguous_base_calls()` masks
+  positions with `N` and reports on neither error counter; its count is
+  available from the trace as `corrupt.ns.count`.
+
 - `end_loss_5_length` and `end_loss_3_length` now report the total removed when
   more than one end-loss pass is configured at the same end. Both passes record
   at one trace address (`corrupt.end_loss.5`), and the record builder read it

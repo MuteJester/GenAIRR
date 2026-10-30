@@ -604,15 +604,37 @@ fn pcr_error_at_distinguishing_position_behaves_like_shm() {
     // exactly like a deterministic edit would.
     //
     // We can't pin a single PCR-pass mutation to a position
-    // deterministically (PCR samples the site uniformly), so we
-    // verify the looser invariant: across many seeds, the AIRR
-    // `n_pcr_errors` field always equals the sampled count (3),
-    // and the call set still always contains *some* candidate.
+    // deterministically (PCR samples the site uniformly), so we verify two
+    // things across many seeds: the `n_pcr_errors` field equals the number of
+    // bases the pool actually shows changed, and the call set still always
+    // contains *some* candidate.
     let cfg = common::vj_ambiguous_refdata();
+    let mut realized_total = 0i64;
     for seed in 0..32u64 {
         let plan = plan_clone(&cfg, "v01*01", 3, "pcr");
         let (sim, rec) = run_plan_with_record(&cfg, plan, seed);
-        assert_eq!(rec.n_pcr_errors, 3, "seed {}", seed);
+        // The counter against an independent count of what the pool shows.
+        // It used to assert `== 3`, the sampled count, which held only while
+        // the field was a read of the drawn count: a replacement is drawn
+        // from A/C/G/T including the base already present, so of three draws
+        // only some change a base.
+        let changed = sim
+            .pool
+            .as_slice()
+            .iter()
+            .filter(|n| !n.base.eq_ignore_ascii_case(&n.germline))
+            .count() as i64;
+        // Bounded on both sides rather than equal: two errors can land on one
+        // position, so the realized count is at least the number of distinct
+        // changed positions (seed 24 has 3 realized across 2 positions) and at
+        // most the three attempts. The aggregate below is what pins it away
+        // from the attempt count.
+        assert!(
+            changed <= rec.n_pcr_errors && rec.n_pcr_errors <= 3,
+            "seed {seed}: reports {} errors with {changed} bases changed",
+            rec.n_pcr_errors
+        );
+        realized_total += rec.n_pcr_errors;
         let v_calls = common::v_call_names(&sim, &cfg);
         assert!(
             !v_calls.is_empty(),
@@ -621,4 +643,13 @@ fn pcr_error_at_distinguishing_position_behaves_like_shm() {
             v_calls,
         );
     }
+    // 32 seeds x 3 draws = 96 attempts. A realized total equal to that would
+    // mean every draw changed a base, which would make a draw count and a
+    // realized count indistinguishable here and let this test pass again if
+    // the field reverted to reading the trace.
+    assert!(
+        realized_total > 0 && realized_total < 96,
+        "realized PCR errors across 32 seeds was {realized_total}, which is \
+         either nothing or every attempt"
+    );
 }

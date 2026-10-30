@@ -107,7 +107,7 @@ rec["n_d_mutations"]     # 0
 rec["n_j_mutations"]     # 0
 rec["n_np_mutations"]    # 0
 rec["n_pcr_errors"]      # 0  (from .pcr_amplify pass)
-rec["n_quality_errors"]  # 0  (from .ambiguous_base_calls pass)
+rec["n_quality_errors"]  # 0  (from .sequencing_errors pass)
 rec["n_indels"]          # 0  (from .polymerase_indels pass)
 ```
 
@@ -116,6 +116,13 @@ partition it exactly (`n_v + n_d + n_j + n_np == n_mutations` by
 construction). PCR / quality / indel artefacts are reported on
 separate counters - they're library/sequencing-stage noise, not
 biological mutation.
+
+Like `n_mutations`, the two error counters report the substitutions that
+**changed a base**, not the number requested: `pcr_amplify(count=5)`
+typically reports three or four, because a replacement is drawn from
+A/C/G/T including the base already present. `ambiguous_base_calls()` masks
+positions with `N` and is not reported on either counter; its count is
+available from the trace (`corrupt.ns.count`).
 
 It counts the substitutions that **changed a base**. A uniform
 replacement is drawn from A/C/G/T including the base already present,

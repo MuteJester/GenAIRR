@@ -166,9 +166,18 @@ def test_sampled_error_attempts_survive_empty_pool_and_accumulate_across_continu
     child = continue_with(r, child, "push_corrupt_pcr", [(3, 1.0)])
     child = continue_with(r, child, "push_corrupt_quality", [(4, 1.0)])
     final = project_duplex_simulation(child, r)
-    assert first["record"]["n_pcr_errors"] == 2
-    assert final["record"]["n_pcr_errors"] == 5
-    assert final["record"]["n_quality_errors"] == 4
+    # The pool is empty after the 15-base 5' loss, so every error drawn here
+    # is an attempt that cannot land -- asserted directly below, no
+    # substitution edit exists. The attempts accumulate across continuations,
+    # which is this test's subject, and they now live under
+    # `duplex_repair.sampled_error_attempts`: the n_* counters report what was
+    # APPLIED, so on this fixture they are zero and the two halves of the
+    # distinction are both pinned.
+    assert first["record"]["duplex_repair"]["sampled_error_attempts"]["pcr"] == 2
+    assert final["record"]["duplex_repair"]["sampled_error_attempts"]["pcr"] == 5
+    assert final["record"]["duplex_repair"]["sampled_error_attempts"]["quality"] == 4
+    assert first["record"]["n_pcr_errors"] == 0
+    assert final["record"]["n_pcr_errors"] == 0 and final["record"]["n_quality_errors"] == 0
     assert not [x for x in observation(final)["edits"] if x["action"]["kind"] == "substitution"]
     assert final["record"]["sequence_id"] != first["record"]["sequence_id"]
 

@@ -293,12 +293,19 @@ def test_pin_scaffold_segment_rate_v_only_keeps_global_count_intact() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_pin_scaffold_pcr_quality_counters_are_trace_sourced() -> None:
-    """Audit §1: ``n_pcr_errors`` and ``n_quality_errors`` are
-    trace-sourced — they reflect the *attempted* draw, not the
-    realised event count. Pin via source inspection so the
-    distinction stays explicit when the per-segment SHM slice
-    lands (which uses event sourcing instead)."""
+def test_pin_scaffold_pcr_quality_counters_are_event_sourced() -> None:
+    """``n_pcr_errors`` and ``n_quality_errors`` are event-sourced: they
+    count the substitutions each pass APPLIED that changed a base, not the
+    draw it requested.
+
+    This pin previously asserted the opposite, and asserted it by source
+    inspection, which is what kept the defect in place: the fields read
+    ``trace_int_choice(CorruptPcrCount)``, reported 500 errors against 351
+    germline-differing bases over 100 records at count=5, and this test
+    certified that as intended. The behavioural claim now lives in
+    [`tests/biology/assay/test_artifact_accounting.py`](tests/biology/assay/test_artifact_accounting.py);
+    what is pinned here is only that the derivation has not silently reverted
+    to reading the trace."""
     builder_src = (
         _REPO_ROOT
         / "engine_rs"
@@ -306,13 +313,16 @@ def test_pin_scaffold_pcr_quality_counters_are_trace_sourced() -> None:
         / "airr_record"
         / "builder.rs"
     ).read_text(encoding="utf-8")
-    assert "trace_int_choice(trace, ChoiceAddress::CorruptPcrCount)" in builder_src, (
-        "n_pcr_errors no longer sources from the trace; the future "
-        "SHM counter slice's event-sourcing rationale (audit §1) "
-        "has drifted — re-check the documentation."
+    assert "realized_substitutions(outcome, address::CORRUPT_PCR)" in builder_src, (
+        "n_pcr_errors no longer counts the pass's applied substitutions; if it "
+        "reverted to the trace's drawn count it reports errors that never "
+        "happened."
     )
-    assert "trace_int_choice(trace, ChoiceAddress::CorruptQualityCount)" in builder_src, (
-        "n_quality_errors no longer trace-sourced."
+    assert "realized_substitutions(outcome, address::CORRUPT_QUALITY)" in builder_src, (
+        "n_quality_errors no longer counts the pass's applied substitutions."
+    )
+    assert "trace_int_choice(trace, ChoiceAddress::CorruptPcrCount)" not in builder_src, (
+        "the drawn count is being read again for n_pcr_errors."
     )
 
 
