@@ -443,6 +443,7 @@ fn project_counters(
     let p = sim.duplex_provenance.as_ref().unwrap();
     let mut counts = Map::<String, Value>::new();
     let mut unknown = BTreeSet::new();
+    let mut shm_written: Vec<(u8, u16)> = Vec::new();
     let mut increment = |field: String| {
         let n = counts.get(&field).and_then(Value::as_u64).unwrap_or(0);
         counts.insert(field, json!(n + 1));
@@ -450,7 +451,23 @@ fn project_counters(
     for edit in &p.edits {
         let pass = edit.source_pass.as_deref();
         match &edit.action {
-            DuplexEditAction::Substitution { segment, .. } => match pass {
+            DuplexEditAction::Substitution {
+                segment,
+                old_base,
+                new_base,
+                germline_pos,
+                ..
+            } => match pass {
+                // A write whose drawn base equalled the base already there is
+                // in the ledger -- it is a physical record of every write --
+                // but it changed nothing and is not a mutation, so it must
+                // not reach these counters. Leaving it in put the per-segment
+                // sum one above `n_mutations` in the same projected record:
+                // 7 against 6 on a grown duplex family. Case-insensitive, as
+                // everywhere: a templated base is stored lowercase and an SHM
+                // write emits uppercase.
+                Some("mutate.uniform" | "mutate.s5f")
+                    if old_base.eq_ignore_ascii_case(new_base) => {}
                 Some("mutate.uniform" | "mutate.s5f") => {
                     let s = match segment.as_str() {
                         "V" => "v",
@@ -459,6 +476,20 @@ fn project_counters(
                         _ => "np",
                     };
                     increment(format!("n_{s}_mutations"));
+                    // Remember the germline position for the recoverable
+                    // count below. The NP segments carry no germline
+                    // coordinate, so the three templated segments are the
+                    // whole key space; `germline_pos` is `None` on the rest
+                    // and nothing is collected for them.
+                    if let Some(pos) = germline_pos {
+                        let code = match segment.as_str() {
+                            "V" => crate::ir::Segment::V as u8,
+                            "D" => crate::ir::Segment::D as u8,
+                            "J" => crate::ir::Segment::J as u8,
+                            _ => continue,
+                        };
+                        shm_written.push((code, *pos));
+                    }
                 }
                 Some("corrupt.pcr") => increment("applied_pcr_substitutions".into()),
                 Some("corrupt.quality") => increment("applied_quality_substitutions".into()),
@@ -525,6 +556,17 @@ fn project_counters(
         "pcr":counts.remove("applied_pcr_substitutions").unwrap_or(json!(0)),
         "quality":counts.remove("applied_quality_substitutions").unwrap_or(json!(0))});
     record.insert("n_mutations".into(), json!(sim.mutation_count));
+    // Resolved against the observed molecule exactly as the native builder
+    // does it, from the SHM sites this ledger attributes to a mutation pass.
+    // The field is in the default column order, so a duplex record that
+    // omitted it wrote a blank column into every export.
+    record.insert(
+        "n_observable_mutations".into(),
+        json!(crate::airr_record::builder::observable_mutations(
+            sim,
+            &mut shm_written
+        )),
+    );
     record.insert("mutation_rate".into(), json!(sim.mutation_burden));
     if !unknown.is_empty() {
         for field in [

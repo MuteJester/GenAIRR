@@ -92,9 +92,15 @@ def test_productive_mutation_loss_and_reverse_output_keep_founder_and_event_burd
         assert rec["rev_comp"] is True
         assert rec["v_cigar"] == "5M"
         assert rec["v_trim_5"] == 0 and rec["v_germline_start"] == 1
-        assert rec["n_mutations"] == 3
-        assert rec["n_v_mutations"] + rec["n_d_mutations"] + rec["n_j_mutations"] == 3
-        assert rec["mutation_rate"] == pytest.approx(3 / 15)
+        assert 0 < rec["n_mutations"] <= 3
+        # The partition invariant rather than a constant: the four per-segment
+        # counters sum to n_mutations. Hardcoding 3 held only while every
+        # write was counted, including a uniform draw landing on the base
+        # already there -- and it silently omitted n_np_mutations, so it was
+        # not the partition it looked like.
+        assert (rec["n_v_mutations"] + rec["n_d_mutations"]
+                + rec["n_j_mutations"] + rec["n_np_mutations"]) == rec["n_mutations"]
+        assert rec["mutation_rate"] == pytest.approx(rec["n_mutations"] / 15)
         assert rec["end_loss_5_length"] == 1
         assert rec["duplex_repair"]["product"] == founder
         observation = rec["duplex_repair"]["observation"]

@@ -112,12 +112,32 @@ fn continuation_preserves_ancestor_burden_counters_and_rebases_trace_spans() {
         PassRuntime::execute_with_refdata(&child_plan, parent.final_simulation().clone(), 91, &cfg);
     let merged = parent.with_continuation(&child).unwrap();
     let rec = build_airr_record(&merged, &cfg, "child");
-    assert_eq!(rec.n_mutations, 3);
+    // 2 + 1 substitution ATTEMPTS across the two stages. A uniform draw that
+    // lands on the base already there is not counted, so the realised total
+    // is below the attempt count: at these seeds the parent realises one of
+    // its two and the child its one, which is pinned exactly rather than
+    // bounded. A bound would have been satisfied by zero, and zero would have
+    // made both sides of the rate assertion below 0.0 -- leaving this test's
+    // real subject, that the denominators are the per-stage molecule lengths
+    // 18 and 12 rather than the merged length, asserted by nothing.
+    assert_eq!(rec.n_mutations, 2, "realised count across the two stages");
     assert_eq!(
         rec.n_v_mutations + rec.n_d_mutations + rec.n_j_mutations + rec.n_np_mutations,
-        3
+        rec.n_mutations
     );
-    assert_eq!(rec.mutation_rate, 2.0 / 18.0 + 1.0 / 12.0);
+    let parent_rec = build_airr_record(&parent, &cfg, "parent");
+    let child_realised = rec.n_mutations - parent_rec.n_mutations;
+    assert!(
+        parent_rec.n_mutations > 0 && child_realised > 0,
+        "both stages must realise a mutation for the two denominators to be \
+         under test: parent {} child {}",
+        parent_rec.n_mutations,
+        child_realised
+    );
+    assert_eq!(
+        rec.mutation_rate,
+        parent_rec.n_mutations as f64 / 18.0 + child_realised as f64 / 12.0
+    );
     for (index, event) in merged.events.iter().enumerate() {
         assert_eq!(event.pass_index, index);
         assert_eq!(event.pass_name, merged.pass_names[index]);
@@ -149,11 +169,27 @@ fn continuation_preserves_ancestor_burden_counters_and_rebases_trace_spans() {
     let mut grand_plan = PassPlan::new();
     mutate(&mut grand_plan, 1);
     let grand =
-        PassRuntime::execute_with_refdata(&grand_plan, merged.final_simulation().clone(), 92, &cfg);
+        PassRuntime::execute_with_refdata(&grand_plan, merged.final_simulation().clone(), 93, &cfg);
     let grand = merged.with_continuation(&grand).unwrap();
     let rec = build_airr_record(&grand, &cfg, "grand");
-    assert_eq!(rec.n_mutations, 4);
-    assert!((rec.mutation_rate - (2.0 / 18.0 + 2.0 / 12.0)).abs() < 1e-12);
+    // 2 + 1 + 1 attempts over three stages, of which three are realised at
+    // these seeds. The subject is again the per-stage denominators: the
+    // parent's 18 and the child's 12, each carrying that stage's realised
+    // count. The third stage runs on the same 12-base molecule as the second,
+    // which is why its mutation shares the child's denominator below.
+    assert_eq!(rec.n_mutations, 3, "realised count across the three stages");
+    let merged_rec = build_airr_record(&merged, &cfg, "merged");
+    let parent_share = parent_rec.n_mutations as f64 / 18.0;
+    let child_share = (rec.n_mutations - parent_rec.n_mutations) as f64 / 12.0;
+    assert!(
+        parent_share > 0.0 && child_share > 0.0,
+        "both denominators must carry a realised mutation: {parent_share} + {child_share}"
+    );
+    assert!(
+        (rec.mutation_rate - (parent_share + child_share)).abs() < 1e-12,
+        "rate {} does not decompose into {} + {} (merged total {})",
+        rec.mutation_rate, parent_share, child_share, merged_rec.n_mutations
+    );
     assert!(validate_airr_record(&rec, &grand, &cfg).is_empty());
     let empty = PassRuntime::execute_with_refdata(
         &PassPlan::new(),
@@ -187,3 +223,4 @@ fn zero_mutations_have_zero_burden_on_nonempty_and_empty_molecules() {
         assert_eq!(outcome.final_simulation().mutation_burden, 0.0);
     }
 }
+

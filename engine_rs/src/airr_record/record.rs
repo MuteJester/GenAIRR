@@ -126,6 +126,39 @@ pub struct AirrRecord {
 
     // SHM + corruption (non-AIRR; GenAIRR additions)
     pub n_mutations: i64,
+    /// Somatic-hypermutation substitutions a mutation caller can recover from
+    /// [`Self::sequence`]: the positions an SHM pass wrote a changed base at
+    /// that are still in the molecule and still differ from the germline base
+    /// recorded there. Compared case-insensitively, because case carries the
+    /// templated/untemplated channel rather than base identity.
+    ///
+    /// Attributable to hypermutation and to nothing else. Every pass that
+    /// writes a base leaves a position differing from its germline -- a PCR
+    /// misincorporation, a sequencing miscall, an N mask, a background
+    /// contaminant -- and none of them moves this count. Score a mutation
+    /// caller against this field, not against `n_mutations`: the library and
+    /// sequencing artefacts are reported on their own counters
+    /// ([`Self::n_pcr_errors`], [`Self::n_quality_errors`]), which is what a
+    /// caller's false positives should be measured against.
+    ///
+    /// Below [`Self::n_mutations`] by three effects, all intended:
+    ///
+    /// - A mutation landing on an untemplated junction base changes a base
+    ///   and is counted there, but has no germline base to differ from.
+    /// - Two mutations can hit one position, the later one restoring the
+    ///   germline base.
+    /// - A position lost to end loss or a deletion is no longer in the
+    ///   molecule. Unlike [`Self::mutation_rate`], which is a burden and is
+    ///   preserved through observation loss, this is a property of the
+    ///   surviving molecule and shrinks with it.
+    ///
+    /// Two scoping notes. It counts positions in `sequence`, which stays the
+    /// whole molecule under `paired_end()`: `r1_sequence` and `r2_sequence`
+    /// cover less than that, so an analysis of the reads should be scored
+    /// against the reads. And on a contaminant record ([`Self::is_contaminant`])
+    /// the molecule is a background sequence rather than this rearrangement,
+    /// so no mutation field on it describes hypermutation.
+    pub n_observable_mutations: i64,
     /// Cumulative realized SHM event burden: sum of each stage's applied
     /// count divided by its input molecule length. Preserved through later
     /// observation loss; not the mismatch fraction in the observed read.

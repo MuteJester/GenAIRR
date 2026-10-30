@@ -191,7 +191,8 @@ MECHANISMS = (
         stage="maturation",
         summary="Somatic hypermutation: AID-initiated point substitution, "
                 "targeted by sequence context under S5F or spread uniformly.",
-        truth_fields=("n_mutations", "n_v_mutations", "n_d_mutations", "n_j_mutations",
+        truth_fields=("n_mutations", "n_observable_mutations", "n_v_mutations",
+                      "n_d_mutations", "n_j_mutations",
                       "n_np_mutations", "mutation_rate", "n_v_unannotated_mutations",
                       "n_cdr1_mutations", "n_cdr2_mutations", "n_fwr1_mutations",
                       "n_fwr2_mutations", "n_fwr3_mutations"),

@@ -22,6 +22,48 @@ pub(super) fn check_counters(
             sim_count: sim.mutation_count as i64,
         });
     }
+    // The recoverable count, recomputed from the hypermutation passes' own
+    // event ledger resolved against the finished pool -- the same derivation
+    // the builder performs, so this catches a tampered or hand-built record
+    // dict, exactly as the `n_mutations` check above does against
+    // `sim.mutation_count`.
+    let mut shm_sites: Vec<(u8, u16)> = Vec::new();
+    for event in outcome.events() {
+        if event.pass_name != crate::address::MUTATE_UNIFORM
+            && event.pass_name != crate::address::MUTATE_S5F
+        {
+            continue;
+        }
+        for sim_event in &event.simulation_events {
+            if let SimulationEvent::BaseChanged {
+                old_base,
+                new_base,
+                segment,
+                germline_pos: Some(pos),
+                ..
+            } = sim_event
+            {
+                if !old_base.eq_ignore_ascii_case(new_base) {
+                    shm_sites.push((*segment as u8, *pos));
+                }
+            }
+        }
+    }
+    let recomputed_observable =
+        crate::airr_record::builder::observable_mutations(sim, &mut shm_sites);
+    if record.n_observable_mutations != recomputed_observable {
+        issues.push(RecordValidationIssue::NObservableMutationsMismatch {
+            reported: record.n_observable_mutations,
+            recomputed: recomputed_observable,
+        });
+    }
+    // Cross-field: a caller cannot recover what was never counted.
+    if record.n_observable_mutations > record.n_mutations {
+        issues.push(RecordValidationIssue::ObservableMutationsExceedCount {
+            observable: record.n_observable_mutations,
+            reported_total: record.n_mutations,
+        });
+    }
     // Start with inherited SHM from a run_from boundary, then independently
     // integrate the actual substitutions using each pass's input length.
     let mut burden = outcome
@@ -37,7 +79,16 @@ pub(super) fn check_counters(
         let applied = event
             .simulation_events
             .iter()
-            .filter(|event| matches!(event, SimulationEvent::BaseChanged { .. }))
+            .filter(|event| match event {
+                // Same rule as the builder: a write whose drawn base equalled
+                // the base already there changed nothing and is not a
+                // mutation. Counting it here while the builder subtracted it
+                // made this validator disagree with the record it validates.
+                SimulationEvent::BaseChanged { old_base, new_base, .. } => {
+                    !old_base.eq_ignore_ascii_case(new_base)
+                }
+                _ => false,
+            })
             .count();
         // Lineage outputs carry a synthesized net-difference summary with
         // no sampled count choice. It replaces ancestral event history rather
@@ -156,11 +207,18 @@ pub(super) fn check_counters(
             let SimulationEvent::BaseChanged {
                 segment,
                 germline_pos,
+                old_base,
+                new_base,
                 ..
             } = ev
             else {
                 continue;
             };
+            // See above: no-op writes are not mutations, in the record and
+            // therefore in what validates it.
+            if old_base.eq_ignore_ascii_case(new_base) {
+                continue;
+            }
             shm_by_segment[*segment as usize] += 1;
             if *segment == Segment::V {
                 let label = v_subregions_for_validate.and_then(|subs| {

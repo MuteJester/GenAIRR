@@ -122,7 +122,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             self.ctx
                 .trace
                 .record_choice(address, ChoiceValue::Base(base_byte));
-            self.builder.change_base(site, base_byte);
+            self.write_base(site, base_byte);
             // Suppress unused-binding warnings for fresh-sample
             // parameters in the replay path.
             let _ = (base_dist, draw_index, draw_count, value_transform);
@@ -145,9 +145,39 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
 
         // Apply through the builder. Safe — handle range validated
         // above; `change_base` will succeed.
-        self.builder.change_base(site, base);
+        self.write_base(site, base);
 
         Ok(true)
+    }
+
+    /// Write `new_base` at `site`, counting a write that changes nothing.
+    ///
+    /// Every substitution in this module goes through here, from all seven
+    /// call sites: the two replay paths, the two fresh-sampling paths, the two
+    /// fast paths that preserve the legacy RNG consumption shape, and the
+    /// contract-arbitrated pinned write. The first attempt at this fix patched
+    /// one of them, so the uniform model -- which takes a fast path -- was
+    /// entirely unaffected and the measurement did not move.
+    ///
+    /// `change_base` returns the old nucleotide for the event observers, so
+    /// the comparison is free. The write itself is unconditional: the RNG
+    /// consumption, the recorded trace and the resulting sequence are all
+    /// exactly as before. Only the count changes.
+    fn write_base(&mut self, site: NucHandle, new_base: u8) {
+        let old = self.builder.change_base(site, new_base);
+        // Compared case-insensitively, because case is a separate channel:
+        // a templated base is stored lowercase and an untemplated one
+        // uppercase, and an SHM write emits uppercase. So a draw landing on
+        // the base already there still changes the BYTE -- measured, 191 of
+        // 198 differing positions were a lowercase germline byte against an
+        // uppercase base, and 44 of those 198 were the same base differing
+        // only in case, which a byte comparison would have missed. A consumer
+        // comparing the sequence to its germline case-insensitively, which is
+        // the only correct way given the channel, sees nothing at those
+        // positions, so they are not mutations.
+        if old.base.eq_ignore_ascii_case(&new_base) {
+            self.no_op_substitutions = self.no_op_substitutions.saturating_add(1);
+        }
     }
 
     /// Substitute a base at a position chosen jointly with the base
@@ -310,7 +340,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             self.ctx
                 .trace
                 .record_choice(base_address, ChoiceValue::Base(base_byte));
-            self.builder.change_base(NucHandle::new(site), base_byte);
+            self.write_base(NucHandle::new(site), base_byte);
             // Suppress the unused-binding warning for the
             // base distribution + transform in this replay path
             // (still part of the API surface for fresh-RNG calls).
@@ -375,7 +405,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             self.ctx
                 .trace
                 .record_choice(base_address, ChoiceValue::Base(base));
-            self.builder.change_base(NucHandle::new(site), base);
+            self.write_base(NucHandle::new(site), base);
             return Ok(true);
         }
 
@@ -517,8 +547,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
         self.ctx
             .trace
             .record_choice(base_address, ChoiceValue::Base(chosen));
-        self.builder
-            .change_base(NucHandle::new(chosen_site), chosen);
+        self.write_base(NucHandle::new(chosen_site), chosen);
 
         Ok(true)
     }
@@ -551,7 +580,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                 ),
             ));
         }
-        self.builder.change_base(site, new_base);
+        self.write_base(site, new_base);
         Ok(())
     }
 
@@ -611,7 +640,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                 return Ok(false);
             }
         }
-        self.builder.change_base(site, new_base);
+        self.write_base(site, new_base);
         Ok(true)
     }
 

@@ -247,15 +247,44 @@ DataFrames retain boolean values.
 ### Biological SHM
 
 ```text
-n_mutations            ← total biological SHM events (canonical)
-n_v_mutations          ← V-segment SHM
-n_d_mutations          ← D-segment SHM
-n_j_mutations          ← J-segment SHM
-n_np_mutations         ← NP1 + NP2 combined SHM
-mutation_rate          ← cumulative realized SHM event burden per input-molecule base
+n_mutations             ← biological SHM substitutions that changed a base (canonical)
+n_observable_mutations  ← the subset a mutation caller can recover from `sequence`
+n_v_mutations           ← V-segment SHM
+n_d_mutations           ← D-segment SHM
+n_j_mutations           ← J-segment SHM
+n_np_mutations          ← NP1 + NP2 combined SHM
+mutation_rate           ← cumulative realized SHM event burden per input-molecule base
 ```
 
-These five sum cleanly:
+`n_mutations` counts substitutions that changed a base, not substitution
+attempts. A uniform replacement is drawn from A/C/G/T including the base
+already present, and such a draw is not a mutation: `mutate(model="uniform",
+count=7)` typically reports five or six.
+
+### Scoring a mutation caller
+
+Use `n_observable_mutations`, not `n_mutations`. It is the number of
+hypermutation substitutions still visible in `sequence`, and it is below
+`n_mutations` by three intended effects:
+
+- a mutation on an untemplated junction base (an N or P addition) changed a
+  base, so it is counted, but it has no germline base to differ from, so
+  nothing can recover it — about 5% of records that carry a mutation;
+- two mutations can hit one position, the later one restoring the germline
+  base, which leaves nothing to see;
+- a position lost to end loss or a deletion is no longer in the molecule.
+
+It is attributable to hypermutation and to nothing else. A PCR
+misincorporation, a sequencing miscall or an `N` mask leaves a position
+differing from its germline too, and none of them moves this count — they
+are reported on `n_pcr_errors` and `n_quality_errors`, which is what a
+caller's false positives should be measured against. Two scoping notes:
+the count is over `sequence`, which stays the whole molecule under
+`paired_end()` while `r1_sequence` / `r2_sequence` cover less; and on a
+contaminant record the molecule is a background sequence, so no mutation
+field on it describes hypermutation.
+
+The four per-segment fields sum cleanly:
 `n_v + n_d + n_j + n_np == n_mutations` on every record. The
 [`validate_records`](../validation/validate-records.md) gate
 checks this equality and fires `MutationCountSumMismatch` if
@@ -405,10 +434,21 @@ The full validation picture lives at the
 A handful of issues that show up repeatedly with the record
 surface.
 
+**Scoring a mutation caller against `n_mutations`.** It counts
+every substitution that changed a base, including ones on
+untemplated bases that leave no germline base to differ from
+and ones a later mutation reversed. `n_observable_mutations`
+is the recoverable number; see
+[Scoring a mutation caller](#scoring-a-mutation-caller).
+
+**Reading `count=N` as a promise of `n_mutations == N`.** For
+`model="uniform"`, `count` is the number of attempts and
+roughly a quarter of them draw the base already present.
+
 **Treating all `n_*` counters as biological mutations.** Only
-the SHM partition (`n_mutations`, `n_v_mutations`,
-`n_d_mutations`, `n_j_mutations`, `n_np_mutations`, the six
-V-subregion fields) describes biology. `n_pcr_errors`,
+the SHM partition (`n_mutations`, `n_observable_mutations`,
+`n_v_mutations`, `n_d_mutations`, `n_j_mutations`,
+`n_np_mutations`, the six V-subregion fields) describes biology. `n_pcr_errors`,
 `n_quality_errors`, `n_indels`, and the end-loss lengths
 describe library / sequencer artefacts. They live on the same
 record by design - they don't share a counter.

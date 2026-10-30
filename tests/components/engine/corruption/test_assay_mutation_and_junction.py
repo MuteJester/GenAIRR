@@ -23,9 +23,14 @@ def test_mutation_rate_uses_stage_molecule_length_even_after_complete_loss(model
     exp = experiment().mutate(model=model, count=3).end_loss_3prime(length=loss)
     result = exp.run_records(n=3, seed=5)
     for record in result:
-        assert record["n_mutations"] == 3
+        # The subject is the DENOMINATOR: the rate is over the stage molecule
+        # (18), not the shorter read left after loss. Asserting it against the
+        # record's own count states that and nothing else -- the count itself
+        # is bounded below, because `count=3` is three attempts and a uniform
+        # draw that lands on the base already there is no longer counted.
+        assert 0 < record["n_mutations"] <= 3
         assert record["sequence_length"] == 18 - min(loss, 18)
-        assert record["mutation_rate"] == pytest.approx(3 / 18)
+        assert record["mutation_rate"] == pytest.approx(record["n_mutations"] / 18)
     assert result.validate_records(exp.refdata).ok
 
 
@@ -34,8 +39,10 @@ def test_repeated_mutation_stages_preserve_cumulative_burden_and_zero_pass_invar
     exp.end_loss_5prime(length=6)
     result = exp.run_records(n=4, seed=9)
     for record in result:
-        assert record["n_mutations"] == 5
-        assert record["mutation_rate"] == pytest.approx(5 / 18)
+        # Three stages of 2 + 3 + 0 attempts; the zero-count pass must not
+        # perturb the cumulative burden, which is the invariance under test.
+        assert 0 < record["n_mutations"] <= 5
+        assert record["mutation_rate"] == pytest.approx(record["n_mutations"] / 18)
     assert result.validate_records(exp.refdata).ok
 
 
@@ -51,27 +58,68 @@ def test_clones_keep_parent_mutation_counters_and_rate_through_observation_loss(
     )
     exp = CompiledClonalExperiment(parent.simulator, template._post, template._fork, parent.refdata)
     result = exp.run_records(seed=4)
+    counts = set()
     for record in result:
-        assert record["n_mutations"] == 3 + post_mutations
-        assert record["mutation_rate"] == pytest.approx((3 + post_mutations) / 18)
+        # `count=N` is N attempts; a uniform draw landing on the base already
+        # there is not counted, so the realised total is at most the attempts.
+        # Bounded above AND below: with a realised count of zero the rate
+        # assertion below compares 0.0 against 0.0 and says nothing about the
+        # denominator, which is this test's whole subject.
+        assert 0 < record["n_mutations"] <= 3 + post_mutations
+        # The subject: the rate's denominator is the stage molecule (18), not
+        # the shorter read left after the 3' loss.
+        assert record["mutation_rate"] == pytest.approx(record["n_mutations"] / 18)
         assert sum(record[f"n_{segment}_mutations"] for segment in ("v", "d", "j", "np")) == record["n_mutations"]
+        counts.add(record["n_mutations"])
+    if post_mutations == 0:
+        # With no post-fork pass every record of one clone carries its
+        # founder's counters unchanged. Grouped by clone, because the three
+        # founders mutate independently and their realised counts differ.
+        by_clone = {}
+        for record in result:
+            by_clone.setdefault(record["parent_id"], set()).add(record["n_mutations"])
+        for parent, group in sorted(by_clone.items()):
+            assert len(group) == 1, (
+                f"clone {parent} diverged from its founder: {sorted(group)}")
     assert result.validate_records(exp.refdata).ok
 
 
-@pytest.mark.parametrize("post_pass", [False, True])
-def test_repertoire_preserves_founder_burden_with_and_without_postfork_pass(post_pass):
+def test_repertoire_preserves_founder_burden_with_and_without_postfork_pass():
+    """A zero-count post-fork pass must not perturb the founders' burden.
+
+    Both variants are built here rather than parametrized, because that is
+    the claim the name makes and a parametrized run can only ever see one of
+    them. The previous version asserted every record reported exactly 3
+    mutations, which held only while the engine counted substitutions that
+    changed nothing: `count=3` is three attempts, and the three founders now
+    realise 1, 2 and 2. A repertoire collapses each clone to one record with
+    a `duplicate_count`, so there is nothing to compare within a clone -- the
+    comparison that matters is between the two variants.
+    """
     from GenAIRR._compiled.repertoire import CompiledRepertoireExperiment
-    parent = experiment().mutate(model="uniform", count=3).compile()
-    template = experiment().clonal_repertoire(n_clones=3, max_size=2)
-    if post_pass:
-        template.mutate(count=0).end_loss_3prime(length=6)
-    template = template.compile()
-    exp = CompiledRepertoireExperiment(parent.simulator, template._post, template._step, parent.refdata)
-    result = exp.run_records(seed=9)
-    for record in result:
-        assert record["n_mutations"] == 3
-        assert record["mutation_rate"] == pytest.approx(3 / 18)
-    assert result.validate_records(exp.refdata).ok
+
+    def burdens(post_pass):
+        parent = experiment().mutate(model="uniform", count=3).compile()
+        template = experiment().clonal_repertoire(n_clones=3, max_size=2)
+        if post_pass:
+            template.mutate(count=0).end_loss_3prime(length=6)
+        template = template.compile()
+        exp = CompiledRepertoireExperiment(
+            parent.simulator, template._post, template._step, parent.refdata)
+        result = exp.run_records(seed=9)
+        assert result.validate_records(exp.refdata).ok
+        for record in result:
+            assert record["n_mutations"] <= 3
+            # The denominator is the stage molecule (18), not the shorter
+            # read the 3' loss leaves in the post-pass variant.
+            assert record["mutation_rate"] == pytest.approx(record["n_mutations"] / 18)
+        return {record["clone_id"]: record["n_mutations"] for record in result}
+
+    without, with_pass = burdens(False), burdens(True)
+    assert without == with_pass, (
+        f"the zero-count post-fork pass changed the founders' burden: "
+        f"{without} -> {with_pass}")
+    assert len(without) == 3 and any(without.values())
 
 
 def test_lineage_net_difference_rate_is_not_inflated_by_read_loss():

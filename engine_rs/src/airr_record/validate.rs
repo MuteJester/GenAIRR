@@ -120,6 +120,20 @@ pub enum RecordValidationIssue {
         reported: i64,
         sim_count: i64,
     },
+    /// `n_observable_mutations` disagrees with the hypermutation sites the
+    /// event ledger attributes to a mutation pass, resolved against the
+    /// finished pool.
+    NObservableMutationsMismatch {
+        reported: i64,
+        recomputed: i64,
+    },
+    /// More recoverable substitutions than counted ones. A caller cannot
+    /// recover a substitution the record never counted, so this is
+    /// unsatisfiable rather than merely surprising.
+    ObservableMutationsExceedCount {
+        observable: i64,
+        reported_total: i64,
+    },
     MutationRateMismatch {
         reported: f64,
         recomputed: f64,

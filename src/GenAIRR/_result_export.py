@@ -149,6 +149,7 @@ _DEFAULT_COLUMN_ORDER = [
     "productivity_reasons",
     # SHM + corruption (non-AIRR; GenAIRR additions)
     "n_mutations",
+    "n_observable_mutations",
     "mutation_rate",
     "n_pcr_errors",
     "n_quality_errors",

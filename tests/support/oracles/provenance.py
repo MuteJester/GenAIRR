@@ -73,3 +73,26 @@ def untemplated_runs(simulation) -> tuple[Run, ...]:
 
 def _as_run(origins: list[BaseOrigin]) -> Run:
     return Run(start=origins[0].index, bases=bytes(o.base for o in origins))
+
+
+def changed_base_count(simulation) -> int:
+    """How many positions carry a base different from their germline byte.
+
+    Case-insensitive, because case is a separate channel: a templated base is
+    stored lowercase and an SHM write emits uppercase, so a byte comparison
+    counts every mutated position as changed even when the drawn base was the
+    one already there.
+
+    This is what ``n_mutations`` counts for a single mutation pass, so tests
+    whose real subject is something else -- the burden denominator, founder
+    evidence, landmark survival -- can derive the expected count instead of
+    hardcoding one. They hardcoded the inflated value before the engine
+    stopped counting substitutions that changed nothing, which is why they all
+    moved at once.
+
+    Not an identity and not a comparison against anything independent, so it
+    carries no circularity entry: it reads one recorded fact and counts it.
+    """
+    bases, germline = simulation.bases(), simulation.germline_bases()
+    return sum(1 for i in range(len(bases))
+               if chr(bases[i]).upper() != chr(germline[i]).upper())

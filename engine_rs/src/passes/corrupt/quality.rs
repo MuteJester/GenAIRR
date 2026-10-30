@@ -18,12 +18,18 @@ fn lowercase_base(base: u8) -> u8 {
 /// Models sequencing errors as random base substitutions written
 /// in **lowercase** to mark the position as corrupted.
 ///
-/// **Biological convention:** uppercase bases are germline-derived;
-/// lowercase bases were mutated or corrupted at some point (SHM,
-/// NP-derived, sequencing error, etc.). This pass writes lowercase
-/// substitutions so downstream queries can distinguish "this
-/// position was hit by a sequencing error" from "this position was
-/// germline."
+/// **Case convention, as the pool actually stores it:** a templated base
+/// is stored **lowercase** and an untemplated one uppercase; a P nucleotide
+/// is lowercase within an untemplated run; an SHM write emits uppercase.
+/// Case therefore carries the templated/untemplated channel, and this pass
+/// lowercasing its write is a historical marker, not a channel a consumer
+/// can read "this position was hit by a sequencing error" out of -- a
+/// lowercase byte over a lowercase templated base is indistinguishable from
+/// the germline base by case alone. The authoritative record of which pass
+/// wrote a position is the event ledger, surfaced as `n_quality_errors`.
+///
+/// Every comparison of a base to its germline is made case-insensitively
+/// for this reason, including the mutation counters.
 ///
 /// Mechanically identical to `PCRErrorPass` and
 /// `UniformMutationPass` (count + per-error site + per-error
@@ -371,7 +377,11 @@ mod tests {
         )));
         let outcome = PassRuntime::execute(&plan, quality_test_sim(), 0);
         assert_eq!(outcome.trace.len(), 1);
-        // No lowercase bases anywhere in the pool.
+        // No lowercase bases anywhere in the pool. This fixture pushes its
+        // bases uppercase directly rather than deriving them from an allele,
+        // so the assertion is that this pass wrote nothing, not a statement
+        // about the pool's case convention: a real templated base is stored
+        // lowercase.
         for i in 0..outcome.final_simulation().pool.len() {
             let b = outcome
                 .final_simulation()

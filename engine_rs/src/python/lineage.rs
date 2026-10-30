@@ -643,7 +643,13 @@ impl PyFamilyOutcome {
 fn synthesize_shm_event_record(sim: &Simulation) -> (EventRecord, u32) {
     let mut events: Vec<SimulationEvent> = Vec::new();
     for (i, nuc) in sim.pool.as_slice().iter().enumerate() {
-        if nuc.base == nuc.germline {
+        // Case-insensitive, like every other reader of this difference. A
+        // templated base is stored lowercase and an SHM write emits
+        // uppercase, so a byte comparison treats a case-only difference as a
+        // mutation: it synthesized an event for it and counted it in `net`,
+        // while the AIRR builder reading those same events skipped it. That
+        // is the `n_mutations 100 != per-segment sum 97` divergence.
+        if nuc.base.eq_ignore_ascii_case(&nuc.germline) {
             continue;
         }
         events.push(SimulationEvent::BaseChanged {

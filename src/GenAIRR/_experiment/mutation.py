@@ -39,42 +39,27 @@ class _MutationMixin:
         - ``"uniform"`` — position-independent SHM. Each mutated
           position gets a uniformly drawn A/C/G/T replacement.
 
-        **``n_mutations`` counts substitution events, not visible
-        differences from the germline.** Some events leave no
-        evidence, and no mutation caller can recover those. Three
-        separate causes, which do not apply equally to the two
-        models:
+        **``count`` is attempts; ``n_mutations`` is what changed.**
+        A uniform replacement is drawn from A/C/G/T including the
+        base already present, so roughly a quarter of draws land
+        on it. Those are not counted: ``n_mutations`` reports the
+        substitutions that changed a base, so ``count=7`` with
+        ``model="uniform"`` typically reports five or six. No
+        single ``"s5f"`` write is ever a no-op -- that kernel does
+        not draw the base already present.
 
-        1. *The replacement base is not excluded.* ``"uniform"``
-           draws from A/C/G/T including the base already present, so
-           about a quarter of its events change nothing. ``"s5f"``
-           does not do this at all — 0 of 6,000 measured events.
-        2. *The event lands on an untemplated junction base.* An N or
-           P addition has no germline counterpart to differ from, so a
-           substitution there is unrecoverable whatever the model.
-           This is the whole of ``"s5f"``'s shortfall.
-        3. *Repeat hits on one position* can restore the germline
-           base, which only matters at higher counts.
-
-        Measured at ``count=1`` over 6,000 records (seed 101, human
-        IGH, counting positions whose final base differs from the
-        germline base recorded there):
-
-        ===========  =============  ============  ==========
-        model        unrecoverable  untemplated   identity
-        ===========  =============  ============  ==========
-        ``uniform``  28.7 %         3.0 %         25.7 %
-        ``s5f``      5.0 %          5.0 %         0.0 %
-        ===========  =============  ============  ==========
-
-        At ``count=20`` the totals rise to 29.2 % and 8.6 % as cause
-        3 begins to contribute.
-
-        If you are scoring a mutation caller, derive the expected
-        count from the sequence and its germline rather than from
-        ``n_mutations``, or the caller will be penalised for missing
-        substitutions that left no evidence. Note that switching from
-        ``"uniform"`` to ``"s5f"`` removes cause 1 but not cause 2.
+        **Score a mutation caller against ``n_observable_mutations``**,
+        the subset still visible in the sequence. It is below
+        ``n_mutations`` by three intended effects: a mutation on an
+        untemplated junction base (an N or P addition) changes a
+        base and is counted, but has no germline base to differ
+        from, so nothing can recover it (about 5% of records that
+        carry a mutation); two mutations can hit one position with
+        the later one restoring the germline base; and a position
+        lost to end loss or a deletion is no longer in the
+        molecule. It is attributable to hypermutation alone -- a
+        PCR misincorporation, a sequencing miscall or an ``N`` mask
+        moves no part of it.
 
         **Specify intensity with exactly one of ``rate`` or ``count``.**
 

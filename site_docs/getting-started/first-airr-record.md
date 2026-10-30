@@ -101,6 +101,7 @@ rec["v_identity"]        # 1.0  (matches / total over V's CIGAR M/D)
 rec["d_identity"]        # 1.0
 rec["j_identity"]        # 1.0
 rec["n_mutations"]       # 0  (global SHM count)
+rec["n_observable_mutations"]  # 0  (the subset a caller can recover)
 rec["n_v_mutations"]     # 0  (SHM partitioned by carried segment)
 rec["n_d_mutations"]     # 0
 rec["n_j_mutations"]     # 0
@@ -116,27 +117,26 @@ construction). PCR / quality / indel artefacts are reported on
 separate counters - they're library/sequencing-stage noise, not
 biological mutation.
 
-It counts substitution **events**, which is not the same as visible
-differences from the germline. Some events leave no evidence, and no
-mutation caller can recover those. Measured at one mutation per record
-over 6,000 records (seed 101, human IGH):
+It counts the substitutions that **changed a base**. A uniform
+replacement is drawn from A/C/G/T including the base already present,
+and those draws are not counted — so `mutate(model="uniform", count=7)`
+typically reports five or six, because `count` is the number of attempts.
+No single `model="s5f"` write is ever a no-op: that kernel does not draw
+the base already present.
 
-| model | leaves no evidence | on an untemplated base | drew the same base |
-|-------|-------------------|------------------------|--------------------|
-| `uniform` | 28.7% | 3.0% | 25.7% |
-| `s5f` | 5.0% | 5.0% | 0.0% |
+`n_observable_mutations` is the number a mutation caller can recover from
+`sequence`, and it is the field to score a caller against. It is below
+`n_mutations` by three intended effects: a mutation on an untemplated
+junction base (an N or P addition) changes a base and is counted, but has
+no germline base to differ from, so nothing can recover it — about 5% of
+records that carry a mutation; two mutations can hit one position with the
+later one restoring the germline base; and a position lost to end loss or
+a deletion is no longer in the molecule.
 
-The two causes are different. `uniform` draws from A/C/G/T without
-excluding the base already present, so about a quarter of its events
-change nothing; `s5f` never does this. What remains for both is an
-event landing on an N or P addition, which has no germline base to
-differ from — and that is the whole of `s5f`'s shortfall, so switching
-models removes one cause and not the other. At higher counts a third
-cause appears, as repeat hits on one position can restore the germline
-base: at 20 mutations per record the totals are 29.2% and 8.6%.
-
-When scoring a mutation caller, compare the sequence against its
-germline rather than against `n_mutations`.
+It is attributable to hypermutation alone. A PCR misincorporation, a
+sequencing miscall or an `N` mask also leaves a position differing from
+its germline, and none of them moves this count — those are reported on
+`n_pcr_errors` and `n_quality_errors`.
 
 ## Paired-end fields (when requested)
 

@@ -1824,3 +1824,99 @@ fn validator_accepts_clean_v_subregion_projection() {
         "engine-projected V-subregion partition must validate clean; got {issues:?}",
     );
 }
+
+/// A V-only outcome whose pool genuinely carries one substituted base, with
+/// an SHM event record attributing it. The subregion fixtures above
+/// synthesize the event without touching the pool, which is enough for
+/// counter routing but not for a recoverable count: nothing in their pool
+/// differs from its germline.
+fn observable_mutation_outcome_fixture() -> (RefDataConfig, Outcome) {
+    use crate::event::{EventRecord, StateSummary, TraceSpan};
+    use crate::ir::SimulationEvent;
+    use crate::trace::Trace;
+    let (cfg, template) = v_subregion_counter_outcome_fixture();
+    let sim = template.final_simulation().with_base_changed(
+        crate::ir::NucHandle::new(4),
+        b'G',
+    );
+    let event_record = EventRecord::pass_committed(
+        0,
+        crate::address::MUTATE_S5F,
+        Vec::new(),
+        TraceSpan::new(0, 0),
+        StateSummary::from_simulation(&sim),
+        StateSummary::from_simulation(&sim),
+        vec![SimulationEvent::BaseChanged {
+            handle: crate::ir::NucHandle::new(4),
+            old_base: b'C',
+            new_base: b'G',
+            segment: Segment::V,
+            germline_pos: Some(4),
+        }],
+    );
+    let outcome = Outcome {
+        revisions: vec![sim],
+        pass_names: vec![crate::address::MUTATE_S5F.to_string()],
+        trace: Trace::new(),
+        events: vec![event_record],
+    };
+    (cfg, outcome)
+}
+
+#[test]
+fn validator_flags_a_tampered_observable_mutation_count() {
+    use crate::airr_record::{build_airr_record, validate_airr_record, RecordValidationIssue};
+    let (cfg, outcome) = observable_mutation_outcome_fixture();
+    let mut rec = build_airr_record(&outcome, &cfg, "tampered-observable");
+    let truth = rec.n_observable_mutations;
+    assert!(
+        truth > 0,
+        "fixture must carry a recoverable mutation for this to mean anything"
+    );
+    let issues = validate_airr_record(&rec, &outcome, &cfg);
+    assert!(
+        !issues
+            .iter()
+            .any(|i| matches!(i, RecordValidationIssue::NObservableMutationsMismatch { .. })),
+        "engine-projected record must validate clean; got {issues:?}",
+    );
+    rec.n_observable_mutations = truth + 3;
+    let issues = validate_airr_record(&rec, &outcome, &cfg);
+    assert!(
+        issues.iter().any(|i| matches!(
+            i,
+            RecordValidationIssue::NObservableMutationsMismatch { reported, recomputed }
+                if *reported == truth + 3 && *recomputed == truth
+        )),
+        "validator should flag a tampered n_observable_mutations; got {issues:?}",
+    );
+}
+
+#[test]
+fn validator_flags_more_recoverable_mutations_than_counted() {
+    use crate::airr_record::{build_airr_record, validate_airr_record, RecordValidationIssue};
+    let (cfg, outcome) = observable_mutation_outcome_fixture();
+    let mut rec = build_airr_record(&outcome, &cfg, "impossible-observable");
+    // A caller cannot recover a substitution that was never counted. This is
+    // the cross-field invariant the field's documentation states, and the
+    // reason it is checked rather than assumed: the previous definition
+    // violated it on every corruption-bearing pipeline -- a contaminated
+    // record reported 288 recoverable against a burden of five -- and
+    // `validate_records` returned ok for all of them, because nothing looked.
+    rec.n_mutations = 0;
+    rec.n_v_mutations = 0;
+    rec.n_d_mutations = 0;
+    rec.n_j_mutations = 0;
+    rec.n_np_mutations = 0;
+    let issues = validate_airr_record(&rec, &outcome, &cfg);
+    assert!(
+        issues.iter().any(|i| matches!(
+            i,
+            RecordValidationIssue::ObservableMutationsExceedCount {
+                observable,
+                reported_total: 0,
+            } if *observable > 0
+        )),
+        "validator should flag recoverable > counted; got {issues:?}",
+    );
+}

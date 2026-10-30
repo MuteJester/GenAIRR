@@ -428,6 +428,7 @@ pub(crate) fn airr_record_to_pydict<'py>(
 
     // SHM + corruption
     dict.set_item("n_mutations", rec.n_mutations)?;
+    dict.set_item("n_observable_mutations", rec.n_observable_mutations)?;
     dict.set_item("mutation_rate", rec.mutation_rate)?;
     dict.set_item("n_pcr_errors", rec.n_pcr_errors)?;
     dict.set_item("n_quality_errors", rec.n_quality_errors)?;
@@ -691,6 +692,24 @@ fn issue_to_pydict<'py>(
             d.set_item("reported", reported)?;
             d.set_item("expected", sim_count)?;
             details.set_item("source", "sim.mutation_count")?;
+        }
+        RecordValidationIssue::NObservableMutationsMismatch {
+            reported,
+            recomputed,
+        } => {
+            d.set_item("kind", "NObservableMutationsMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", recomputed)?;
+            details.set_item("source", "mutate.* BaseChanged events resolved against the pool")?;
+        }
+        RecordValidationIssue::ObservableMutationsExceedCount {
+            observable,
+            reported_total,
+        } => {
+            d.set_item("kind", "ObservableMutationsExceedCount")?;
+            d.set_item("reported", observable)?;
+            d.set_item("expected", reported_total)?;
+            details.set_item("invariant", "n_observable_mutations <= n_mutations")?;
         }
         RecordValidationIssue::MutationRateMismatch {
             reported,

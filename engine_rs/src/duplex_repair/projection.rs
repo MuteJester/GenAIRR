@@ -809,6 +809,7 @@ pub(super) fn render_projection(
     // Repair is not SHM, PCR damage or a later polymerase indel.
     for field in [
         "n_mutations",
+        "n_observable_mutations",
         "n_pcr_errors",
         "n_quality_errors",
         "n_indels",

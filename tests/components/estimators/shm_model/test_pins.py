@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.support.oracles import provenance
+
 import GenAIRR as ga
 from tests.support import paths
 
@@ -134,16 +136,31 @@ def test_pin_scaffold_corruption_does_not_bump_n_mutations(build_fn) -> None:
 
 
 def test_pin_scaffold_uniform_mutate_bumps_n_mutations() -> None:
-    """Audit §2: uniform mutate with ``count=N`` produces
-    ``n_mutations == N`` for the realised count (constraint-
-    rejected sites in permissive mode don't double-count, but
-    without ``productive_only`` none are rejected)."""
+    """Audit §2: uniform mutate with ``count=N`` attempts N substitutions and
+    ``n_mutations`` reports how many of them changed a base.
+
+    This asserted ``== 7`` when the engine counted every write, including the
+    roughly one draw in four that lands on the base already present. Those
+    are no longer counted, so ``count=N`` is the number of attempts and
+    ``n_mutations`` is the number that did something -- which is the whole
+    point of the field. The relationship, not a constant, is pinned here:
+    at most N, and exactly the number of positions that differ from their
+    germline byte, since a single pass cannot hit one position twice.
+    """
+    count = 7
     exp = ga.Experiment.on("human_igh").recombine().mutate(
-        model="uniform", count=7
+        model="uniform", count=count
     )
-    result = exp.run_records(n=3, seed=0)
-    for r in result:
-        assert r["n_mutations"] == 7
+    outcomes = exp.run(n=3, seed=0)
+    assert outcomes, "the fixture produced no records"
+    for outcome in outcomes:
+        r = outcome.airr_record(exp.refdata)
+        simulation = outcome.final_simulation()
+        changed = provenance.changed_base_count(simulation)
+        assert r["n_mutations"] == changed, (
+            f"reports {r['n_mutations']} mutations with {changed} bases changed")
+        assert 0 < r["n_mutations"] <= count, (
+            f"{r['n_mutations']} is not a realised subset of {count} attempts")
 
 
 def test_pin_scaffold_s5f_mutate_bumps_n_mutations() -> None:

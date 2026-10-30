@@ -272,6 +272,7 @@ pub fn build_airr_record(
         .get(Segment::V)
         .and_then(|inst| refdata.v_pool.get(inst.allele_id))
         .map(|allele| allele.subregions.as_slice());
+    let mut shm_written: Vec<(u8, u16)> = Vec::new();
     for record in outcome.events() {
         if record.pass_name != address::MUTATE_UNIFORM && record.pass_name != address::MUTATE_S5F {
             continue;
@@ -280,11 +281,39 @@ pub fn build_airr_record(
             let SimulationEvent::BaseChanged {
                 segment,
                 germline_pos,
+                old_base,
+                new_base,
                 ..
             } = ev
             else {
                 continue;
             };
+            // A write whose drawn base equalled the base already there
+            // changed nothing, so it is not a mutation and must not reach
+            // these counters either. Skipping it here is what keeps the
+            // four fields a partition of `n_mutations`: the transaction
+            // subtracts the same writes from the total, and omitting this
+            // half broke the sum invariant the comment above asserts --
+            // caught by test_per_segment_counts_sum_to_the_total.
+            //
+            // Case-insensitive for the same reason as the transaction's
+            // check: a templated base is stored lowercase and an SHM write
+            // emits uppercase, so a byte comparison would see a change
+            // where a consumer comparing to the germline sees none.
+            if old_base.eq_ignore_ascii_case(new_base) {
+                continue;
+            }
+            // Remember which germline position this write landed on, for
+            // `n_observable_mutations` below. Keyed by segment and germline
+            // coordinate rather than by the event's `NucHandle`, because a
+            // handle is a pool index: a later insertion or deletion shifts
+            // every handle above it, so a handle recorded here does not point
+            // at the same nucleotide once an indel or end-loss pass has run.
+            // The (segment, germline position) pair survives all of them, and
+            // survives reverse-complementing too.
+            if let Some(pos) = germline_pos {
+                shm_written.push((*segment as u8, *pos));
+            }
             match segment {
                 Segment::V => {
                     n_v_mutations += 1;
@@ -318,6 +347,7 @@ pub fn build_airr_record(
             }
         }
     }
+    rec.n_observable_mutations = observable_mutations(sim, &mut shm_written);
     rec.n_v_mutations = n_v_mutations;
     rec.n_d_mutations = n_d_mutations;
     rec.n_j_mutations = n_j_mutations;
@@ -644,4 +674,77 @@ fn original_v_call_from_assignment(
         .get(Segment::V, original_id)
         .map(|a| a.name.clone())
         .unwrap_or_default()
+}
+
+/// Count the somatic-hypermutation substitutions a caller can recover from
+/// the finished molecule.
+///
+/// `shm_written` is every (segment, germline position) pair an SHM pass wrote
+/// a changed base at, in event order and with repeats. The count is the
+/// number of those positions that are still in the pool and still differ
+/// from the germline base recorded there.
+///
+/// Attribution is the whole point of taking the SHM event ledger as the
+/// input. Deriving this from the pool alone -- every templated position whose
+/// base differs from its germline -- counts the work of every pass that
+/// writes a base: a PCR misincorporation, a sequencing miscall, an N mask, a
+/// background contaminant. Measured on that definition, a pipeline with no
+/// mutation pass at all reported 111 recoverable mutations across 30 records,
+/// and a contaminated record reported 288 against a real burden of five. A
+/// caller scored against such a number is credited for calling library noise
+/// as hypermutation.
+///
+/// Four exclusions fall out of resolving the sites against the final pool
+/// rather than counting the writes:
+///
+/// - An untemplated junction base has no germline coordinate, so no write to
+///   one is ever collected.
+/// - Two mutations can hit one position, the later one restoring the germline
+///   base. The position is in `shm_written` twice and counts zero times.
+/// - A position lost to end loss or a deletion is not in the pool, so it is
+///   not recoverable and is not counted.
+/// - A position masked with `N`, on either side, carries no recoverable
+///   substitution: `N` is the absence of a call, not a base that differs.
+pub(crate) fn observable_mutations(sim: &crate::ir::Simulation, shm_written: &mut Vec<(u8, u16)>) -> i64 {
+    if shm_written.is_empty() {
+        return 0;
+    }
+    shm_written.sort_unstable();
+    shm_written.dedup();
+    // Each SHM site counts at most once even if two pool nucleotides were to
+    // carry the same (segment, germline position) key.
+    let mut counted = vec![false; shm_written.len()];
+    let mut total = 0i64;
+    for nuc in sim.pool.as_slice() {
+        let Some(pos) = nuc.germline_pos.get() else {
+            continue;
+        };
+        let Ok(slot) = shm_written.binary_search(&(nuc.segment as u8, pos)) else {
+            continue;
+        };
+        if counted[slot] {
+            continue;
+        }
+        if nuc.base.eq_ignore_ascii_case(&nuc.germline) {
+            continue;
+        }
+        if !is_canonical_base(nuc.base) || !is_canonical_base(nuc.germline) {
+            continue;
+        }
+        counted[slot] = true;
+        total += 1;
+    }
+    total
+}
+
+/// Whether `base` is one of A/C/G/T in either case.
+///
+/// Case is a channel here -- a templated base is stored lowercase and an SHM
+/// write emits uppercase -- so both cases are canonical. Anything else (`N`
+/// from an ambiguous base call, a gap marker) is the absence of a base call.
+fn is_canonical_base(base: u8) -> bool {
+    matches!(
+        base,
+        b'A' | b'C' | b'G' | b'T' | b'a' | b'c' | b'g' | b't'
+    )
 }
