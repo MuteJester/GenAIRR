@@ -14,6 +14,21 @@ from tests.biology.catalog import coverage_rows, verifies
 pytestmark = pytest.mark.pin
 
 
+def _gapless_mechanism():
+    """A mechanism with no declared truth gap and more than one verifiable
+    field, resolved rather than named.
+
+    These tests are about the status rules, not about any one mechanism, and
+    naming `junction.n_addition` broke three of them the day that mechanism
+    gained a truth_gap -- a gapped mechanism's statuses are deliberately
+    different, so the example has to be gapless to exercise the plain rules.
+    """
+    for mechanism in catalog.all_mechanisms():
+        if not mechanism.truth_gap and len(mechanism.verifiable_fields) > 1:
+            return mechanism
+    raise AssertionError("no gapless multi-field mechanism in the catalog")
+
+
 def test_verifies_records_the_mechanism_and_the_claim():
     @verifies("junction.n_addition", claim="np1 is exactly the untemplated bases",
               fields=("np1",), basis="provenance")
@@ -67,9 +82,10 @@ def test_coverage_reports_a_row_per_mechanism():
 
 
 def test_a_mechanism_with_no_test_is_unverified():
+    mechanism = _gapless_mechanism()
     rows = {r.mechanism_id: r for r in coverage_rows({})}
-    assert rows["junction.n_addition"].status == "unverified"
-    assert rows["junction.n_addition"].python_tests == ()
+    assert rows[mechanism.id].status == "unverified"
+    assert rows[mechanism.id].python_tests == ()
 
 
 def test_a_registered_test_counts_wherever_it_lives():
@@ -96,14 +112,14 @@ def test_one_test_against_many_fields_is_partial_not_verified():
 def test_covering_every_field_is_verified():
     """Verified needs both halves: every field reached, and each reached on a
     basis that establishes its value."""
-    mechanism = catalog.by_id("junction.n_addition")
+    mechanism = _gapless_mechanism()
     rows = {r.mechanism_id: r for r in coverage_rows(
-        {"junction.n_addition": ("test_x.py::test_y",)},
-        covered_by_mechanism={"junction.n_addition": mechanism.truth_fields},
-        basis_by_mechanism={"junction.n_addition":
+        {mechanism.id: ("test_x.py::test_y",)},
+        covered_by_mechanism={mechanism.id: mechanism.truth_fields},
+        basis_by_mechanism={mechanism.id:
                             {f: "provenance" for f in mechanism.truth_fields}})}
-    assert rows["junction.n_addition"].status == "verified"
-    assert rows["junction.n_addition"].uncovered_fields == ()
+    assert rows[mechanism.id].status == "verified"
+    assert rows[mechanism.id].uncovered_fields == ()
 
 
 def test_covering_every_field_weakly_is_consistent_not_verified():

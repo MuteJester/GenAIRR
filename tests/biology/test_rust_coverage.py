@@ -21,6 +21,21 @@ from tests.support import paths
 pytestmark = pytest.mark.pin
 
 
+def _gapless_mechanism():
+    """A mechanism with no declared truth gap and more than one verifiable
+    field, resolved rather than named.
+
+    These tests are about the status rules, not about any one mechanism, and
+    naming `junction.n_addition` broke three of them the day that mechanism
+    gained a truth_gap -- a gapped mechanism's statuses are deliberately
+    different, so the example has to be gapless to exercise the plain rules.
+    """
+    for mechanism in catalog.all_mechanisms():
+        if not mechanism.truth_gap and len(mechanism.verifiable_fields) > 1:
+            return mechanism
+    raise AssertionError("no gapless multi-field mechanism in the catalog")
+
+
 def test_every_recorded_rust_source_exists():
     """The anti-drift guard. If the Rust suite is reorganised, a stale record
     fails here instead of silently crediting coverage that has moved."""
@@ -90,11 +105,11 @@ def test_the_python_column_reports_only_what_registered():
 
 
 def test_a_python_registration_is_what_moves_a_status():
-    mechanism = catalog.by_id("junction.n_addition")
+    mechanism = _gapless_mechanism()
     rows = {r.mechanism_id: r for r in coverage_rows(
-        {"junction.n_addition": ("x::y",)},
+        {mechanism.id: ("x::y",)},
         rust_by_mechanism=rust_coverage(),
-        covered_by_mechanism={"junction.n_addition": mechanism.truth_fields},
-        basis_by_mechanism={"junction.n_addition":
+        covered_by_mechanism={mechanism.id: mechanism.truth_fields},
+        basis_by_mechanism={mechanism.id:
                             {f: "reference" for f in mechanism.truth_fields}})}
-    assert rows["junction.n_addition"].status == "verified"
+    assert rows[mechanism.id].status == "verified"

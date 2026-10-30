@@ -152,8 +152,24 @@ MECHANISMS = (
         id="junction.n_addition",
         stage="junction",
         summary="TdT-mediated untemplated nucleotide addition at the V-D and "
-                "D-J joins: bases with no germline origin at all.",
+                "D-J joins. The np fields report the INTERVAL between the "
+                "segment bounds, which is not the same thing: see truth_gap.",
         truth_fields=("np1", "np2", "np1_length", "np2_length", "np1_aa", "np2_aa"),
+        truth_gap="The TdT-added amount is not exported separately. np1 and np2 "
+                  "are the stretch of the molecule between the V and D (and D "
+                  "and J) alignment bounds -- that identity holds exactly, "
+                  "measured 100 of 100 records with and without an indel pass "
+                  "-- and that stretch contains the P nucleotides as well, "
+                  "which the documentation says. It also contains any "
+                  "polymerase insertion that lands between the segments: "
+                  "measured by running one seed with and without "
+                  "polymerase_indels, 24 of 200 records had an np length move "
+                  "by the insertion, np1 27 -> 28 and np2 2 -> 3 among them. So "
+                  "a consumer reading np1_length as the TdT contribution is "
+                  "wrong by the number of insertions that fell in the junction, "
+                  "and nothing in the record says by how much. The fields are "
+                  "right for what they promise; this mechanism's own claim is "
+                  "the part that cannot be established from them.",
         engine_passes=("GenerateNPPass",),
     ),
     Mechanism(

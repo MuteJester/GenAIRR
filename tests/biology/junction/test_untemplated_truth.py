@@ -80,3 +80,52 @@ def test_p_and_n_are_distinguishable_in_the_untemplated_runs():
             "recorded; the P/N channel does not agree with the P lengths")
         seen.update(r.kind for r in runs)
     assert {"P", "N"} & seen, f"no run was classified P or N: {seen}"
+
+
+@verifies("junction.n_addition",
+          claim="np1 and np2 are the stretch of the molecule between the "
+                "segment bounds -- np1 == sequence[v_sequence_end:"
+                "d_sequence_start], and its length -- which is what the "
+                "fields promise and what holds when a polymerase insertion "
+                "lands in the junction. What it does NOT establish is the "
+                "TdT-added amount, which the interval also contains P "
+                "nucleotides and any such insertion on top of; see the "
+                "mechanism's truth_gap",
+          fields=("np1", "np2", "np1_length", "np2_length"),
+          basis="consistent")
+@pytest.mark.parametrize("with_indels", [False, True], ids=["plain", "indels"])
+def test_np_fields_are_the_interval_between_the_segments(with_indels):
+    """The np fields' documented definition, checked on both sides of an indel
+    pass because that is where it diverges from the mechanism's own summary.
+
+    The run-splitting oracle cannot be used here: an inserted base carries no
+    germline coordinate, so it forms an untemplated run of its own and the
+    oracle reports a disagreement on 194 of 200 records whose np fields are
+    correct. This compares the fields against the sequence at the coordinates
+    the record itself publishes, which is why the basis is `consistent` -- two
+    exported views of one molecule. It is enough to catch an np field drifting
+    from its own interval, and deliberately not claimed as more.
+    """
+    exp = experiment_builder.recombined()
+    if with_indels:
+        exp = exp.polymerase_indels(count=(1, 3), insertion_prob=1.0)
+    checked = nonempty = 0
+    for index, outcome in enumerate(exp.run(n=100, seed=5)):
+        record = outcome.airr_record(exp.refdata)
+        sequence = record["sequence"]
+        for np_field, length_field, start, end in (
+                ("np1", "np1_length", "v_sequence_end", "d_sequence_start"),
+                ("np2", "np2_length", "d_sequence_end", "j_sequence_start")):
+            interval = sequence[record[start]:record[end]]
+            assert record[np_field].upper() == interval.upper(), (
+                f"record {index}: {np_field} is {record[np_field]!r} but the "
+                f"molecule between {start} and {end} is {interval!r}")
+            assert record[length_field] == len(record[np_field]), (
+                f"record {index}: {length_field} is {record[length_field]} for "
+                f"a {len(record[np_field])}-base {np_field}")
+            checked += 1
+            nonempty += bool(interval)
+    assert checked == 200, f"only {checked} intervals were compared"
+    assert nonempty > 100, (
+        f"only {nonempty} intervals carried any base; the identity is "
+        f"satisfied trivially by empty strings")

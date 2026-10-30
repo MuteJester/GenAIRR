@@ -251,6 +251,15 @@ def np_fields_disagreement(record, runs) -> str | None:
     the non-empty ones: records with ``np1_length == 0`` do occur, which is why
     this is not a positional comparison.
 
+    **Valid only where the NP regions are the only untemplated bases.** A
+    polymerase insertion carries no germline coordinate either, so it forms a
+    run of its own and this comparison reports a disagreement on a record
+    whose np fields are correct -- 194 of 200 on a pipeline with
+    ``polymerase_indels(insertion_prob=1.0)``. Those are false alarms, not
+    findings. The np fields are the interval between the segment bounds, which
+    ``test_np_fields_are_the_interval_between_the_segments`` checks directly
+    and which holds under insertions.
+
     Shared between the truth test and its mutant deliberately. A sensitivity
     test that reimplements the comparison it is testing proves only that two
     pieces of test code agree.
