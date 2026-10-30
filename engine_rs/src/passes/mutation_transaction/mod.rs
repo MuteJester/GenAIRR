@@ -66,6 +66,11 @@ pub(crate) struct MutationTransaction<'a, 'idx> {
     /// Bumped by [`Self::add_to_mutation_count`]; written to
     /// `sealed.mutation_count` at commit.
     pub(super) mutations_applied: u32,
+    /// Substitutions whose drawn base equalled the base already present.
+    /// Subtracted in `commit`: a replacement that changes nothing is not a
+    /// mutation, and counting it inflated `n_mutations` by roughly 26 points
+    /// under the uniform model.
+    pub(super) no_op_substitutions: u32,
     /// Input molecule length before this pass can change observation coverage.
     pub(super) input_pool_len: usize,
     /// Controls whether contract-filter exhaustion returns
@@ -106,6 +111,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             ctx,
             pass_name: pass_name.to_string(),
             mutations_applied: 0,
+            no_op_substitutions: 0,
             input_pool_len: sim.pool.len(),
             strict,
         }
@@ -175,7 +181,9 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
     }
 
     /// Record that `n` mutations applied during this pass should
-    /// count toward AIRR `n_mutations`. Used by SHM passes (S5F,
+    /// count toward AIRR `n_mutations`. Substitutions that drew the
+    /// base already present are subtracted in `commit`, so a pass
+    /// may pass its full written count here. Used by SHM passes (S5F,
     /// uniform). PCR / quality / N-corrupt / contaminant do NOT
     /// call this — they're sequencing artifacts, not biological
     /// mutations.
@@ -203,9 +211,17 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             mut builder,
             ctx,
             mutations_applied,
+            no_op_substitutions,
             input_pool_len,
             ..
         } = self;
+
+        // Realized-and-visible semantics: a substitution that drew the base
+        // already present wrote a byte but changed nothing, so it is not a
+        // mutation. The draw itself is untouched -- same RNG consumption,
+        // same recorded trace, same sequence -- which is why this does not
+        // change any simulated output, only the count of it.
+        let mutations_applied = mutations_applied.saturating_sub(no_op_substitutions);
 
         // Drain the in-flight event log (if attached at open time)
         // *before* sealing, since `seal*` consume the builder. The

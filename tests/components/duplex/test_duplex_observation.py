@@ -111,8 +111,11 @@ def test_mutation_burden_uses_stage_molecule_not_later_short_read():
     child = continue_with(r, child, "push_corrupt_3prime_loss", [(6, 1.0)])
     p = project_duplex_simulation(child, r)
     rec = p["record"]
-    assert rec["n_mutations"] == 3
-    assert rec["mutation_rate"] == pytest.approx(3 / 15)
+    # The subject is the denominator -- the stage molecule (15), not the
+    # 9-base read left after the 3' loss. Stated against the record's own
+    # count, since `count=3` is three attempts.
+    assert 0 < rec["n_mutations"] <= 3
+    assert rec["mutation_rate"] == pytest.approx(rec["n_mutations"] / 15)
     assert rec["sequence_length"] == 9
     assert rec["end_loss_3_length"] == 6
     assert rec["n_indels"] == 0

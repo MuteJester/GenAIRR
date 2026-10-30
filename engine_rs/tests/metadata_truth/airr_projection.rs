@@ -430,8 +430,11 @@ fn n_mutations_reflects_live_call_state_mutation_count() {
 
     let live_count = outcome.final_simulation().mutation_count as i64;
 
+    // The subject: the projected field equals the live simulation's count.
     assert_eq!(rec.n_mutations, live_count);
-    assert_eq!(rec.n_mutations, 4);
+    // `count=4` is four attempts; a uniform draw landing on the base already
+    // there is no longer counted, so the realised total is at most four.
+    assert!(rec.n_mutations <= 4, "{} exceeds 4 attempts", rec.n_mutations);
 }
 
 #[test]

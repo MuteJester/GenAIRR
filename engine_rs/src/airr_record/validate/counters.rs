@@ -37,7 +37,16 @@ pub(super) fn check_counters(
         let applied = event
             .simulation_events
             .iter()
-            .filter(|event| matches!(event, SimulationEvent::BaseChanged { .. }))
+            .filter(|event| match event {
+                // Same rule as the builder: a write whose drawn base equalled
+                // the base already there changed nothing and is not a
+                // mutation. Counting it here while the builder subtracted it
+                // made this validator disagree with the record it validates.
+                SimulationEvent::BaseChanged { old_base, new_base, .. } => {
+                    !old_base.eq_ignore_ascii_case(new_base)
+                }
+                _ => false,
+            })
             .count();
         // Lineage outputs carry a synthesized net-difference summary with
         // no sampled count choice. It replaces ancestral event history rather
@@ -156,11 +165,18 @@ pub(super) fn check_counters(
             let SimulationEvent::BaseChanged {
                 segment,
                 germline_pos,
+                old_base,
+                new_base,
                 ..
             } = ev
             else {
                 continue;
             };
+            // See above: no-op writes are not mutations, in the record and
+            // therefore in what validates it.
+            if old_base.eq_ignore_ascii_case(new_base) {
+                continue;
+            }
             shm_by_segment[*segment as usize] += 1;
             if *segment == Segment::V {
                 let label = v_subregions_for_validate.and_then(|subs| {

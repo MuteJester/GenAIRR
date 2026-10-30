@@ -60,6 +60,27 @@ All notable changes to GenAIRR are documented here.
 
 ### Fixed
 
+- `n_mutations` and the per-segment mutation counters now count only
+  substitutions that changed a base. A uniform replacement is drawn from
+  A/C/G/T including the base already present, and those draws were counted, so
+  `mutate(model="uniform", count=7)` reported 7 where roughly a quarter of the
+  draws had changed nothing — about 26 points of inflation. `model="s5f"` never
+  draws the identity base and is unaffected. **`count=N` is the number of
+  substitution attempts; `n_mutations` is how many of them changed something,
+  so for the uniform model it is now usually below `N`.** `mutation_rate`,
+  `mutations_from_parent` and the per-segment and per-subregion counters follow.
+
+  The draw itself is untouched: the RNG consumption, the recorded trace and
+  every simulated sequence are byte-for-byte as before, and all committed
+  goldens are unchanged. Traces from earlier versions replay identically.
+
+  One gap remains and is intended: a mutation landing on an untemplated
+  junction base changes a base and is counted, but has no germline base to
+  differ from, so no mutation caller can recover it — about 4% of
+  single-mutation records for either model. The duplex edit ledger and the
+  per-pass event stream still record every write, including the no-ops, because
+  they are physical records of what the engine did rather than counters.
+
 - The junction of a simulated record now runs from the first surviving base of
   the V Cys codon to the last surviving base of the J Trp/Phe codon, read from
   each base's recorded germline position. Exonuclease trimming eats these codons

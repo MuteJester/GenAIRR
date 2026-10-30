@@ -44,7 +44,12 @@ def test_fixed_forks_keep_founder_evidence_and_independent_current_maps(strict):
             assert duplex["product"] == founder["product"]
             assert duplex["evidence"] == founder["evidence"]
             assert duplex["selection"] == founder["selection"]
-            assert record["n_mutations"] == 2
+            # Mutation runs AFTER the fork here, so each descendant draws
+            # its own two attempts and they legitimately differ -- which is
+            # also why the sequences below differ. A uniform draw landing on
+            # the base already there is not counted, so on this 15-base
+            # molecule the realised count is anywhere from zero to two.
+            assert record["n_mutations"] <= 2
             assert record["end_loss_5_length"] == 1
             assert duplex["current_paths"]["v"]["reference_start"] == 1
         assert len({r["sequence"] for r in descendants}) > 1

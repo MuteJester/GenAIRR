@@ -464,7 +464,16 @@ mod tests {
             assert!(trace.find(&format!("mutate.uniform.site[{}]", i)).is_some());
             assert!(trace.find(&format!("mutate.uniform.base[{}]", i)).is_some());
         }
-        assert_eq!(final_sim.mutation_count, 3);
+        // The subject of this test is the RNG consumption and trace SHAPE,
+        // which the three recorded site/base pairs above establish and which
+        // this change does not touch. The count is a different statement:
+        // `count=3` is three attempts and a draw landing on the base already
+        // there is no longer counted, so the realised total is at most three.
+        assert!(
+            final_sim.mutation_count <= 3,
+            "{} exceeds 3 attempts",
+            final_sim.mutation_count
+        );
     }
 
     #[test]

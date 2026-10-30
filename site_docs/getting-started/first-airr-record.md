@@ -116,27 +116,22 @@ construction). PCR / quality / indel artefacts are reported on
 separate counters - they're library/sequencing-stage noise, not
 biological mutation.
 
-It counts substitution **events**, which is not the same as visible
-differences from the germline. Some events leave no evidence, and no
-mutation caller can recover those. Measured at one mutation per record
-over 6,000 records (seed 101, human IGH):
+It counts the substitutions that **changed a base**. A uniform
+replacement is drawn from A/C/G/T including the base already present,
+and those draws are not counted — so `mutate(model="uniform", count=7)`
+typically reports five or six, because `count` is the number of attempts.
+`model="s5f"` never draws the identity base, so for it the two coincide.
 
-| model | leaves no evidence | on an untemplated base | drew the same base |
-|-------|-------------------|------------------------|--------------------|
-| `uniform` | 28.7% | 3.0% | 25.7% |
-| `s5f` | 5.0% | 5.0% | 0.0% |
+One gap remains and is intended: a mutation landing on an untemplated
+junction base (an N or P addition) changes a base and is counted, but has
+no germline base to differ from, so no caller can recover it from the
+sequence. That is about 4% of single-mutation records for either model.
+At higher counts, two mutations can hit one position and the later one
+restore the germline base, so the count exceeds what is visible by the
+number of such repeats.
 
-The two causes are different. `uniform` draws from A/C/G/T without
-excluding the base already present, so about a quarter of its events
-change nothing; `s5f` never does this. What remains for both is an
-event landing on an N or P addition, which has no germline base to
-differ from — and that is the whole of `s5f`'s shortfall, so switching
-models removes one cause and not the other. At higher counts a third
-cause appears, as repeat hits on one position can restore the germline
-base: at 20 mutations per record the totals are 29.2% and 8.6%.
-
-When scoring a mutation caller, compare the sequence against its
-germline rather than against `n_mutations`.
+When scoring a mutation caller, compare the sequence against its germline
+rather than against `n_mutations`.
 
 ## Paired-end fields (when requested)
 

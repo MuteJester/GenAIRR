@@ -71,10 +71,22 @@ fn duplex_divisions_preserve_shared_founder_and_independent_actual_event_history
             sim.mutation_count - sims[parent].mutation_count,
             node.mutations_from_parent
         );
+        // The ledger is a physical-ancestry record and holds every write,
+        // including one whose drawn base equalled the base already there.
+        // `mutation_count` holds the writes that CHANGED something, so the
+        // two agree only once the no-op entries are filtered out -- 7 ledger
+        // substitutions against a count of 6 on this family otherwise. The
+        // ledger is deliberately not redefined to match the counter: it
+        // records what happened to the molecule, which is its job.
         assert_eq!(
             p.edits
                 .iter()
-                .filter(|e| matches!(e.action, DuplexEditAction::Substitution { .. }))
+                .filter(|e| match e.action {
+                    DuplexEditAction::Substitution {
+                        old_base, new_base, ..
+                    } => !old_base.eq_ignore_ascii_case(&new_base),
+                    _ => false,
+                })
                 .count(),
             sim.mutation_count as usize
         );
@@ -92,10 +104,21 @@ fn duplex_divisions_preserve_shared_founder_and_independent_actual_event_history
         let edge = edges[node.id as usize].as_ref().unwrap();
         assert_eq!(edge.revisions.len(), 2);
         assert_eq!(edge.pass_names, ["mutate.s5f"]);
+        // Every write fires a BaseChanged event, including one whose drawn
+        // base equalled the base already there. `mutations_from_parent` is a
+        // difference of mutation counts, which exclude those, so the event
+        // stream is filtered to the writes that changed something -- 7 events
+        // against 6 mutations on this family otherwise. The event stream is
+        // deliberately not narrowed: it records what the pass did.
         let actual = edge.events[0]
             .simulation_events
             .iter()
-            .filter(|e| matches!(e, crate::ir::SimulationEvent::BaseChanged { .. }))
+            .filter(|e| match e {
+                crate::ir::SimulationEvent::BaseChanged {
+                    old_base, new_base, ..
+                } => !old_base.eq_ignore_ascii_case(new_base),
+                _ => false,
+            })
             .count();
         assert_eq!(actual, node.mutations_from_parent as usize);
     }

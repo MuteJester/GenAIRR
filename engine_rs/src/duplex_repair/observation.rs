@@ -450,7 +450,22 @@ fn project_counters(
     for edit in &p.edits {
         let pass = edit.source_pass.as_deref();
         match &edit.action {
-            DuplexEditAction::Substitution { segment, .. } => match pass {
+            DuplexEditAction::Substitution {
+                segment,
+                old_base,
+                new_base,
+                ..
+            } => match pass {
+                // A write whose drawn base equalled the base already there is
+                // in the ledger -- it is a physical record of every write --
+                // but it changed nothing and is not a mutation, so it must
+                // not reach these counters. Leaving it in put the per-segment
+                // sum one above `n_mutations` in the same projected record:
+                // 7 against 6 on a grown duplex family. Case-insensitive, as
+                // everywhere: a templated base is stored lowercase and an SHM
+                // write emits uppercase.
+                Some("mutate.uniform" | "mutate.s5f")
+                    if old_base.eq_ignore_ascii_case(new_base) => {}
                 Some("mutate.uniform" | "mutate.s5f") => {
                     let s = match segment.as_str() {
                         "V" => "v",

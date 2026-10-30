@@ -280,11 +280,28 @@ pub fn build_airr_record(
             let SimulationEvent::BaseChanged {
                 segment,
                 germline_pos,
+                old_base,
+                new_base,
                 ..
             } = ev
             else {
                 continue;
             };
+            // A write whose drawn base equalled the base already there
+            // changed nothing, so it is not a mutation and must not reach
+            // these counters either. Skipping it here is what keeps the
+            // four fields a partition of `n_mutations`: the transaction
+            // subtracts the same writes from the total, and omitting this
+            // half broke the sum invariant the comment above asserts --
+            // caught by test_per_segment_counts_sum_to_the_total.
+            //
+            // Case-insensitive for the same reason as the transaction's
+            // check: a templated base is stored lowercase and an SHM write
+            // emits uppercase, so a byte comparison would see a change
+            // where a consumer comparing to the germline sees none.
+            if old_base.eq_ignore_ascii_case(new_base) {
+                continue;
+            }
             match segment {
                 Segment::V => {
                     n_v_mutations += 1;
