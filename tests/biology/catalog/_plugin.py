@@ -4,12 +4,16 @@ from __future__ import annotations
 from ._registry import coverage_rows
 
 #: Registrations seen at collection, before any test has run.
-_COLLECTED: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+_COLLECTED: dict[str, list[tuple[str, tuple[str, ...], str]]] = {}
 #: Node ids the run observed PASS. A mechanism cannot be verified by a test
 #: the same run watched fail, so credit is withheld until the outcome is known.
 _PASSED: set[str] = set()
 _REGISTRATIONS: dict[str, list[str]] = {}
 _COVERED: dict[str, set[str]] = {}
+#: mechanism id -> {truth field: the strongest basis covering it}. Separate
+#: from _COVERED because "which fields were checked" and "how well" are
+#: different questions and the report answers both.
+_BASIS_BY_FIELD: dict[str, dict[str, str]] = {}
 
 
 def pytest_addoption(parser):
@@ -33,12 +37,19 @@ def pytest_collection_modifyitems(items):
     _PASSED.clear()
     _REGISTRATIONS.clear()
     _COVERED.clear()
+    _BASIS_BY_FIELD.clear()
     for item in items:
         registration = getattr(getattr(item, "function", None), "genairr_verifies", None)
         if not registration or not _establishes_its_claim(item):
             continue
-        mechanism_id, _claim, fields = registration
-        _COLLECTED.setdefault(mechanism_id, []).append((item.nodeid, tuple(fields)))
+        mechanism_id, _claim, fields, basis = registration
+        _COLLECTED.setdefault(mechanism_id, []).append(
+            (item.nodeid, tuple(fields), basis))
+
+
+def _basis_rank(basis: str) -> int:
+    from ._registry import VERIFICATION_BASES
+    return VERIFICATION_BASES.index(basis)
 
 
 def pytest_runtest_logreport(report):
@@ -57,12 +68,22 @@ def _resolve() -> None:
     """Fold the passing registrations into the reported coverage."""
     _REGISTRATIONS.clear()
     _COVERED.clear()
+    _BASIS_BY_FIELD.clear()
     for mechanism_id, entries in _COLLECTED.items():
-        for node_id, fields in entries:
+        for node_id, fields, basis in entries:
             if node_id not in _PASSED:
                 continue
             _REGISTRATIONS.setdefault(mechanism_id, []).append(node_id)
             _COVERED.setdefault(mechanism_id, set()).update(fields)
+            # Per field, the strongest basis any passing registration brings.
+            # A field checked once against the reference and once by a
+            # presence guard is established by the former; recording the
+            # weakest would report a mechanism worse than it is.
+            strengths = _BASIS_BY_FIELD.setdefault(mechanism_id, {})
+            for field in fields:
+                current = strengths.get(field)
+                if current is None or _basis_rank(basis) < _basis_rank(current):
+                    strengths[field] = basis
 
 
 def _merge(registrations: dict, covered: dict) -> None:
@@ -111,8 +132,10 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     # credit is shown in its own column and cannot move a status.
     rows = coverage_rows({k: tuple(v) for k, v in _REGISTRATIONS.items()},
                          rust_by_mechanism=rust_coverage(),
-                         covered_by_mechanism={k: tuple(v) for k, v in _COVERED.items()})
-    colour = {"verified": {"green": True}, "gap-limited": {"yellow": True},
+                         covered_by_mechanism={k: tuple(v) for k, v in _COVERED.items()},
+                         basis_by_mechanism=_BASIS_BY_FIELD)
+    colour = {"verified": {"green": True}, "consistent": {"cyan": True},
+              "gap-limited": {"yellow": True},
               "partial": {"yellow": True}, "unverified": {"red": True},
               "no-truth-exported": {"purple": True}}
     tw.section("biology coverage", "=")
@@ -139,18 +162,29 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         tw.write(f"py:{len(row.python_tests)}".ljust(7))
         tw.line(f" {asserted}{gap}")
     counts = {s: sum(1 for r in rows if r.status == s)
-              for s in ("verified", "gap-limited", "partial", "unverified",
-                        "no-truth-exported")}
+              for s in ("verified", "consistent", "gap-limited", "partial",
+                        "unverified", "no-truth-exported")}
     tw.line("")
     tw.line(
-        f"  {counts['verified']} verified, {counts['gap-limited']} gap-limited, "
-        f"{counts['partial']} partial, {counts['unverified']} unverified, "
+        f"  {counts['verified']} verified, {counts['consistent']} consistent, "
+        f"{counts['gap-limited']} gap-limited, {counts['partial']} partial, "
+        f"{counts['unverified']} unverified, "
         f"{counts['no-truth-exported']} with no truth exported, "
         f"of {len(rows)} mechanisms")
     tw.line("")
     tw.line("  Status comes from registered Python tests only.", bold=True)
-    tw.line("  gap-limited means every exported field is covered and some of what the")
-    tw.line("  mechanism means is still not exported, so it is not the same as verified.")
+    tw.line("  verified means every exported field is covered by a test that can")
+    tw.line("  establish its VALUE: against the reference data, against an independent")
+    tw.line("  oracle over the recorded provenance, or against a second run of the")
+    tw.line("  library. Each registration declares which.")
+    tw.line("  consistent means every field is covered and at least one only by a")
+    tw.line("  comparison between two exported views of the same number, or by an")
+    tw.line("  assertion a wrong value would also satisfy. The fields are reached; what")
+    tw.line("  is missing is a basis for believing them. Two mechanisms sat green under")
+    tw.line("  the old rule while their counters were measurably wrong.")
+    tw.line("  gap-limited means every exported field is covered on a strong basis and")
+    tw.line("  some of what the mechanism means is still not exported, so it is not the")
+    tw.line("  same as verified.")
     tw.line("  no-truth-exported means the mechanism's truth is not in the record at")
     tw.line("  all, so no test could establish it. Writing a test does not fix those;")
     tw.line("  exporting the truth does. See each mechanism's truth_gap.")

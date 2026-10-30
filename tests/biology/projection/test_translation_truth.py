@@ -82,7 +82,8 @@ def test_the_codon_table_is_complete_before_anything_relies_on_it():
                 "coding phase is 0 on all 464 packaged V alleles and "
                 "v_sequence_start is 0 on every record, so this exercises one "
                 "term of three, driven to all three of its residues",
-          fields=("sequence_aa",))
+          fields=("sequence_aa",),
+          basis="reference")
 @pytest.mark.parametrize("stack", sorted(STACKS))
 @pytest.mark.parametrize("locus", LOCI)
 def test_sequence_aa_is_the_translation_in_the_derived_frame(locus, stack):

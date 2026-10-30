@@ -19,7 +19,8 @@ pytestmark = pytest.mark.behavior
 @verifies("assay.pcr_error",
           claim="amplification error is counted in n_pcr_errors and not folded "
                 "into the somatic mutation count",
-          fields=("n_pcr_errors",))
+          fields=("n_pcr_errors",),
+          basis="exercised")
 def test_pcr_error_is_counted_separately_from_hypermutation():
     exp = experiment_builder.recombined().pcr_amplify(count=3)
     seen = 0
@@ -35,7 +36,8 @@ def test_pcr_error_is_counted_separately_from_hypermutation():
 @verifies("assay.quality_error",
           claim="base-calling error is counted in n_quality_errors, separately "
                 "from both amplification error and somatic mutation",
-          fields=("n_quality_errors",))
+          fields=("n_quality_errors",),
+          basis="exercised")
 def test_quality_error_is_counted_separately():
     exp = experiment_builder.recombined().sequencing_errors(count=3)
     seen = 0
@@ -50,7 +52,8 @@ def test_quality_error_is_counted_separately():
           claim="an uncalled position appears as N and is not counted as a "
                 "mutation -- the claim the mechanism's truth_gap says has no "
                 "field of its own to carry it",
-          fields=("sequence",))
+          fields=("sequence",),
+          basis="exercised")
 def test_ambiguous_positions_are_not_counted_as_mutations():
     """The mechanism declares a truth gap because no N-count field exists. The
     claim can still be established against the sequence itself."""
@@ -72,7 +75,8 @@ def test_ambiguous_positions_are_not_counted_as_mutations():
                 "When True the recorded sequence is the reverse complement of "
                 "the sequence the same seed produces unflipped, so the flag "
                 "names a real transformation rather than being set",
-          fields=("rev_comp",))
+          fields=("rev_comp",),
+          basis="cross-run")
 def test_orientation_is_recorded_and_discriminates():
     """AIRR puts positions with respect to the reverse complement of `sequence`
     when rev_comp is true, so the flag is what makes every coordinate in the
@@ -109,7 +113,8 @@ def test_orientation_is_recorded_and_discriminates():
                 "is contaminated, and both occur in a mixed run. Which read "
                 "carries the flag in a mixed run is not established here -- the "
                 "body reads the boolean, not the read's provenance",
-          fields=("is_contaminant",))
+          fields=("is_contaminant",),
+          basis="exercised")
 def test_contamination_is_flagged_and_discriminates():
     """Both sides, for the same reason as orientation above: at prob=1.0 alone,
     a field hardcoded to True passes."""
@@ -142,7 +147,8 @@ def test_contamination_is_flagged_and_discriminates():
                 "reconstructing the fragment from R1 and R2 is scored against "
                 "coordinates that hold",
           fields=("r1_sequence", "r1_start", "r1_end", "r2_sequence",
-                  "r2_start", "r2_end", "insert_size"))
+                  "r2_start", "r2_end", "insert_size"),
+          basis="consistent")
 def test_each_read_is_the_stretch_its_offsets_claim():
     """Fields are read by name rather than through an f-string, so a static
     check can confirm the claim matches what the body actually inspects.
@@ -192,7 +198,8 @@ def test_each_read_is_the_stretch_its_offsets_claim():
           claim="5' end loss is recorded in its own field, so sequence missing "
                 "because the read did not reach it is distinguishable from "
                 "germline trimming",
-          fields=("end_loss_5_length",))
+          fields=("end_loss_5_length",),
+          basis="exercised")
 def test_end_loss_is_recorded_separately_from_trimming():
     exp = experiment_builder.recombined().end_loss_5prime(length=12)
     lost = 0
@@ -260,7 +267,8 @@ def _assert_counts_realized_not_drawn(field, changed, reported, *, draws):
                 "base, not the number of error draws. A replacement is drawn "
                 "from A/C/G/T including the base already present, so a draw "
                 "landing on it writes a byte and introduces no error",
-          fields=("n_pcr_errors",))
+          fields=("n_pcr_errors",),
+          basis="cross-run")
 def test_pcr_error_counter_counts_realized_errors_not_draws():
     """The same defect `n_mutations` carried: a counter read off the drawn
     count reports work that did not happen, and a tool scored against it
@@ -281,7 +289,8 @@ def test_pcr_error_counter_counts_realized_errors_not_draws():
                 "a base, not the number of error draws. It is populated by "
                 "sequencing_errors(); ambiguous_base_calls() masks positions "
                 "with N and reports on neither error counter",
-          fields=("n_quality_errors",))
+          fields=("n_quality_errors",),
+          basis="cross-run")
 def test_quality_error_counter_counts_realized_errors_not_draws():
     """Same claim for the base-calling counter, which shares the write path
     and shared the defect."""

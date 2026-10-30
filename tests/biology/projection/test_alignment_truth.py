@@ -113,7 +113,8 @@ def _alignment_fields_present(record):
                 "consistently across all of them is accepted. Establishing "
                 "placement needs an identity against the engine's per-base "
                 "provenance, which does not exist yet",
-          fields=("v_cigar", "d_cigar", "j_cigar"))
+          fields=("v_cigar", "d_cigar", "j_cigar"),
+          basis="reference")
 @pytest.mark.parametrize("stack", sorted(STACKS))
 @pytest.mark.parametrize("locus", LOCI)
 def test_every_cigar_describes_the_span_it_claims_against_the_reference(locus, stack):
@@ -160,7 +161,8 @@ def test_every_cigar_describes_the_span_it_claims_against_the_reference(locus, s
                 "boundaries become d_alignment_start/end, so the span it "
                 "covers and the span it is compared against are one number",
           fields=("sequence_alignment", "germline_alignment",
-                  "germline_alignment_d_mask"))
+                  "germline_alignment_d_mask"),
+          basis="reference")
 @pytest.mark.parametrize("stack", sorted(STACKS))
 @pytest.mark.parametrize("locus", LOCI)
 def test_the_alignment_strings_reduce_to_the_read_and_the_reference(locus, stack):

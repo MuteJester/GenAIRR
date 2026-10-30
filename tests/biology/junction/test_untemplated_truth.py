@@ -13,7 +13,8 @@ pytestmark = pytest.mark.behavior
 @verifies("junction.n_addition",
           claim="np1 and np2 are exactly the bases carrying no germline coordinate, "
                 "in order, and their recorded lengths match",
-          fields=("np1", "np2", "np1_length", "np2_length"))
+          fields=("np1", "np2", "np1_length", "np2_length"),
+          basis="provenance")
 def test_np_fields_are_the_bases_with_no_germline_coordinate():
     """A zero-length NP region contributes no run, so the comparison is against
     the non-empty ones. Records with np1_length == 0 do occur and are the reason
@@ -33,7 +34,8 @@ def test_np_fields_are_the_bases_with_no_germline_coordinate():
           claim="the V 3' P nucleotides are the reverse complement of the V's "
                 "own post-trim tip, and their recorded length matches the bases "
                 "present",
-          fields=("p_v_3_length",))
+          fields=("p_v_3_length",),
+          basis="provenance")
 def test_p_nucleotides_are_palindromes_of_the_segment_tip():
     """P is templated -- by the segment's own end, reversed and complemented.
 
@@ -62,7 +64,8 @@ def test_p_nucleotides_are_palindromes_of_the_segment_tip():
 @verifies("junction.p_nucleotide",
           claim="P and N are distinguishable in the output, so a consumer can tell "
                 "templated palindromic bases from untemplated ones",
-          fields=("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length"))
+          fields=("p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length"),
+          basis="consistent")
 def test_p_and_n_are_distinguishable_in_the_untemplated_runs():
     exp = experiment_builder.with_p_nucleotides()
     seen = set()

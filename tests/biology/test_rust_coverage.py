@@ -94,5 +94,7 @@ def test_a_python_registration_is_what_moves_a_status():
     rows = {r.mechanism_id: r for r in coverage_rows(
         {"junction.n_addition": ("x::y",)},
         rust_by_mechanism=rust_coverage(),
-        covered_by_mechanism={"junction.n_addition": mechanism.truth_fields})}
+        covered_by_mechanism={"junction.n_addition": mechanism.truth_fields},
+        basis_by_mechanism={"junction.n_addition":
+                            {f: "reference" for f in mechanism.truth_fields}})}
     assert rows["junction.n_addition"].status == "verified"

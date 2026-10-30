@@ -361,6 +361,11 @@ def _has_non_establishing_marker(node) -> bool:
     return False
 
 
+def _rank(basis: str) -> int:
+    from tests.biology.catalog._registry import VERIFICATION_BASES
+    return VERIFICATION_BASES.index(basis)
+
+
 def _declared_registrations():
     """Every ``@verifies`` in the suite, read from the source.
 
@@ -376,6 +381,7 @@ def _declared_registrations():
     from tests.support import paths
 
     tests, covered = defaultdict(list), defaultdict(set)
+    bases = defaultdict(dict)
     for module in sorted(paths.tests_root().rglob("test_*.py")):
         if "__pycache__" in module.parts:
             continue
@@ -403,10 +409,22 @@ def _declared_registrations():
                 mechanism_id = ast.literal_eval(decorator.args[0])
                 fields = next((ast.literal_eval(k.value) for k in decorator.keywords
                                if k.arg == "fields"), ())
+                basis = next((ast.literal_eval(k.value) for k in decorator.keywords
+                              if k.arg == "basis"), None)
+                assert basis is not None, (
+                    f"{module.name}::{node.name} declares no basis; the kwarg "
+                    "is required, so this means the scan is reading a call "
+                    "shape it does not understand")
                 tests[mechanism_id].append(f"{module.name}::{node.name}")
                 covered[mechanism_id].update(fields)
+                strengths = bases[mechanism_id]
+                for one in fields:
+                    current = strengths.get(one)
+                    if current is None or _rank(basis) < _rank(current):
+                        strengths[one] = basis
     return ({k: tuple(v) for k, v in tests.items()},
-            {k: tuple(v) for k, v in covered.items()})
+            {k: tuple(v) for k, v in covered.items()},
+            {k: dict(v) for k, v in bases.items()})
 
 
 def test_the_coverage_report_numbers_are_pinned():
@@ -416,15 +434,25 @@ def test_the_coverage_report_numbers_are_pinned():
     mechanism's truth_fields, and the suite stays green while the report says
     something weaker. Both are legitimate changes -- so this is a pin, not a
     floor, and moving it is how you record that the number moved on purpose.
+
+    It last moved when registrations began declaring HOW they establish their
+    claim. The distribution was 16 verified, 1 gap-limited, 2 partial, 9
+    unverified, 3 no-truth. Six of those sixteen were reached only by
+    comparisons between two exported views of the same number, or by
+    assertions a wrong value would also satisfy, and are now reported
+    ``consistent``; the previously gap-limited row joined them for the same
+    reason. Nothing about the engine changed when this number fell -- what
+    changed is that the report stopped counting the weaker basis as proof.
     """
-    tests, covered = _declared_registrations()
-    rows = catalog.coverage_rows(tests, covered_by_mechanism=covered)
+    tests, covered, bases = _declared_registrations()
+    rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
+                                 basis_by_mechanism=bases)
     counts = {status: sum(1 for r in rows if r.status == status)
               for r in rows for status in [r.status]}
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
     assert counts == {
-        "verified": 16,
-        "gap-limited": 1,
+        "verified": 11,
+        "consistent": 6,
         "partial": 2,
         "unverified": 9,
         "no-truth-exported": 3,
@@ -438,7 +466,7 @@ def test_the_coverage_report_numbers_are_pinned():
 def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():
     """The pin above is computed from the source, so it would survive every
     registered test being deleted from the run. This ties it to reality."""
-    tests, _ = _declared_registrations()
+    tests, _, _ = _declared_registrations()
     found = sum(len(v) for v in tests.values())
     assert found >= 20, (
         f"only {found} registrations found; the scan is not reading the suite. "
@@ -479,7 +507,7 @@ def test_registrations_live_outside_the_biology_directory():
     """
     from tests.support import paths
 
-    tests, _ = _declared_registrations()
+    tests, _, _ = _declared_registrations()
     outside = {module for module in
                (m.name for m in sorted(paths.tests_root().rglob("test_*.py"))
                 if "__pycache__" not in m.parts and "biology" not in m.parts)
