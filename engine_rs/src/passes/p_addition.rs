@@ -150,25 +150,36 @@ impl PAdditionPass {
         }
     }
 
+    /// The `length` palindromic P-bytes for `end` from `effective` (the
+    /// post-trim, post-orientation coding sequence), in pool order, yielded
+    /// one at a time.
+    ///
+    /// The feasibility solver folds these straight into its carry state and
+    /// never needs them as a slice, so it takes this and allocates nothing.
+    /// It calls this at four sites inside nested `any()` loops over candidate
+    /// P lengths, where a `Vec` per candidate put a measurable share of the
+    /// `productive_only()` path in the allocator.
+    pub(crate) fn p_bytes_iter(
+        end: PEnd,
+        effective: &[u8],
+        length: usize,
+    ) -> impl Iterator<Item = u8> + '_ {
+        let n = effective.len();
+        (0..length).map(move |i| match end {
+            PEnd::V3 | PEnd::D3 => complement_base(effective[n - 1 - i]),
+            PEnd::D5 | PEnd::J5 => complement_base(effective[length - 1 - i]),
+        })
+    }
+
     /// Compute the `length` palindromic P-bytes for `end` from
     /// `effective` (the post-trim, post-orientation coding
     /// sequence). Returns the bytes in pool order.
+    ///
+    /// Defined in terms of [`Self::p_bytes_iter`] so the two cannot drift
+    /// apart: the pass that actually writes P nucleotides needs the bytes as
+    /// a slice and calls this once per record, which is not a hot path.
     pub(crate) fn derive_p_bytes(end: PEnd, effective: &[u8], length: usize) -> Vec<u8> {
-        let mut out = Vec::with_capacity(length);
-        match end {
-            PEnd::V3 | PEnd::D3 => {
-                let n = effective.len();
-                for i in 0..length {
-                    out.push(complement_base(effective[n - 1 - i]));
-                }
-            }
-            PEnd::D5 | PEnd::J5 => {
-                for i in 0..length {
-                    out.push(complement_base(effective[length - 1 - i]));
-                }
-            }
-        }
-        out
+        Self::p_bytes_iter(end, effective, length).collect()
     }
 
     fn execute_with_sampling_mode(
