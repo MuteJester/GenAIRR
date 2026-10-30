@@ -406,8 +406,12 @@ pub fn build_airr_record(
     // `j_trim_5/3`; carries the *realized* (post-clamp) byte count
     // the `EndLossPass` recorded. Defaults to 0 when no end-loss
     // pass ran. See `docs/primer_trim_end_loss_audit.md`.
-    rec.end_loss_5_length = trace_int_choice(trace, ChoiceAddress::CorruptEndLoss(PrimeEnd::Five));
-    rec.end_loss_3_length = trace_int_choice(trace, ChoiceAddress::CorruptEndLoss(PrimeEnd::Three));
+    // Summed, not first: configuring end loss twice at one end puts two
+    // counts at the same address and both removed bases. Reading the first
+    // reported 2 of the 9 bases `end_loss_5prime(2).end_loss_5prime(7)`
+    // removes, in either order.
+    rec.end_loss_5_length = trace.sum_int_choices(ChoiceAddress::CorruptEndLoss(PrimeEnd::Five));
+    rec.end_loss_3_length = trace.sum_int_choices(ChoiceAddress::CorruptEndLoss(PrimeEnd::Three));
     rec.is_contaminant = trace_bool_choice(trace, ChoiceAddress::CorruptContaminantApplied);
     // Empty observations can result from complete end loss after
     // recombination. Keep their realized counters and assignments.

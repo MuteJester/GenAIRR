@@ -401,8 +401,15 @@ pub(super) fn check_counters(
         });
     }
 
-    // End-loss lengths from trace.
-    let el5 = trace_int(ChoiceAddress::CorruptEndLoss(PrimeEnd::Five));
+    // End-loss lengths from trace, SUMMED across passes. `trace_int` takes
+    // the first choice at an address, and two end-loss passes at one end both
+    // record there -- so this validator read the field the same wrong way the
+    // builder wrote it, agreed with it, and never flagged the 7 missing
+    // bases. A validator that reproduces the defect it is meant to catch is
+    // worth less than none, because it certifies the record.
+    let el5 = outcome
+        .trace
+        .sum_int_choices(ChoiceAddress::CorruptEndLoss(PrimeEnd::Five));
     if record.end_loss_5_length != el5 {
         issues.push(RecordValidationIssue::EndLossLengthMismatch {
             side: PrimeEnd::Five,
@@ -410,7 +417,9 @@ pub(super) fn check_counters(
             trace_count: el5,
         });
     }
-    let el3 = trace_int(ChoiceAddress::CorruptEndLoss(PrimeEnd::Three));
+    let el3 = outcome
+        .trace
+        .sum_int_choices(ChoiceAddress::CorruptEndLoss(PrimeEnd::Three));
     if record.end_loss_3_length != el3 {
         issues.push(RecordValidationIssue::EndLossLengthMismatch {
             side: PrimeEnd::Three,
