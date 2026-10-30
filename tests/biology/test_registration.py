@@ -16,12 +16,13 @@ pytestmark = pytest.mark.pin
 
 def test_verifies_records_the_mechanism_and_the_claim():
     @verifies("junction.n_addition", claim="np1 is exactly the untemplated bases",
-              fields=("np1",))
+              fields=("np1",), basis="provenance")
     def sample():
         return 42
 
     assert sample.genairr_verifies == ("junction.n_addition",
-                                       "np1 is exactly the untemplated bases", ("np1",))
+                                       "np1 is exactly the untemplated bases",
+                                       ("np1",), "provenance")
 
 
 def test_verifies_returns_the_same_function_object():
@@ -29,13 +30,13 @@ def test_verifies_returns_the_same_function_object():
     interpose anything between pytest and the body."""
     def sample():
         return 42
-    decorated = verifies("junction.n_addition", claim="x", fields=("np1",))(sample)
+    decorated = verifies("junction.n_addition", claim="x", fields=("np1",), basis="provenance")(sample)
     assert decorated is sample
     assert decorated() == 42
 
 
 def test_verifies_marks_the_test_as_biology():
-    @verifies("junction.n_addition", claim="x", fields=("np1",))
+    @verifies("junction.n_addition", claim="x", fields=("np1",), basis="provenance")
     def sample():
         pass
     assert any(m.name == "biology" for m in sample.pytestmark)
@@ -46,7 +47,7 @@ def test_an_unknown_mechanism_id_raises_at_decoration_time():
     mechanism look verified by a test that does not exist, or count nothing at
     all -- and either way no one would be told."""
     with pytest.raises(KeyError, match="junction.n_additon"):
-        @verifies("junction.n_additon", claim="typo", fields=("np1",))
+        @verifies("junction.n_additon", claim="typo", fields=("np1",), basis="provenance")
         def sample():
             pass
 
@@ -55,7 +56,7 @@ def test_an_empty_claim_is_refused():
     """The claim is the point of the registration: it says what was established,
     which is what a reader of the report needs."""
     with pytest.raises(ValueError):
-        @verifies("junction.n_addition", claim="   ", fields=("np1",))
+        @verifies("junction.n_addition", claim="   ", fields=("np1",), basis="provenance")
         def sample():
             pass
 
@@ -93,24 +94,70 @@ def test_one_test_against_many_fields_is_partial_not_verified():
 
 
 def test_covering_every_field_is_verified():
+    """Verified needs both halves: every field reached, and each reached on a
+    basis that establishes its value."""
     mechanism = catalog.by_id("junction.n_addition")
     rows = {r.mechanism_id: r for r in coverage_rows(
         {"junction.n_addition": ("test_x.py::test_y",)},
-        covered_by_mechanism={"junction.n_addition": mechanism.truth_fields})}
+        covered_by_mechanism={"junction.n_addition": mechanism.truth_fields},
+        basis_by_mechanism={"junction.n_addition":
+                            {f: "provenance" for f in mechanism.truth_fields}})}
     assert rows["junction.n_addition"].status == "verified"
     assert rows["junction.n_addition"].uncovered_fields == ()
 
 
+def test_covering_every_field_weakly_is_consistent_not_verified():
+    """The distinction this status exists for. Every field is reached, so the
+    row is not ``partial``; none of them is established, so it is not
+    ``verified`` either. Before the basis was recorded there was no way to say
+    that, and two mechanisms were reported verified while their counters were
+    measurably wrong.
+    """
+    mechanism = catalog.by_id("junction.n_addition")
+    rows = {r.mechanism_id: r for r in coverage_rows(
+        {"junction.n_addition": ("test_x.py::test_y",)},
+        covered_by_mechanism={"junction.n_addition": mechanism.truth_fields},
+        basis_by_mechanism={"junction.n_addition":
+                            {f: "consistent" for f in mechanism.truth_fields}})}
+    row = rows["junction.n_addition"]
+    assert row.status == "consistent"
+    assert row.uncovered_fields == ()
+    assert set(row.weakly_covered_fields) == set(mechanism.verifiable_fields)
+
+
+def test_one_weak_field_among_strong_ones_still_blocks_verified():
+    """A mechanism is only as good as its weakest covered field: reporting it
+    verified would tell a reader every field is established when one is not."""
+    mechanism = catalog.by_id("junction.n_addition")
+    bases = {f: "reference" for f in mechanism.verifiable_fields}
+    weakest = sorted(bases)[0]
+    bases[weakest] = "exercised"
+    rows = {r.mechanism_id: r for r in coverage_rows(
+        {"junction.n_addition": ("test_x.py::test_y",)},
+        covered_by_mechanism={"junction.n_addition": mechanism.truth_fields},
+        basis_by_mechanism={"junction.n_addition": bases})}
+    assert rows["junction.n_addition"].status == "consistent"
+    assert rows["junction.n_addition"].weakly_covered_fields == (weakest,)
+
+
+def test_an_unknown_basis_is_refused():
+    with pytest.raises(ValueError, match="must be one of"):
+        @verifies("junction.n_addition", claim="x", fields=("np1",),
+                  basis="vibes")
+        def sample():
+            return None
+
+
 def test_a_field_the_mechanism_does_not_own_is_refused():
     with pytest.raises(ValueError, match="does not own"):
-        @verifies("junction.n_addition", claim="x", fields=("v_call",))
+        @verifies("junction.n_addition", claim="x", fields=("v_call",), basis="provenance")
         def sample():
             pass
 
 
 def test_fields_must_be_given():
     with pytest.raises(ValueError, match="must name the truth fields"):
-        @verifies("junction.n_addition", claim="x", fields=())
+        @verifies("junction.n_addition", claim="x", fields=(), basis="provenance")
         def sample():
             pass
 
@@ -137,7 +184,7 @@ def test_a_typo_is_a_collection_error_in_a_real_module(tmp_path):
     module = tmp_path / "test_typo.py"
     module.write_text(
         "from tests.biology.catalog import verifies\n\n\n"
-        '@verifies("junction.n_additon", claim="typo", fields=("np1",))\n'
+        '@verifies("junction.n_additon", claim="typo", fields=("np1",), basis="provenance")\n'
         "def test_x():\n"
         "    pass\n",
         encoding="utf-8")
@@ -158,11 +205,11 @@ def _coverage_line(tmp_path, *extra_args):
     module.write_text(
         "from tests.biology.catalog import verifies\n\n\n"
         '@verifies("junction.p_nucleotide", claim="the 5\' V P length is recorded",\n'
-        '          fields=("p_v_3_length",))\n'
+        '          fields=("p_v_3_length",), basis="provenance")\n'
         "def test_one():\n"
         "    assert True\n\n\n"
         '@verifies("junction.p_nucleotide", claim="the 3\' J P length is recorded",\n'
-        '          fields=("p_j_5_length",))\n'
+        '          fields=("p_j_5_length",), basis="provenance")\n'
         "def test_two():\n"
         "    assert True\n",
         encoding="utf-8")
@@ -212,7 +259,7 @@ def test_a_failing_or_skipped_registration_does_not_count_as_coverage(tmp_path):
         "import pytest\n"
         "from tests.biology.catalog import verifies\n\n\n"
         '@pytest.mark.xfail(strict=True, reason="known defect")\n'
-        '@verifies("junction.p_nucleotide", claim="x", fields=("p_v_3_length",))\n'
+        '@verifies("junction.p_nucleotide", claim="x", fields=("p_v_3_length",), basis="provenance")\n'
         "def test_known_defect():\n"
         "    assert False\n",
         encoding="utf-8")
@@ -242,7 +289,7 @@ def test_a_registration_on_a_failing_test_does_not_count(tmp_path):
     module = tmp_path / "test_failing.py"
     module.write_text(
         "from tests.biology.catalog import verifies\n\n\n"
-        '@verifies("assay.contamination", claim="x", fields=("is_contaminant",))\n'
+        '@verifies("assay.contamination", claim="x", fields=("is_contaminant",), basis="provenance")\n'
         "def test_it_fails():\n"
         "    assert False\n",
         encoding="utf-8")
@@ -280,7 +327,7 @@ def test_the_coverage_plumbing_is_not_silently_dead(tmp_path):
     module.write_text(
         "from tests.biology.catalog import verifies\n\n\n"
         '@verifies("assay.contamination", claim="it is flagged",\n'
-        '          fields=("is_contaminant",))\n'
+        '          fields=("is_contaminant",), basis="provenance")\n'
         "def test_passes():\n"
         "    assert True\n",
         encoding="utf-8")

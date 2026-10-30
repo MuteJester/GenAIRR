@@ -27,7 +27,8 @@ MODELS = ("uniform", "s5f")
                 "recover them all: a mutation on an untemplated junction base "
                 "has no germline base to differ from, which is intended and "
                 "measured in the test below",
-          fields=("n_mutations",))
+          fields=("n_mutations",),
+          basis="provenance")
 @pytest.mark.parametrize("model", MODELS)
 def test_every_counted_mutation_changed_a_base(model):
     """A substitution to the same base is not a mutation under any molecular
@@ -79,7 +80,8 @@ def test_every_counted_mutation_changed_a_base(model):
                 "s5f records that carry a mutation "
                 "single-mutation records, and it is the whole of the gap "
                 "between n_mutations and what a mutation caller can see",
-          fields=("n_mutations",))
+          fields=("n_mutations",),
+          basis="provenance")
 @pytest.mark.parametrize("model", MODELS)
 def test_a_mutation_on_an_untemplated_base_is_counted_and_unrecoverable(model):
     """The part of the gap that is not a defect, pinned so it is not mistaken
@@ -123,7 +125,8 @@ def test_a_mutation_on_an_untemplated_base_is_counted_and_unrecoverable(model):
 @verifies("maturation.hypermutation",
           claim="the recorded per-segment counts sum to the recorded total, so the "
                 "attribution accounts for every event",
-          fields=("n_v_mutations", "n_d_mutations", "n_j_mutations", "n_np_mutations"))
+          fields=("n_v_mutations", "n_d_mutations", "n_j_mutations", "n_np_mutations"),
+          basis="consistent")
 @pytest.mark.parametrize("model", MODELS)
 def test_per_segment_counts_sum_to_the_total(model):
     exp = experiment_builder.recombined().mutate(model=model, count=4)
@@ -147,7 +150,8 @@ def test_per_segment_counts_sum_to_the_total(model):
                 "which additionally counts mutations on untemplated bases and "
                 "repeat hits that restored the germline base. Attribution "
                 "under corruption is the separate claim below",
-          fields=("n_observable_mutations",))
+          fields=("n_observable_mutations",),
+          basis="provenance")
 @pytest.mark.parametrize("count", [1, 20])
 @pytest.mark.parametrize("model", MODELS)
 def test_n_observable_mutations_is_what_a_caller_can_recover(model, count):
@@ -200,7 +204,8 @@ NON_SHM_WRITERS = (
                 "misincorporation, a sequencing miscall, an N mask, a "
                 "background contaminant -- moves no part of it, so a caller "
                 "scored against it is not credited for calling noise",
-          fields=("n_observable_mutations",))
+          fields=("n_observable_mutations",),
+          basis="reference")
 @pytest.mark.parametrize("label,corrupt", NON_SHM_WRITERS,
                          ids=[n for n, _ in NON_SHM_WRITERS])
 def test_observable_mutations_exclude_every_non_shm_writer(label, corrupt):
@@ -244,7 +249,8 @@ def test_observable_mutations_exclude_every_non_shm_writer(label, corrupt):
                 "stored as an uppercase SHM write over a lowercase germline "
                 "byte, so a byte comparison counts it and a case-insensitive "
                 "one does not",
-          fields=("n_mutations",))
+          fields=("n_mutations",),
+          basis="provenance")
 def test_a_lineage_node_does_not_count_a_restored_position():
     """Unlike the per-pass counters, a lineage node's count is a NET
     difference: the node's molecule against the founder's germline. Two hits
@@ -293,7 +299,8 @@ BUNDLED_S5F_KERNELS = ("hh_s5f", "hh_s5f_60", "hh_s5f_opposite", "hkl_s5f")
                 "the shipped tables, not of the sampler, which takes every "
                 "positive entry in a context's row -- so it is measured here "
                 "rather than assumed from the code",
-          fields=("n_mutations",))
+          fields=("n_mutations",),
+          basis="reference")
 @pytest.mark.parametrize("kernel", BUNDLED_S5F_KERNELS)
 def test_no_bundled_s5f_kernel_draws_the_base_already_present(kernel):
     """The uniform model's quarter-of-draws no-op rate is the reason

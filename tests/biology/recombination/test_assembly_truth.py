@@ -22,7 +22,8 @@ LOCI = ("human_igh", "human_igk", "human_tcrb")
                 "the engine lays each byte down beside its coordinate from the "
                 "same two numbers, so shifting both agrees, measured 0 "
                 "mismatches of 366",
-          fields=("sequence",))
+          fields=("sequence",),
+          basis="reference")
 @pytest.mark.parametrize("invert_d", [False, True])
 @pytest.mark.parametrize("locus", LOCI)
 def test_every_templated_base_matches_the_reference_at_its_claimed_coordinate(locus, invert_d):
@@ -83,7 +84,8 @@ def test_every_templated_base_matches_the_reference_at_its_claimed_coordinate(lo
                 "checked against the reference allele rather than the engine's "
                 "arithmetic, and the two non-biological trim fields are zero. "
                 "D and J trims are not established here",
-          fields=("v_trim_3", "v_trim_5", "j_trim_3"))
+          fields=("v_trim_3", "v_trim_5", "j_trim_3"),
+          basis="reference")
 def test_recorded_trims_account_for_the_germline_that_is_missing():
     """Checked against the reference allele's length, not against the engine's
     own arithmetic.
@@ -112,7 +114,8 @@ def test_recorded_trims_account_for_the_germline_that_is_missing():
           claim="d_inverted records the orientation the D segment was joined in, "
                 "and when set the assembled D is the reverse complement of its "
                 "germline span",
-          fields=("d_inverted",))
+          fields=("d_inverted",),
+          basis="reference")
 def test_an_inverted_d_is_recorded_and_is_actually_reverse_complemented():
     """The flag is load-bearing: the germline coordinates stay forward-reference
     while the sequence carries the reverse complement, so anything

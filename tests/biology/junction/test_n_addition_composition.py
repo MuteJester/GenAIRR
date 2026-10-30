@@ -38,7 +38,8 @@ def _np_composition(exp, n=400, seed=13):
           claim="with no NP base model configured, N-region bases are uniform over "
                 "A/C/G/T -- the documented typed -> uniform cascade falling through "
                 "to uniform, not an unconfigured accident",
-          fields=("np1", "np2"))
+          fields=("np1", "np2"),
+          basis="reference")
 def test_the_default_n_region_composition_is_uniform():
     composition, total = _np_composition(experiment_builder.recombined())
     assert total > 2000, f"only {total} NP bases sampled; widen the sample"
@@ -54,7 +55,8 @@ def test_the_default_n_region_composition_is_uniform():
           claim="a supplied typed NP base model is honoured, so a user can fit a "
                 "model for their own species and chain rather than inheriting one "
                 "calibrated for human IGH",
-          fields=("np1",))
+          fields=("np1",),
+          basis="reference")
 def test_a_supplied_empirical_base_model_is_honoured():
     """The capability that matters. If this did not hold, uniform would not be a
     default but a ceiling -- and an empirical model for human IGH would be the

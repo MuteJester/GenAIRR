@@ -82,7 +82,8 @@ def _coordinate_fields_present(record):
                 "bounds, which the record builder derives from these same trim "
                 "fields",
           fields=("v_trim_5", "v_trim_3", "d_trim_5", "d_trim_3",
-                  "j_trim_5", "j_trim_3"))
+                  "j_trim_5", "j_trim_3"),
+          basis="reference")
 @pytest.mark.parametrize("locus", LOCI)
 def test_recorded_trims_balance_against_the_reference_allele_length(locus):
     exp = experiment_builder.recombined(locus=locus)
@@ -123,7 +124,8 @@ def _germline_coordinate_fields_present(record):
                 "than narrowing the reported range",
           fields=("v_germline_start", "v_germline_end", "d_germline_start",
                   "d_germline_end", "j_germline_start", "j_germline_end",
-                  "sequence_length"))
+                  "sequence_length"),
+          basis="reference")
 @pytest.mark.parametrize("locus", LOCI)
 def test_germline_coordinates_bound_the_span_the_trims_account_for(locus):
     """The companion to the base-level assembly check, which establishes that
@@ -147,7 +149,8 @@ def test_germline_coordinates_bound_the_span_the_trims_account_for(locus):
           fields=("v_sequence_start", "v_sequence_end", "d_sequence_start",
                   "d_sequence_end", "j_sequence_start", "j_sequence_end",
                   "v_alignment_start", "v_alignment_end", "d_alignment_start",
-                  "d_alignment_end", "j_alignment_start", "j_alignment_end"))
+                  "d_alignment_end", "j_alignment_start", "j_alignment_end"),
+          basis="consistent")
 @pytest.mark.parametrize("locus", LOCI)
 def test_read_spans_and_alignment_coordinates_agree_with_the_germline_span(locus):
     exp = experiment_builder.recombined(locus=locus)
@@ -173,7 +176,8 @@ def test_read_spans_and_alignment_coordinates_agree_with_the_germline_span(locus
                 "biology may write staying zero. Stacked passes at one end are "
                 "covered too -- the field reports the total they removed, which "
                 "it did not before this branch",
-          fields=("end_loss_5_length", "end_loss_3_length"))
+          fields=("end_loss_5_length", "end_loss_3_length"),
+          basis="reference")
 def test_end_loss_is_accounted_for_in_the_germline_coordinates():
     """Checked together with trimming on purpose, because both shorten the
     germline span and the arithmetic cannot tell them apart on its own.
