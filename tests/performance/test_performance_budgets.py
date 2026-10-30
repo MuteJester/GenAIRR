@@ -335,9 +335,32 @@ def test_w8_airr_projection_is_negligible_vs_simulation() -> None:
 # productive_only() path having become 3.7-4.9x more expensive since these
 # baselines were taken, not a machine difference.
 #
-# These budgets were written to catch that. They did: the numbers above are
-# their output. What they could not do is announce it, because the erosion
-# never crossed a limit on the runners in use until a slower one appeared.
+# WHY it became more expensive is no longer open, and nothing regressed.
+# f066b44 (2026-10-20) added the exact productive-completion solver in
+# engine_rs/src/feasibility/p_productive.rs -- 669 lines, created whole, no
+# prior version -- and added CodingSequenceIntegrity as a fifth contract in
+# the productive() bundle. Both are correctness work, and both are reached
+# only under productive_only(), which is why these two budgets moved and the
+# other four did not. The solver runs even with no mutation pass configured:
+# measured at 810 p_lengths calls per record on W6. The contract is reached
+# only when a mutation pass runs, so it affects W3 (`.mutate(rate=0.01)`)
+# and not W6.
+#
+# That commit measured its own cost on the day, in
+# audit-docs/productivity_performance_2026_10_20.json: W3 0.985 ms/rec and
+# W6 0.792 ms/rec. So the increase was known, intentional and recorded when
+# it landed -- what was never updated is the baseline these budgets compare
+# against, which predates the solver by five months. The 2026-10-29 figures
+# above (0.860 and 0.606) are BELOW the October measurement, so the path has
+# got faster since the work landed, not slower.
+#
+# Treat the May numbers as what they are: measurements of an engine that did
+# not yet do this. They are not a target to get back to.
+#
+# These budgets were written to catch a change of this size. They did: the
+# numbers above are their output. What they could not do is announce it,
+# because the increase never crossed a limit on the runners in use until a
+# slower one appeared.
 # A budget whose recorded headroom is 8x and whose real headroom is 1.6x
 # reports "pass" either way, which is why the figures here are now measured
 # values with a date rather than a remembered baseline.
