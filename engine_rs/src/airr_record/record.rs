@@ -126,6 +126,18 @@ pub struct AirrRecord {
 
     // SHM + corruption (non-AIRR; GenAIRR additions)
     pub n_mutations: i64,
+    /// Substitutions a mutation caller can recover: positions carrying a
+    /// germline coordinate whose base differs from the germline base recorded
+    /// there, compared case-insensitively because case carries the
+    /// templated/untemplated channel rather than base identity.
+    ///
+    /// Below [`Self::n_mutations`] by two effects, both intended. A mutation
+    /// landing on an untemplated junction base changes a base and is counted
+    /// there, but has no germline base to differ from, so nothing can recover
+    /// it. And two mutations can hit one position, the later one restoring the
+    /// germline base. Score a mutation caller against this field, not against
+    /// `n_mutations`.
+    pub n_observable_mutations: i64,
     /// Cumulative realized SHM event burden: sum of each stage's applied
     /// count divided by its input molecule length. Preserved through later
     /// observation loss; not the mismatch fraction in the observed read.

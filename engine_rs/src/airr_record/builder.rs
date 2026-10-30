@@ -191,6 +191,17 @@ pub fn build_airr_record(
     // `Simulation.mutation_count`, stashed by the S5F / Uniform
     // passes at seal time.
     rec.n_mutations = sim.mutation_count as i64;
+    // Derived from the pool rather than from a counter: it is a property of
+    // the finished molecule, which is what a caller comparing the sequence to
+    // its germline sees. Templated positions only -- an untemplated base has
+    // no germline base to differ from.
+    rec.n_observable_mutations = sim
+        .pool
+        .as_slice()
+        .iter()
+        .filter(|nuc| nuc.germline_pos.get().is_some())
+        .filter(|nuc| !nuc.base.eq_ignore_ascii_case(&nuc.germline))
+        .count() as i64;
     // Each mutation stage records its own input molecule length. Later read
     // loss must not inflate this cumulative event burden.
     rec.mutation_rate = sim.mutation_burden;

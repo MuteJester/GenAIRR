@@ -428,6 +428,7 @@ pub(crate) fn airr_record_to_pydict<'py>(
 
     // SHM + corruption
     dict.set_item("n_mutations", rec.n_mutations)?;
+    dict.set_item("n_observable_mutations", rec.n_observable_mutations)?;
     dict.set_item("mutation_rate", rec.mutation_rate)?;
     dict.set_item("n_pcr_errors", rec.n_pcr_errors)?;
     dict.set_item("n_quality_errors", rec.n_quality_errors)?;

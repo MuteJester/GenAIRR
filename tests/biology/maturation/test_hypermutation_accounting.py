@@ -127,3 +127,45 @@ def test_per_segment_counts_sum_to_the_total(model):
         assert parts == record["n_mutations"], (
             f"{model}: per-segment counts sum to {parts} but n_mutations is "
             f"{record['n_mutations']}")
+
+
+@verifies("maturation.hypermutation",
+          claim="n_observable_mutations is what a mutation caller can recover: "
+                "the templated positions whose base differs from the germline "
+                "base recorded there. Checked against an oracle that derives "
+                "the same set independently from the per-base provenance, and "
+                "bounded above by n_mutations, which additionally counts "
+                "mutations on untemplated bases and repeat hits that restored "
+                "the germline base",
+          fields=("n_observable_mutations",))
+@pytest.mark.parametrize("count", [1, 20])
+@pytest.mark.parametrize("model", MODELS)
+def test_n_observable_mutations_is_what_a_caller_can_recover(model, count):
+    """The field exists because `n_mutations` cannot be both things.
+
+    A mutation on an untemplated junction base changes a base, so it belongs
+    in `n_mutations`, and has no germline base to differ from, so nothing can
+    recover it. Rather than redefine the count, the recoverable number is
+    exported alongside it. Scoring a caller against the wrong one of the two
+    penalises it for substitutions that left no evidence.
+    """
+    exp = experiment_builder.recombined().mutate(model=model, count=count)
+    totals = {"recorded": 0, "reported": 0, "oracle": 0}
+    for outcome in exp.run(n=60, seed=101):
+        record = outcome.airr_record(exp.refdata)
+        expected = len(reconstruction.observable_substitutions(outcome.final_simulation()))
+        assert record["n_observable_mutations"] == expected, (
+            f"{model}/{count}: reports {record['n_observable_mutations']} "
+            f"recoverable where the oracle derives {expected}")
+        assert record["n_observable_mutations"] <= record["n_mutations"], (
+            "more recoverable than counted, which cannot happen")
+        totals["recorded"] += record["n_mutations"]
+        totals["reported"] += record["n_observable_mutations"]
+        totals["oracle"] += expected
+    assert totals["oracle"] > 0, f"{model}/{count}: nothing was mutated"
+    assert totals["reported"] == totals["oracle"]
+    # The gap is the point of the field: if it were zero the two counts would
+    # be the same number and one of them would be redundant.
+    assert totals["reported"] < totals["recorded"], (
+        f"{model}/{count}: no gap between {totals['recorded']} counted and "
+        f"{totals['reported']} recoverable, so this field establishes nothing")

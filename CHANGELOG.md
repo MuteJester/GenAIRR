@@ -6,6 +6,15 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
+- `n_observable_mutations`: the substitutions a mutation caller can recover
+  from the sequence — templated positions whose base differs from the germline
+  base recorded there. It is below `n_mutations` by two intended effects: a
+  mutation on an untemplated junction base changes a base but has no germline
+  base to differ from, and two mutations can hit one position with the later
+  one restoring the germline base. Score a mutation caller against this field.
+  It appears in the default TSV column order beside `n_mutations`, so the
+  committed goldens gain one column and no existing value changes.
+
 - `GenAIRR.Reference`: portable local germline references built from V/D/J
   FASTA and a versioned annotation sidecar (`Reference.annotation_template`,
   `from_fasta`, `report`, `capabilities`, `require`, `write`, `read`). Every
