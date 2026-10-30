@@ -53,6 +53,7 @@ IDENTITIES = (
     "junction_length == junction_end - junction_start",
     "junction_aa == translation of junction",
     "the reference anchor codon carries the conserved residue",
+    "a record with no junction reports it empty and says the frame is unresolved",
 )
 
 CYSTEINE = frozenset({"TGT", "TGC"})
@@ -131,6 +132,31 @@ def disagreements(record, simulation, segment_of, *,
     start = record["junction_start"]
     end = record["junction_end"]
 
+    if start is None or end is None:
+        # Trimming can remove a conserved codon outright, and then there is no
+        # window to report. The bound identities do not apply; what does is
+        # that the whole group goes null together and the frame flag says
+        # UNRESOLVED rather than out-of-frame. Measured on 60 of 60 records
+        # under trim(v_3=12..25): junction and junction_aa empty,
+        # junction_length and junction_end null, vj_in_frame None, productive
+        # False, and the reasons naming anchor_removed and
+        # vj_frame_unresolved. A consumer reading vj_in_frame as a boolean
+        # gets False for "we could not tell", which is why this is an
+        # identity and not a skip.
+        expected = ("", "", None, None)
+        recorded = (record["junction"], record["junction_aa"],
+                    record["junction_length"], record["vj_in_frame"])
+        if recorded != expected:
+            out.append(Disagreement(
+                sequence_id,
+                "a record with no junction reports it empty and says the "
+                "frame is unresolved",
+                recorded, expected,
+                detail="(junction, junction_aa, junction_length, vj_in_frame)"))
+        out.extend(_reference_residue_disagreements(
+            sequence_id, v_sequence, v_anchor, j_sequence, j_anchor))
+        return tuple(out)
+
     v_codon = anchor_codon_positions(simulation, segment_of, "V", v_anchor)
     if v_codon and start != v_codon[0]:
         out.append(Disagreement(
@@ -165,6 +191,16 @@ def disagreements(record, simulation, segment_of, *,
             sequence_id, "junction_aa == translation of junction",
             record["junction_aa"], expected_aa))
 
+    out.extend(_reference_residue_disagreements(
+        sequence_id, v_sequence, v_anchor, j_sequence, j_anchor))
+    return tuple(out)
+
+
+def _reference_residue_disagreements(sequence_id, v_sequence, v_anchor,
+                                     j_sequence, j_anchor):
+    """The reference-only identity, which applies whether or not the record
+    kept its junction."""
+    out = []
     for label, sequence, anchor, allowed in (
             ("V", v_sequence, v_anchor, CYSTEINE),
             ("J", j_sequence, j_anchor, TRYPTOPHAN_OR_PHENYLALANINE)):
@@ -175,7 +211,7 @@ def disagreements(record, simulation, segment_of, *,
                 "the reference anchor codon carries the conserved residue",
                 codon, sorted(allowed),
                 detail=f"{label} anchor at {anchor}"))
-    return tuple(out)
+    return out
 
 
 #: What was perturbed, and what this oracle said. Measured on 60 unperturbed
@@ -230,6 +266,20 @@ CIRCULARITY = {
         "establishes that the translation is the oracle's own table applied "
         "to the recorded nucleotides, and nothing about whether those "
         "nucleotides are the right ones.",
+    "a record with no junction reports it empty and says the frame is unresolved":
+        "NOT CIRCULAR -- it compares four fields that no single producer "
+        "writes together against the null contract, so there is no second "
+        "side to move. Probed on 60 of 60 records under trim(v_3=12..25), "
+        "every one of which has its V anchor codon trimmed away: turning "
+        "vj_in_frame from None into False fires it 60 of 60, populating "
+        "junction while the bounds stay null fires 60 of 60, and turning "
+        "junction_length from None into 0 fires 60 of 60. Unperturbed, 0 of "
+        "60. The first of those three is the mis-read this identity exists "
+        "for: None means the frame could not be resolved, and a consumer "
+        "reading the field as a boolean gets 'out of frame' for 'we could "
+        "not tell'. This path also found a fault in this oracle -- before it "
+        "existed the module raised TypeError on such a record, and the "
+        "fixtures of the test that shipped it never produced one.",
     "the reference anchor codon carries the conserved residue":
         "NOT CIRCULAR -- it reads the reference only, with no side from the "
         "run to move. This is the identity that makes the two bound checks "
