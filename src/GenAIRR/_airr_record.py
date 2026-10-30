@@ -740,5 +740,6 @@ def _legacy_outcome_to_airr_record(
     # native provenance; the shortened final read cannot reconstruct them.
     native = outcome.airr_record(refdata, sequence_id=record["sequence_id"])
     record["n_mutations"] = native["n_mutations"]
+    record["n_observable_mutations"] = native["n_observable_mutations"]
     record["mutation_rate"] = native["mutation_rate"]
     return record

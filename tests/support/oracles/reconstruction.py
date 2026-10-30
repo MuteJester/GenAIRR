@@ -226,6 +226,13 @@ def observable_substitutions(simulation) -> tuple[int, ...]:
     Compared case-insensitively on purpose: case carries the P/N channel, not
     base identity, and a case-sensitive comparison silently reports every P
     nucleotide as a substitution.
+
+    **This counts mismatches, not hypermutation.** It cannot see which pass
+    wrote a base, so a PCR misincorporation, a sequencing miscall or an N mask
+    lands in the result exactly as a mutation does. As the expected value for
+    ``n_observable_mutations`` it is therefore valid only where hypermutation
+    is the only pass that writes a base; see this module's ``CIRCULARITY``
+    entry for the measurement.
     """
     bases, germline = simulation.bases(), simulation.germline_bases()
     return tuple(i for i in range(len(bases))
@@ -310,6 +317,24 @@ CIRCULARITY = {
         "ALLELE IDENTITY -- a rotated reference breaks it -- and nothing about "
         "the coordinates. They are checked by the coordinates oracle against "
         "the allele's length, which this walk does not produce.",
+    "observable_substitutions == the engine's n_observable_mutations":
+        "CIRCULAR IN POSITION, BLIND TO ATTRIBUTION, and not a tautology "
+        "about a single byte. Three probes, all measured over 30 records. "
+        "(1) Read both the base and the germline byte one position over, "
+        "together: 535 positions reported either way -- identical, because "
+        "both bytes come from the same nucleotide record, so moving the read "
+        "moves both. (2) Shift only the germline read: 8203 positions, so the "
+        "comparison does fire once the two sides are decoupled. (3) Run a "
+        "pipeline with no mutation pass at all and five sequencing errors: "
+        "the engine reports 0 and this oracle reports 111. The oracle cannot "
+        "see WHICH pass wrote a base, and the field counts only the "
+        "hypermutation passes, so the identity holds exactly where "
+        "hypermutation is the only pass that writes a base -- which is the "
+        "condition the registered test runs under, and the reason the "
+        "corruption-bearing cases are asserted against the error counters "
+        "instead. Deriving the field from this comparison rather than from "
+        "the mutation passes' own ledger is the defect that was shipped and "
+        "then fixed: it reported library noise as hypermutation.",
     "an inverted segment's byte == complement of the reference base":
         "NOT CIRCULAR in orientation. Declaring the segment forward when it is "
         "inverted gives mismatches on every inverted position (16 of 16 on the "

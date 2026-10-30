@@ -6,14 +6,33 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
-- `n_observable_mutations`: the substitutions a mutation caller can recover
-  from the sequence — templated positions whose base differs from the germline
-  base recorded there. It is below `n_mutations` by two intended effects: a
-  mutation on an untemplated junction base changes a base but has no germline
-  base to differ from, and two mutations can hit one position with the later
-  one restoring the germline base. Score a mutation caller against this field.
-  It appears in the default TSV column order beside `n_mutations`, so the
-  committed goldens gain one column and no existing value changes.
+- `n_observable_mutations`: the somatic-hypermutation substitutions a mutation
+  caller can recover from `sequence` — the positions a mutation pass wrote a
+  changed base at that are still in the molecule and still differ from the
+  germline base recorded there. **Score a mutation caller against this field,
+  not against `n_mutations`.** It is below `n_mutations` by three intended
+  effects: a mutation on an untemplated junction base changes a base but has
+  no germline base to differ from (about 5% of records that carry a mutation),
+  two mutations can hit one position with the later one restoring the germline
+  base, and a position lost to end loss or a deletion is no longer in the
+  molecule — so unlike `mutation_rate`, which is a burden preserved through
+  observation loss, this count shrinks with the molecule.
+
+  Attributable to hypermutation and to nothing else: a PCR misincorporation, a
+  sequencing miscall, an `N` mask and a background contaminant all leave a
+  position differing from its germline, and none of them moves this count.
+  Those are reported on `n_pcr_errors` and `n_quality_errors`, which is what a
+  caller's false positives should be measured against. Two scoping notes: the
+  count is over `sequence`, which stays the whole molecule under
+  `paired_end()` while `r1_sequence` / `r2_sequence` cover less; and on a
+  contaminant record the molecule is a background sequence, so no mutation
+  field on it describes this rearrangement's hypermutation.
+
+  Produced on the native, duplex-observed and duplex-projected planes, and
+  checked by `validate_records` through `NObservableMutationsMismatch` and the
+  cross-field `ObservableMutationsExceedCount`. It appears in the default TSV
+  column order beside `n_mutations`, so the committed goldens gain one column
+  and no existing value changes.
 
 - `GenAIRR.Reference`: portable local germline references built from V/D/J
   FASTA and a versioned annotation sidecar (`Reference.annotation_template`,
@@ -73,22 +92,38 @@ All notable changes to GenAIRR are documented here.
   substitutions that changed a base. A uniform replacement is drawn from
   A/C/G/T including the base already present, and those draws were counted, so
   `mutate(model="uniform", count=7)` reported 7 where roughly a quarter of the
-  draws had changed nothing — about 26 points of inflation. `model="s5f"` never
-  draws the identity base and is unaffected. **`count=N` is the number of
-  substitution attempts; `n_mutations` is how many of them changed something,
-  so for the uniform model it is now usually below `N`.** `mutation_rate`,
+  draws had changed nothing — 23.3% of draws measured at `count=1`, 24.4% at
+  `count=20`, against 25% in theory. **`count=N` is the number of substitution
+  attempts; `n_mutations` is how many of them changed something, so for the
+  uniform model it is now usually below `N`.** `mutation_rate`,
   `mutations_from_parent` and the per-segment and per-subregion counters follow.
+
+  No single `model="s5f"` write is ever a no-op — that kernel does not draw the
+  base already present — so the per-pass S5F counters do not move. One S5F
+  number does: a lineage node's count is a net difference against the founder's
+  germline, and the kernel excludes the base currently present rather than the
+  germline base, so a second hit at a mutated position can draw the germline
+  base back. Such a position no longer differs from its germline and is no
+  longer counted. Measured on a two-generation, rate 0.05 lineage: five
+  restored positions across five nodes, moving their counts from
+  `[32, 28, 38, 31, 33]` to `[31, 27, 36, 30, 33]`.
 
   The draw itself is untouched: the RNG consumption, the recorded trace and
   every simulated sequence are byte-for-byte as before, and all committed
-  goldens are unchanged. Traces from earlier versions replay identically.
+  goldens are unchanged. Traces from earlier versions replay identically. One
+  exported channel beyond the counters does move: a mutation pass whose every
+  draw was a no-op now has a zero delta, and a zero-delta commit emits no
+  `MutationCountChanged` event, so such a pass reports one simulation event
+  where it previously reported two. Its `BaseChanged` events are unchanged, so
+  every write is still recorded; the duplex edit ledger likewise records every
+  write including the no-ops, because both are physical records of what the
+  engine did rather than counters.
 
   One gap remains and is intended: a mutation landing on an untemplated
   junction base changes a base and is counted, but has no germline base to
-  differ from, so no mutation caller can recover it — about 4% of
-  single-mutation records for either model. The duplex edit ledger and the
-  per-pass event stream still record every write, including the no-ops, because
-  they are physical records of what the engine did rather than counters.
+  differ from, so no mutation caller can recover it — measured at 5.2% of
+  uniform and 4.5% of S5F records that carry a mutation. See
+  `n_observable_mutations` above for the recoverable count.
 
 - The junction of a simulated record now runs from the first surviving base of
   the V Cys codon to the last surviving base of the J Trp/Phe codon, read from

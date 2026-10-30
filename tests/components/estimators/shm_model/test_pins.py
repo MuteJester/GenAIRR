@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.support.oracles import provenance
+
 import GenAIRR as ga
 from tests.support import paths
 
@@ -154,9 +156,7 @@ def test_pin_scaffold_uniform_mutate_bumps_n_mutations() -> None:
     for outcome in outcomes:
         r = outcome.airr_record(exp.refdata)
         simulation = outcome.final_simulation()
-        bases, germline = simulation.bases(), simulation.germline_bases()
-        changed = sum(1 for i in range(len(bases))
-                      if chr(bases[i]).upper() != chr(germline[i]).upper())
+        changed = provenance.changed_base_count(simulation)
         assert r["n_mutations"] == changed, (
             f"reports {r['n_mutations']} mutations with {changed} bases changed")
         assert 0 < r["n_mutations"] <= count, (

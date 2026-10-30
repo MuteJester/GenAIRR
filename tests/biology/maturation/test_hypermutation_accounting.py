@@ -11,7 +11,7 @@ import pytest
 
 from tests.biology.catalog import verifies
 from tests.support.builders import experiment as experiment_builder
-from tests.support.oracles import reconstruction
+from tests.support.oracles import provenance, reconstruction
 
 pytestmark = pytest.mark.behavior
 
@@ -44,16 +44,21 @@ def test_every_counted_mutation_changed_a_base(model):
     Compared case-insensitively on purpose: a templated base is stored
     lowercase and an SHM write emits uppercase, so a byte comparison sees a
     change at every mutated position and hides this entirely. The first
-    attempt at the fix made exactly that mistake and corrected 2 of 96 no-ops.
+    attempt at the fix made exactly that mistake. It also patched one of the
+    seven write sites, and the uniform model takes a different one, so the
+    measurement did not move at all.
+
+    Measured at one mutation per record, seed 101, over 200 records: 198
+    positions differ from their germline byte, 191 of them a lowercase
+    germline byte against an uppercase base, 44 the same base differing only
+    in case, and 46 records realise no mutation at all.
     """
     exp = experiment_builder.recombined().mutate(model=model, count=1)
     unchanged = []
     for index, outcome in enumerate(exp.run(n=200, seed=0)):
         record = outcome.airr_record(exp.refdata)
         simulation = outcome.final_simulation()
-        bases, germline = simulation.bases(), simulation.germline_bases()
-        changed = sum(1 for i in range(len(bases))
-                      if chr(bases[i]).upper() != chr(germline[i]).upper())
+        changed = provenance.changed_base_count(simulation)
         if record["n_mutations"] and not changed:
             unchanged.append(index)
         # At one mutation per record there are no repeat hits, so the count
@@ -70,7 +75,8 @@ def test_every_counted_mutation_changed_a_base(model):
           claim="a mutation on an untemplated junction base is counted and is "
                 "not recoverable from the sequence, which is intended rather "
                 "than a defect: there is no germline base at that position to "
-                "differ from. Measured at 4% of uniform and 4.5% of s5f "
+                "differ from. Measured at 5.2% of uniform and 4.5% of "
+                "s5f records that carry a mutation "
                 "single-mutation records, and it is the whole of the gap "
                 "between n_mutations and what a mutation caller can see",
           fields=("n_mutations",))
@@ -103,6 +109,7 @@ def test_a_mutation_on_an_untemplated_base_is_counted_and_unrecoverable(model):
         bases, germline = simulation.bases(), simulation.germline_bases()
         changed = [i for i in range(len(bases))
                    if chr(bases[i]).upper() != chr(germline[i]).upper()]
+        assert len(changed) == provenance.changed_base_count(simulation)
         assert changed, f"{model}: a counted mutation changed nothing"
         assert all(simulation.germline_position(i) is None for i in changed), (
             f"{model}: a templated change was invisible to the oracle, which "
@@ -131,12 +138,15 @@ def test_per_segment_counts_sum_to_the_total(model):
 
 @verifies("maturation.hypermutation",
           claim="n_observable_mutations is what a mutation caller can recover: "
-                "the templated positions whose base differs from the germline "
-                "base recorded there. Checked against an oracle that derives "
-                "the same set independently from the per-base provenance, and "
-                "bounded above by n_mutations, which additionally counts "
-                "mutations on untemplated bases and repeat hits that restored "
-                "the germline base",
+                "the hypermutation substitutions still visible in the "
+                "sequence. In a pipeline where hypermutation is the only pass "
+                "that writes a base it equals the templated mismatch set an "
+                "oracle derives from the per-base provenance -- which is the "
+                "condition this test runs under, because that oracle cannot "
+                "see which pass wrote a base. Bounded above by n_mutations, "
+                "which additionally counts mutations on untemplated bases and "
+                "repeat hits that restored the germline base. Attribution "
+                "under corruption is the separate claim below",
           fields=("n_observable_mutations",))
 @pytest.mark.parametrize("count", [1, 20])
 @pytest.mark.parametrize("model", MODELS)
@@ -222,3 +232,82 @@ def test_observable_mutations_exclude_every_non_shm_writer(label, corrupt):
             f"{label}: record {index} reports "
             f"{record['n_observable_mutations']} recoverable against "
             f"{record['n_mutations']} counted")
+
+
+@verifies("maturation.hypermutation",
+          claim="a lineage node's mutation count is the number of positions "
+                "that differ from the germline, which excludes a position a "
+                "later mutation returned to its germline base. S5F reaches "
+                "this case: the kernel excludes the base currently present, "
+                "not the germline base, so a second hit at a mutated position "
+                "can draw the germline base back. The restored position is "
+                "stored as an uppercase SHM write over a lowercase germline "
+                "byte, so a byte comparison counts it and a case-insensitive "
+                "one does not",
+          fields=("n_mutations",))
+def test_a_lineage_node_does_not_count_a_restored_position():
+    """Unlike the per-pass counters, a lineage node's count is a NET
+    difference: the node's molecule against the founder's germline. Two hits
+    at one position therefore contribute whatever the second one left behind,
+    and if that is the germline base they contribute nothing.
+
+    This is the one place the S5F model is not exempt from the no-op
+    question. Its kernel never draws the base already present, so no single
+    S5F write is ever a no-op -- but it excludes the CURRENT base, not the
+    germline base, so the second write at a position can restore the
+    germline. Measured here: 5 such positions across these five nodes.
+
+    The expected count is derived from the exported per-base provenance; the
+    field is produced by the engine's own net-difference synthesis. The two
+    agree only if both compare the base to its germline the same way, which
+    is the mistake this pins.
+    """
+    exp = experiment_builder.recombined().clonal_lineage(
+        n_clones=2, max_generations=2, n_max=20, n_sample=8, rate=0.05)
+    result = exp.run_records(seed=11)
+    restored = 0
+    for outcome in result.outcomes:
+        record = outcome.airr_record(exp.refdata)
+        simulation = outcome.final_simulation()
+        bases, germline = simulation.bases(), simulation.germline_bases()
+        differing = sum(1 for i in range(len(bases))
+                        if chr(bases[i]).upper() != chr(germline[i]).upper())
+        assert record["n_mutations"] == differing, (
+            f"node reports {record['n_mutations']} where "
+            f"{differing} positions differ from their germline base")
+        restored += sum(1 for i in range(len(bases))
+                        if bases[i] != germline[i]
+                        and chr(bases[i]).upper() == chr(germline[i]).upper())
+    assert restored > 0, (
+        "no position was restored to its germline base, so this test "
+        "exercises nothing: raise the rate or the generation count")
+
+
+BUNDLED_S5F_KERNELS = ("hh_s5f", "hh_s5f_60", "hh_s5f_opposite", "hkl_s5f")
+
+
+@verifies("maturation.hypermutation",
+          claim="no bundled S5F kernel ever draws the base already present, "
+                "so every S5F substitution attempt is realised and for that "
+                "model count and n_mutations coincide. This is a property of "
+                "the shipped tables, not of the sampler, which takes every "
+                "positive entry in a context's row -- so it is measured here "
+                "rather than assumed from the code",
+          fields=("n_mutations",))
+@pytest.mark.parametrize("kernel", BUNDLED_S5F_KERNELS)
+def test_no_bundled_s5f_kernel_draws_the_base_already_present(kernel):
+    """The uniform model's quarter-of-draws no-op rate is the reason
+    `n_mutations` stopped counting attempts. S5F is exempt -- but only
+    because of what is in the four bundled tables, and the documentation
+    says so in several places, so it is worth a measurement rather than a
+    reading of the sampler.
+    """
+    attempts = 15
+    exp = experiment_builder.recombined().mutate(
+        model="s5f", count=attempts, s5f_model=kernel)
+    for index, outcome in enumerate(exp.run(n=60, seed=5)):
+        record = outcome.airr_record(exp.refdata)
+        assert record["n_mutations"] == attempts, (
+            f"{kernel}: record {index} realised {record['n_mutations']} of "
+            f"{attempts} attempts, so this kernel admits the base already "
+            f"present as a destination")

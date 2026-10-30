@@ -10,8 +10,14 @@ use crate::rng::Rng;
 use crate::s5f::S5FKernel;
 
 fn kernel() -> S5FKernel {
-    // Context-neutral equal destination probabilities; S5F excludes the live
-    // centre base itself. No measured mutational preferences are asserted.
+    // Context-neutral equal destination probabilities. No measured mutational
+    // preferences are asserted -- and note this kernel admits the centre base
+    // as a destination, which none of the four bundled kernels does: measured
+    // over 960 records at 15 attempts each, every bundled kernel realised
+    // every attempt, so no S5F write in a publicly reachable configuration is
+    // a no-op. That is a property of the shipped tables rather than of the
+    // sampler, which takes every positive row entry -- which is why this
+    // test's own kernel can produce one.
     S5FKernel::new(vec![1.0; 1024], vec![1.0; 4096])
 }
 

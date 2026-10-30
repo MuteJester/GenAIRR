@@ -44,22 +44,22 @@ class _MutationMixin:
         base already present, so roughly a quarter of draws land
         on it. Those are not counted: ``n_mutations`` reports the
         substitutions that changed a base, so ``count=7`` with
-        ``model="uniform"`` typically reports five or six. ``"s5f"``
-        never draws the identity base, so for it the two coincide.
+        ``model="uniform"`` typically reports five or six. No
+        single ``"s5f"`` write is ever a no-op -- that kernel does
+        not draw the base already present.
 
-        One gap remains and is intended. A mutation landing on an
+        **Score a mutation caller against ``n_observable_mutations``**,
+        the subset still visible in the sequence. It is below
+        ``n_mutations`` by three intended effects: a mutation on an
         untemplated junction base (an N or P addition) changes a
         base and is counted, but has no germline base to differ
-        from, so no mutation caller can recover it from the
-        sequence. Measured at about 4% of single-mutation records
-        for either model. At higher counts a second effect appears:
-        two mutations can hit one position and the later one can
-        restore the germline base, so the count exceeds what is
-        visible by the number of such repeats.
-
-        If you are scoring a mutation caller, derive the expected
-        count from the sequence and its germline rather than from
-        ``n_mutations``.
+        from, so nothing can recover it (about 5% of records that
+        carry a mutation); two mutations can hit one position with
+        the later one restoring the germline base; and a position
+        lost to end loss or a deletion is no longer in the
+        molecule. It is attributable to hypermutation alone -- a
+        PCR misincorporation, a sequencing miscall or an ``N`` mask
+        moves no part of it.
 
         **Specify intensity with exactly one of ``rate`` or ``count``.**
 

@@ -150,6 +150,36 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
         Ok(true)
     }
 
+    /// Write `new_base` at `site`, counting a write that changes nothing.
+    ///
+    /// Every substitution in this module goes through here, from all seven
+    /// call sites: the two replay paths, the two fresh-sampling paths, the two
+    /// fast paths that preserve the legacy RNG consumption shape, and the
+    /// contract-arbitrated pinned write. The first attempt at this fix patched
+    /// one of them, so the uniform model -- which takes a fast path -- was
+    /// entirely unaffected and the measurement did not move.
+    ///
+    /// `change_base` returns the old nucleotide for the event observers, so
+    /// the comparison is free. The write itself is unconditional: the RNG
+    /// consumption, the recorded trace and the resulting sequence are all
+    /// exactly as before. Only the count changes.
+    fn write_base(&mut self, site: NucHandle, new_base: u8) {
+        let old = self.builder.change_base(site, new_base);
+        // Compared case-insensitively, because case is a separate channel:
+        // a templated base is stored lowercase and an untemplated one
+        // uppercase, and an SHM write emits uppercase. So a draw landing on
+        // the base already there still changes the BYTE -- measured, 191 of
+        // 198 differing positions were a lowercase germline byte against an
+        // uppercase base, and 44 of those 198 were the same base differing
+        // only in case, which a byte comparison would have missed. A consumer
+        // comparing the sequence to its germline case-insensitively, which is
+        // the only correct way given the channel, sees nothing at those
+        // positions, so they are not mutations.
+        if old.base.eq_ignore_ascii_case(&new_base) {
+            self.no_op_substitutions = self.no_op_substitutions.saturating_add(1);
+        }
+    }
+
     /// Substitute a base at a position chosen jointly with the base
     /// under the v3.0 **constrain-before-propose** API.
     ///
@@ -181,36 +211,6 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
     /// Returns `Ok(true)` when a substitution was applied,
     /// `Ok(false)` for permissive empty-support, and `Err(..)` for
     /// strict-mode failures.
-    /// Write `new_base` at `site`, counting a write that changes nothing.
-    ///
-    /// Every substitution in this module goes through here. There are five
-    /// write sites -- the replay path, the fresh-sampling path, two fast
-    /// paths that preserve the legacy RNG consumption shape, and the
-    /// contract-arbitrated pinned write -- and the first attempt at this fix
-    /// patched only the last of them, so the uniform model (which takes a
-    /// fast path) was entirely unaffected and the measurement did not move.
-    ///
-    /// `change_base` returns the old nucleotide for the event observers, so
-    /// the comparison is free. The write itself is unconditional: the RNG
-    /// consumption, the recorded trace and the resulting sequence are all
-    /// exactly as before. Only the count changes.
-    fn write_base(&mut self, site: NucHandle, new_base: u8) {
-        let old = self.builder.change_base(site, new_base);
-        // Compared case-insensitively, because case is a separate channel:
-        // a templated base is stored lowercase and an untemplated one
-        // uppercase, and an SHM write emits uppercase. So a draw landing on
-        // the base already there still changes the BYTE -- measured, 191 of
-        // 198 differing positions were a lowercase germline byte against an
-        // uppercase base -- and a byte comparison caught 2 no-ops where 44 of
-        // those 198 were the same base differing only in case. A consumer
-        // comparing the sequence to its germline case-insensitively, which is
-        // the only correct way given the channel, sees nothing at those
-        // positions, so they are not mutations.
-        if old.base.eq_ignore_ascii_case(&new_base) {
-            self.no_op_substitutions = self.no_op_substitutions.saturating_add(1);
-        }
-    }
-
     pub(crate) fn substitute_position_constrained(
         &mut self,
         base_dist: &dyn Distribution<Output = u8>,

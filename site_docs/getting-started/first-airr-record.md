@@ -101,6 +101,7 @@ rec["v_identity"]        # 1.0  (matches / total over V's CIGAR M/D)
 rec["d_identity"]        # 1.0
 rec["j_identity"]        # 1.0
 rec["n_mutations"]       # 0  (global SHM count)
+rec["n_observable_mutations"]  # 0  (the subset a caller can recover)
 rec["n_v_mutations"]     # 0  (SHM partitioned by carried segment)
 rec["n_d_mutations"]     # 0
 rec["n_j_mutations"]     # 0
@@ -120,18 +121,22 @@ It counts the substitutions that **changed a base**. A uniform
 replacement is drawn from A/C/G/T including the base already present,
 and those draws are not counted — so `mutate(model="uniform", count=7)`
 typically reports five or six, because `count` is the number of attempts.
-`model="s5f"` never draws the identity base, so for it the two coincide.
+No single `model="s5f"` write is ever a no-op: that kernel does not draw
+the base already present.
 
-One gap remains and is intended: a mutation landing on an untemplated
+`n_observable_mutations` is the number a mutation caller can recover from
+`sequence`, and it is the field to score a caller against. It is below
+`n_mutations` by three intended effects: a mutation on an untemplated
 junction base (an N or P addition) changes a base and is counted, but has
-no germline base to differ from, so no caller can recover it from the
-sequence. That is about 4% of single-mutation records for either model.
-At higher counts, two mutations can hit one position and the later one
-restore the germline base, so the count exceeds what is visible by the
-number of such repeats.
+no germline base to differ from, so nothing can recover it — about 5% of
+records that carry a mutation; two mutations can hit one position with the
+later one restoring the germline base; and a position lost to end loss or
+a deletion is no longer in the molecule.
 
-When scoring a mutation caller, compare the sequence against its germline
-rather than against `n_mutations`.
+It is attributable to hypermutation alone. A PCR misincorporation, a
+sequencing miscall or an `N` mask also leaves a position differing from
+its germline, and none of them moves this count — those are reported on
+`n_pcr_errors` and `n_quality_errors`.
 
 ## Paired-end fields (when requested)
 
