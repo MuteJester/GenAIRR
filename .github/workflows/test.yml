@@ -82,11 +82,12 @@ jobs:
           HYPOTHESIS_PROFILE: ci
         run: pytest tests/ -q -n auto -m "not performance" --biology-coverage
 
-      # Scoped to tests/: see the per-file ignores in pyproject for why F401
-      # cannot be enforced on test modules while shared fixtures are imported
-      # by name.
-      - name: Lint the test suite
-        run: ruff check tests/
+      # The package and the build tooling are linted beside the tests. Each
+      # path has its own exemptions in pyproject's per-file ignores, with the
+      # counts and the reason written there; what is NOT exempted is enforced
+      # here, which is the only thing that keeps a fixed rule fixed.
+      - name: Lint the test suite, the package and the tooling
+        run: ruff check tests/ src/ tools/
 
   # ── Rust unit + integration tests ──────────────────────────────
   # Direct `cargo test` against the engine crate. Cheaper and more
