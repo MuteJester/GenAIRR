@@ -269,9 +269,40 @@ impl Trace {
 
     /// Find the first choice recorded at the given typed built-in
     /// address, if any.
+    ///
+    /// Returns the *first*. Where a pass can run more than once and record at
+    /// the same address each time, this is the wrong reader and
+    /// [`Self::sum_int_choices`] is the right one -- see its note.
     pub fn find_choice(&self, address: ChoiceAddress) -> Option<&ChoiceRecord> {
         let address = address.to_string();
         self.find(&address)
+    }
+
+    /// Total of every integer choice recorded at the given address.
+    ///
+    /// Two passes of the same kind can record at one address: configuring
+    /// `end_loss_5prime` twice puts two counts at `corrupt.end_loss.5`, and
+    /// both removed bases from the same end. Reading that with `find_choice`
+    /// reported only the first -- `end_loss_5prime(2)` then
+    /// `end_loss_5prime(7)` removed 9 bases and reported 2 -- and the AIRR
+    /// record builder and the record validator both read it that way, so they
+    /// agreed with each other while disagreeing with the sequence. The
+    /// validator reproducing the defect is why `validate_records` never
+    /// flagged it.
+    ///
+    /// Non-integer values at the address contribute nothing rather than
+    /// panicking: the address is typed, but the trace is not, and a reader
+    /// that aborts on a surprise is worse here than one that ignores it.
+    pub fn sum_int_choices(&self, address: ChoiceAddress) -> i64 {
+        let address = address.to_string();
+        self.choices
+            .iter()
+            .filter(|c| c.address == address)
+            .filter_map(|c| match c.value {
+                ChoiceValue::Int(v) => Some(v),
+                _ => None,
+            })
+            .sum()
     }
 
     /// Find every choice recorded at addresses with the given prefix.
@@ -303,6 +334,56 @@ impl Trace {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sum_int_choices_adds_every_record_at_one_address() {
+        // Two passes of the same kind at the same prime end both record at
+        // `corrupt.end_loss.5`, and `find_choice` returns the first. The
+        // record and the validator both read it that way, so they agreed with
+        // each other and under-reported together: end_loss_5prime(2) then
+        // end_loss_5prime(7) removed 9 bases and reported 2.
+        use crate::address::{ChoiceAddress, PrimeEnd};
+
+        let address = ChoiceAddress::CorruptEndLoss(PrimeEnd::Five);
+        let mut trace = Trace::new();
+        assert_eq!(trace.sum_int_choices(address), 0, "no records sums to zero");
+
+        trace.record_choice(address, ChoiceValue::Int(2));
+        assert_eq!(trace.sum_int_choices(address), 2);
+
+        trace.record_choice(address, ChoiceValue::Int(7));
+        assert_eq!(
+            trace.sum_int_choices(address),
+            9,
+            "both passes removed bases from the same end, so both count"
+        );
+
+        // A different end is a different address and must not be pulled in.
+        trace.record_choice(
+            ChoiceAddress::CorruptEndLoss(PrimeEnd::Three),
+            ChoiceValue::Int(5),
+        );
+        assert_eq!(trace.sum_int_choices(address), 9);
+        assert_eq!(
+            trace.sum_int_choices(ChoiceAddress::CorruptEndLoss(PrimeEnd::Three)),
+            5
+        );
+    }
+
+    #[test]
+    fn sum_int_choices_ignores_non_integer_values_at_the_address() {
+        use crate::address::{ChoiceAddress, PrimeEnd};
+
+        let address = ChoiceAddress::CorruptEndLoss(PrimeEnd::Five);
+        let mut trace = Trace::new();
+        trace.record_choice(address, ChoiceValue::Int(4));
+        trace.record_choice(address, ChoiceValue::Bool(true));
+        assert_eq!(
+            trace.sum_int_choices(address),
+            4,
+            "a non-integer at the address contributes nothing rather than panicking"
+        );
+    }
+
     use super::*;
     use crate::address::{ChoiceAddress, NpSegment, VdjSegment};
     use crate::assignment::TrimEnd;

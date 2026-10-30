@@ -60,6 +60,16 @@ All notable changes to GenAIRR are documented here.
 
 ### Fixed
 
+- `end_loss_5_length` and `end_loss_3_length` now report the total removed when
+  more than one end-loss pass is configured at the same end. Both passes record
+  at one trace address (`corrupt.end_loss.5`), and the record builder read it
+  with a first-match lookup, so `end_loss_5prime(2).end_loss_5prime(7)` removed
+  nine bases and reported two, in either order. The record validator read it the
+  same way, so it agreed with the record and certified it. `primer_trim_5prime`
+  is an alias for `end_loss_5prime`, so the same applied to any mix of the two.
+  A single end-loss pass per end — every packaged preset and all committed
+  reference output — is unaffected, so no golden or packaged artifact changes.
+
 - The junction of a simulated record now runs from the first surviving base of
   the V Cys codon to the last surviving base of the J Trp/Phe codon, read from
   each base's recorded germline position. Exonuclease trimming eats these codons

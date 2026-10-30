@@ -165,14 +165,14 @@ def test_read_spans_and_alignment_coordinates_agree_with_the_germline_span(locus
 
 
 @verifies("assay.end_loss",
-          claim="with a single 5' and a single 3' truncation configured, end "
-                "loss is accounted for in the coordinate books: the V germline "
-                "span begins end_loss_5_length further in and the J germline "
-                "span ends end_loss_3_length earlier, with the separation from "
+          claim="end loss is accounted for in the coordinate books however many "
+                "passes contributed to it: the V germline span begins "
+                "end_loss_5_length further in and the J germline span ends "
+                "end_loss_3_length earlier, with the separation from "
                 "exonuclease loss asserted directly by the two trim fields no "
-                "biology may write staying zero. This does NOT hold when two "
-                "truncations compose -- see the pinned defect below, where "
-                "end_loss_5_length reports 2 of 9 removed bases",
+                "biology may write staying zero. Stacked passes at one end are "
+                "covered too -- the field reports the total they removed, which "
+                "it did not before this branch",
           fields=("end_loss_5_length", "end_loss_3_length"))
 def test_end_loss_is_accounted_for_in_the_germline_coordinates():
     """Checked together with trimming on purpose, because both shorten the
@@ -255,34 +255,43 @@ def test_the_identities_hold_for_any_locus_and_seed(drawn):
             because="the same, at the other end: no 3' J exonuclease loss")
 
 
-# ── a defect this oracle found ───────────────────────────────────────────────
+# ── a defect this oracle found, now fixed ───────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "end_loss_5_length reports only the FIRST 5' truncation when two compose. "
-    "Measured on human IGH, seed 61: end_loss_5prime(2) then "
-    "primer_trim_5prime(7) removes 9 bases -- v_germline_start is 9 -- and "
-    "end_loss_5_length reads 2. Both orders lose the second pass's length, so "
-    "the field appears to be set rather than accumulated. Nothing exports the "
-    "primer trim's own length, so the decomposition of the 9 bases into "
-    "exonuclease loss, read truncation and primer removal is not recoverable "
-    "from the record at all -- only the total, via v_germline_start. Fixing it "
-    "changes an exported field, so it belongs in its own branch."))
-def test_composed_five_prime_truncations_are_each_accounted_for():
-    """The coordinate identity catches this, which is what it is for.
+@pytest.mark.parametrize("end,builder,total", [
+    ("5'", lambda e: e.end_loss_5prime(length=2).end_loss_5prime(length=7), 9),
+    ("5'", lambda e: e.end_loss_5prime(length=7).end_loss_5prime(length=2), 9),
+    ("5'", lambda e: (e.end_loss_5prime(length=2)
+                       .end_loss_5prime(length=3)
+                       .end_loss_5prime(length=4)), 9),
+    # primer_trim_5prime is a documented alias for end_loss_5prime -- same
+    # trace address, same field -- so this is the same case by another name,
+    # and it is the spelling the defect was first found through.
+    ("5'", lambda e: e.end_loss_5prime(length=2).primer_trim_5prime(length=7), 9),
+    ("3'", lambda e: e.end_loss_3prime(length=3).end_loss_3prime(length=5), 8),
+])
+def test_stacked_end_loss_at_one_end_reports_the_total_it_removed(end, builder, total):
+    """Configuring end loss twice at one end used to report only the first.
 
-    `germline_start == trim_5 + end_loss_5_length` fires on 20 of 20 records
-    once two 5' truncations compose. The oracle is right and the record is
-    wrong, so this is pinned rather than the identity being loosened: loosening
-    it would hide a field that under-reports by 7 bases.
+    Both passes record at the same trace address -- ``corrupt.end_loss.5`` --
+    and the record builder read it with a first-match lookup, so
+    ``end_loss_5prime(2).end_loss_5prime(7)`` removed 9 bases and reported 2,
+    in either order. The record validator read it the same wrong way, agreed
+    with the record, and certified it; a validator that reproduces the defect
+    it exists to catch is worth less than none.
+
+    The coordinate identity caught it, which is what it is for: the reported
+    end loss has to account for the gap between the trim and the germline
+    start, and 2 did not account for 9.
     """
-    exp = (experiment_builder.recombined()
-           .end_loss_5prime(length=2)
-           .primer_trim_5prime(length=7))
+    field = "end_loss_5_length" if end == "5'" else "end_loss_3_length"
+    exp = builder(experiment_builder.recombined())
     for record, lengths in _observed(exp, n=20, seed=61):
-        assert record["v_germline_start"] == 9, (
-            "the fixture did not remove 9 bases from V's 5' end")
-        assert record["end_loss_5_length"] == 9, (
-            f"end_loss_5_length reports {record['end_loss_5_length']} of the 9 "
-            "bases actually removed from the read's 5' end")
+        assert record[field] == total, (
+            f"{end} end loss reports {record[field]} of the {total} bases the "
+            "stacked passes removed")
         assert coordinates.disagreements(record, lengths) == ()
+    # The identity is only meaningful while the removal is visible in the
+    # coordinates, so assert the fixture actually moved them.
+    if end == "5'":
+        assert record["v_germline_start"] == total
