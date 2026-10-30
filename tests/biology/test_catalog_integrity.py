@@ -443,6 +443,11 @@ def test_the_coverage_report_numbers_are_pinned():
     ``consistent``; the previously gap-limited row joined them for the same
     reason. Nothing about the engine changed when this number fell -- what
     changed is that the report stopped counting the weaker basis as proof.
+
+    It then rose by two: junction.assembly and junction.coding_end_processing
+    went from no registered tests at all to verified on a reference basis --
+    against the anchor coordinate and the conserved residue the reference
+    declares, rather than against another exported field.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -451,10 +456,10 @@ def test_the_coverage_report_numbers_are_pinned():
               for r in rows for status in [r.status]}
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
     assert counts == {
-        "verified": 11,
+        "verified": 13,
         "consistent": 6,
         "partial": 2,
-        "unverified": 9,
+        "unverified": 7,
         "no-truth-exported": 3,
     }, (
         f"the declared coverage distribution changed to {counts}. If that was "
