@@ -87,7 +87,11 @@ rec["stop_codon"]       # False
 flags decompose as:
 
 - `vj_in_frame` - `junction_length % 3 == 0`.
-- `stop_codon` - any stop in `junction_aa` (meaningful only when in-frame).
+- `stop_codon` - any stop in the translated coding span, from the V's
+  first in-frame position through the end of the J. **Not** limited to
+  the junction: a record whose `junction_aa` translates cleanly can
+  still carry `stop_codon: True`, with `coding_stop` in
+  `productivity_reasons`. Measured on 46 of 299 hypermutated records.
 - `productive` - full triad: in-frame ∧ no junction stop ∧ V Cys
   preserved ∧ J W-or-F preserved.
 
