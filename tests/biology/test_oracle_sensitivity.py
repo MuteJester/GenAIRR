@@ -639,3 +639,49 @@ def test_an_inverted_d_is_compared_by_the_base_level_oracle_rather_than_skipped(
         "an inverted D compared against the forward reference agreed, which "
         "means the comparison is not reading the reference")
     assert {m.segment for m in not_told.mismatches} == {"D"}
+
+
+def test_a_junction_bound_moved_off_the_anchor_is_reported():
+    """The mutant for the junction oracle: a window that no longer starts at
+    the V anchor codon.
+
+    This is the defect a CDR3 benchmark would suffer most from and notice
+    least -- every junction one base short at the 5' end still looks like a
+    plausible CDR3, so nothing downstream complains. The probe measurements in
+    the oracle's circularity map establish what it cannot see; this
+    establishes that the wiring in the truth test does fire, which is a
+    different question and the one a passing green test leaves open.
+    """
+    from tests.support.oracles import junction as junction_oracle
+
+    exp = experiment_builder.recombined()
+    reported = 0
+    for outcome in exp.run(n=20, seed=5):
+        record = dict(outcome.airr_record(exp.refdata))
+        simulation = outcome.final_simulation()
+        v_allele = j_allele = None
+        for index in range(exp.refdata.v_pool_size()):
+            if exp.refdata.v_allele(index).name == record["v_call"]:
+                v_allele = exp.refdata.v_allele(index)
+        for index in range(exp.refdata.j_pool_size()):
+            if exp.refdata.j_allele(index).name == record["j_call"]:
+                j_allele = exp.refdata.j_allele(index)
+        # One base late at the 5' end, with the string and the length kept
+        # consistent so only the anchor identity can catch it. Trimming the
+        # junction string too is what makes this a real mutant rather than
+        # three identities firing at once.
+        record["junction_start"] += 1
+        record["junction"] = record["junction"][1:]
+        record["junction_length"] -= 1
+        found = junction_oracle.disagreements(
+            record, simulation,
+            reconstruction.segments_by_position(simulation),
+            v_anchor=v_allele.anchor, j_anchor=j_allele.anchor,
+            v_sequence=bytes(v_allele.seq()), j_sequence=bytes(j_allele.seq()))
+        identities = {d.identity for d in found}
+        assert "junction_start == first surviving base of the V anchor codon" \
+            in identities, (
+            f"a junction starting one base past the anchor was not reported; "
+            f"got {sorted(identities)}")
+        reported += 1
+    assert reported == 20
