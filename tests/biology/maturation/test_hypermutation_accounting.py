@@ -169,3 +169,56 @@ def test_n_observable_mutations_is_what_a_caller_can_recover(model, count):
     assert totals["reported"] < totals["recorded"], (
         f"{model}/{count}: no gap between {totals['recorded']} counted and "
         f"{totals['reported']} recoverable, so this field establishes nothing")
+
+
+# Each entry is a pipeline that writes bases for a reason that is not somatic
+# hypermutation: PCR misincorporation, a sequencing miscall, an ambiguous base
+# call masking a position with N, or wholesale replacement by a background
+# molecule. None of them is a mutation a caller should be scored on.
+NON_SHM_WRITERS = (
+    ("pcr", lambda e: e.pcr_amplify(count=5)),
+    ("sequencing", lambda e: e.sequencing_errors(count=5)),
+    ("ambiguous", lambda e: e.ambiguous_base_calls(count=4)),
+    ("contaminant", lambda e: e.contaminate(prob=1.0)),
+)
+
+
+@verifies("maturation.hypermutation",
+          claim="n_observable_mutations is attributable to somatic "
+                "hypermutation and to nothing else. A pipeline that writes "
+                "bases for a library or sequencing reason -- PCR "
+                "misincorporation, a sequencing miscall, an N mask, a "
+                "background contaminant -- moves no part of it, so a caller "
+                "scored against it is not credited for calling noise",
+          fields=("n_observable_mutations",))
+@pytest.mark.parametrize("label,corrupt", NON_SHM_WRITERS,
+                         ids=[n for n, _ in NON_SHM_WRITERS])
+def test_observable_mutations_exclude_every_non_shm_writer(label, corrupt):
+    """The field is published as the number to score a mutation caller
+    against. Derived from the finished molecule alone it cannot be that: every
+    pass that writes a base leaves a position differing from its germline, and
+    a count of those differences credits a caller for calling sequencing
+    noise as hypermutation. A contaminant record would hand it a target in
+    the hundreds against a real burden of five.
+
+    Two assertions, because the two halves fail differently. With no
+    mutation pass in the pipeline the only honest answer is zero. With one,
+    the recoverable count cannot exceed what was counted.
+    """
+    unmutated = corrupt(experiment_builder.recombined())
+    for index, outcome in enumerate(unmutated.run(n=30, seed=3)):
+        record = outcome.airr_record(unmutated.refdata)
+        assert record["n_mutations"] == 0, (
+            f"{label}: fixture error -- no mutation pass is configured")
+        assert record["n_observable_mutations"] == 0, (
+            f"{label}: record {index} reports "
+            f"{record['n_observable_mutations']} recoverable mutations in a "
+            f"pipeline with no mutation pass")
+
+    mutated = corrupt(experiment_builder.recombined().mutate(model="s5f", count=5))
+    for index, outcome in enumerate(mutated.run(n=30, seed=3)):
+        record = outcome.airr_record(mutated.refdata)
+        assert record["n_observable_mutations"] <= record["n_mutations"], (
+            f"{label}: record {index} reports "
+            f"{record['n_observable_mutations']} recoverable against "
+            f"{record['n_mutations']} counted")
