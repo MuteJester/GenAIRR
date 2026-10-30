@@ -171,18 +171,14 @@ ignore = ["F841"]
 # above. Enforcing them is a separate change, not a test-suite restructure:
 #
 #   F401 (80)  unused imports, largely re-exports in the public __init__ layer
-#   F821 (40)  every one a quoted forward reference to a class the module does
-#              not import -- 39 in Experiment mixins, e.g.
-#              `-> "ReferenceCartridgeBuilder"`, and one in
-#              genotype/_sampling.py (`-> "Genotype"`). Harmless at runtime,
-#              since a string annotation is never evaluated, but
-#              typing.get_type_hints() raises on it and no type checker or IDE
-#              can resolve the return type. Worth its own pass; fixing it means
-#              deciding whether these modules import under TYPE_CHECKING or
-#              return a protocol.
 #   F541 (9)   f-strings with no placeholder
-"src/**/*.py" = ["F401", "F821", "F541"]
-"tools/**/*.py" = ["F401", "F821", "F541"]
+#
+# F821 was the third of these, at 40 findings, and is now fixed rather than
+# exempted: each was a quoted forward reference to a class the module does not
+# import, resolved with a TYPE_CHECKING block. It is enforced from here on, and
+# `ruff check src/ tools/` runs in CI beside `tests/` so it stays that way.
+"src/**/*.py" = ["F401", "F541"]
+"tools/**/*.py" = ["F401", "F541"]
 # A superseded, unreferenced copy of tools/build_imgt_configs.py. See
 # .private/scripts/README.md -- it would NameError if run, and the tracked
 # tool it was copied from does not have that defect.

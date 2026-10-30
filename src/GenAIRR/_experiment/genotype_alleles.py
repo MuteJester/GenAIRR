@@ -1,8 +1,21 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, TYPE_CHECKING, Tuple, Union
 
 from ._common import _UNSET
+
+# Imported for the quoted return annotations below only. At runtime this
+# module is imported BY the class it annotates, so a real import would be
+# circular. Under TYPE_CHECKING a type checker and an IDE resolve the
+# return type instead of seeing an undefined name.
+#
+# This does NOT make typing.get_type_hints() work on these signatures: the
+# import does not exist at runtime, so it still raises NameError, as it did
+# before. Fixing that needs the name importable at runtime, which is the
+# circularity above, or an explicit namespace at the call site.
+if TYPE_CHECKING:
+    from ..experiment import Experiment
+    from ._common import _LockInput
 
 
 class _GenotypeAllelesMixin:

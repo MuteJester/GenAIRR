@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, Optional, Tuple, Union
+from typing import Iterable, Optional, TYPE_CHECKING, Tuple, Union
 
 from .._normalize import _normalize_count
 from .._pipeline_ir import (
@@ -14,6 +14,18 @@ from .._pipeline_ir import (
     _CORRUPT_KIND_REV_COMP,
     _CorruptStep,
 )
+
+# Imported for the quoted return annotations below only. At runtime this
+# module is imported BY the class it annotates, so a real import would be
+# circular. Under TYPE_CHECKING a type checker and an IDE resolve the
+# return type instead of seeing an undefined name.
+#
+# This does NOT make typing.get_type_hints() work on these signatures: the
+# import does not exist at runtime, so it still raises NameError, as it did
+# before. Fixing that needs the name importable at runtime, which is the
+# circularity above, or an explicit namespace at the call site.
+if TYPE_CHECKING:
+    from ..experiment import Experiment
 
 
 class _CorruptionMixin:
