@@ -346,6 +346,49 @@ pub(super) fn check_counters(
         });
     }
 
+    // The recoverable per-subregion counters against their event
+    // counterparts. A recoverable substitution had at least one event behind
+    // it in the same subregion, so the first relation is unsatisfiable the
+    // other way round; and the six of them describe the V segment only, while
+    // the whole-record recoverable count also covers D, J and the untemplated
+    // junction. Both measured over 160 records across two mutation models
+    // with end loss before being asserted here.
+    for (region, observable, events) in [
+        ("fwr1", record.n_fwr1_observable_mutations, record.n_fwr1_mutations),
+        ("cdr1", record.n_cdr1_observable_mutations, record.n_cdr1_mutations),
+        ("fwr2", record.n_fwr2_observable_mutations, record.n_fwr2_mutations),
+        ("cdr2", record.n_cdr2_observable_mutations, record.n_cdr2_mutations),
+        ("fwr3", record.n_fwr3_observable_mutations, record.n_fwr3_mutations),
+        (
+            "v_unannotated",
+            record.n_v_unannotated_observable_mutations,
+            record.n_v_unannotated_mutations,
+        ),
+    ] {
+        if observable > events {
+            issues.push(RecordValidationIssue::VSubregionObservableExceedsEvents {
+                region,
+                observable,
+                events,
+            });
+        }
+    }
+    let observable_buckets = record
+        .n_fwr1_observable_mutations
+        .saturating_add(record.n_cdr1_observable_mutations)
+        .saturating_add(record.n_fwr2_observable_mutations)
+        .saturating_add(record.n_cdr2_observable_mutations)
+        .saturating_add(record.n_fwr3_observable_mutations)
+        .saturating_add(record.n_v_unannotated_observable_mutations);
+    if observable_buckets > record.n_observable_mutations {
+        issues.push(
+            RecordValidationIssue::VSubregionObservableSumExceedsTotal {
+                sum_of_subregion_buckets: observable_buckets,
+                reported_total: record.n_observable_mutations,
+            },
+        );
+    }
+
     // Persistent assignment totals include P additions inherited from a
     // clonal founder. This outcome's ledger records newly emitted P bytes;
     // retain it as a fallback for synthetic outcomes without stamped totals.

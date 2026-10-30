@@ -6,6 +6,27 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
+- Six per-V-subregion recoverable mutation counters —
+  `n_fwr1_observable_mutations`, `n_cdr1_observable_mutations`,
+  `n_fwr2_observable_mutations`, `n_cdr2_observable_mutations`,
+  `n_fwr3_observable_mutations`, `n_v_unannotated_observable_mutations` — the
+  regional counterpart of `n_observable_mutations`. **Use these for a CDR/FWR
+  selection-pressure ratio computed from a read.** The existing per-subregion
+  counters are a correct partition of `n_v_mutations`, but they count
+  hypermutation *events* over the molecule: measured against an independent
+  oracle that buckets the visible differences by the same IMGT table, they
+  agree with what a read shows on 60 of 60 records at one mutation, 32 of 60
+  at twenty, and 17 of 60 once twelve nucleotides are lost from the 5' end,
+  where the record counts mutations in bases the read no longer contains. The
+  six new fields agree on 60 of 60 in every one of those configurations. They
+  sum to the V part of `n_observable_mutations` and each is at most its event
+  counterpart; `validate_records` checks both through
+  `VSubregionObservableExceedsEvents` and
+  `VSubregionObservableSumExceedsTotal`. The committed goldens gain six
+  columns with no existing value changed — though every record in them
+  carries zero mutations, so that stability evidences nothing about these
+  fields.
+
 - `n_observable_mutations`: the somatic-hypermutation substitutions a mutation
   caller can recover from `sequence` — the positions a mutation pass wrote a
   changed base at that are still in the molecule and still differ from the

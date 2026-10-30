@@ -461,6 +461,17 @@ pub(crate) fn airr_record_to_pydict<'py>(
     dict.set_item("n_cdr2_mutations", rec.n_cdr2_mutations)?;
     dict.set_item("n_fwr3_mutations", rec.n_fwr3_mutations)?;
     dict.set_item("n_v_unannotated_mutations", rec.n_v_unannotated_mutations)?;
+    // The recoverable counterparts. Same partition, over what survived in the
+    // read rather than over what happened to the molecule.
+    dict.set_item("n_fwr1_observable_mutations", rec.n_fwr1_observable_mutations)?;
+    dict.set_item("n_cdr1_observable_mutations", rec.n_cdr1_observable_mutations)?;
+    dict.set_item("n_fwr2_observable_mutations", rec.n_fwr2_observable_mutations)?;
+    dict.set_item("n_cdr2_observable_mutations", rec.n_cdr2_observable_mutations)?;
+    dict.set_item("n_fwr3_observable_mutations", rec.n_fwr3_observable_mutations)?;
+    dict.set_item(
+        "n_v_unannotated_observable_mutations",
+        rec.n_v_unannotated_observable_mutations,
+    )?;
     // Observation-stage end-loss / primer-trim amounts (audit
     // §6.1 fix). Distinct from recombination-stage v_trim_*/
     // j_trim_*; defaults to 0 when no end-loss pass ran.
@@ -701,6 +712,33 @@ fn issue_to_pydict<'py>(
             d.set_item("reported", reported)?;
             d.set_item("expected", recomputed)?;
             details.set_item("source", "mutate.* BaseChanged events resolved against the pool")?;
+        }
+        RecordValidationIssue::VSubregionObservableExceedsEvents {
+            region,
+            observable,
+            events,
+        } => {
+            d.set_item("kind", "VSubregionObservableExceedsEvents")?;
+            d.set_item("reported", observable)?;
+            d.set_item("expected", events)?;
+            details.set_item("region", region)?;
+            details.set_item(
+                "invariant",
+                "n_<region>_observable_mutations <= n_<region>_mutations",
+            )?;
+        }
+        RecordValidationIssue::VSubregionObservableSumExceedsTotal {
+            sum_of_subregion_buckets,
+            reported_total,
+        } => {
+            d.set_item("kind", "VSubregionObservableSumExceedsTotal")?;
+            d.set_item("reported", sum_of_subregion_buckets)?;
+            d.set_item("expected", reported_total)?;
+            details.set_item(
+                "invariant",
+                "the six V-subregion recoverable counters sum to at most \
+                 n_observable_mutations, which also covers D, J and NP",
+            )?;
         }
         RecordValidationIssue::ObservableMutationsExceedCount {
             observable,

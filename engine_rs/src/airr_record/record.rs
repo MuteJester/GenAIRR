@@ -249,6 +249,39 @@ pub struct AirrRecord {
     /// inspecting the assigned V allele and the cartridge
     /// manifest's `v_subregion_support.annotated_v_count`.
     pub n_v_unannotated_mutations: i64,
+    /// Per-V-subregion counters for the substitutions a mutation caller can
+    /// RECOVER, the regional counterpart of [`Self::n_observable_mutations`].
+    /// Together they partition it over the V segment:
+    ///
+    /// ```text
+    /// n_fwr1_observable + n_cdr1_observable + n_fwr2_observable
+    ///     + n_cdr2_observable + n_fwr3_observable
+    ///     + n_v_unannotated_observable == the V part of n_observable_mutations
+    /// ```
+    ///
+    /// **Use these for a CDR/FWR selection-pressure ratio computed from a
+    /// read, not the event counters above.** The two diverge wherever an
+    /// event left nothing to see: measured against an independent oracle, the
+    /// event counters agree with what the read shows on 100 of 100 records at
+    /// one mutation but on 32 of 60 at twenty (a position hit twice is two
+    /// events and one visible difference), 30 of 60 with polymerase indels,
+    /// and 16 of 60 with twelve nucleotides of 5' end loss -- where the
+    /// record counts mutations in bases the read no longer contains.
+    ///
+    /// Derived like `n_observable_mutations`: the hypermutation passes' own
+    /// sites, resolved against the finished pool, then bucketed by the
+    /// assigned V allele's [`crate::refdata::Allele::subregions`] table. So a
+    /// position lost to end loss or restored by a repeat hit is absent from
+    /// these the same way it is absent from the whole-record count.
+    pub n_fwr1_observable_mutations: i64,
+    pub n_cdr1_observable_mutations: i64,
+    pub n_fwr2_observable_mutations: i64,
+    pub n_cdr2_observable_mutations: i64,
+    pub n_fwr3_observable_mutations: i64,
+    /// Recoverable V substitutions outside the five canonical IMGT
+    /// subregions, for the same three reasons
+    /// [`Self::n_v_unannotated_mutations`] documents.
+    pub n_v_unannotated_observable_mutations: i64,
     /// Number of bases removed from the 5' end of the assembled
     /// sequence by the observation-stage `EndLossPass` (the engine
     /// pass that backs `Experiment.end_loss_5prime`, with

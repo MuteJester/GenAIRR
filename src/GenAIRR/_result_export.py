@@ -187,6 +187,14 @@ _DEFAULT_COLUMN_ORDER = [
     "n_cdr2_mutations",
     "n_fwr3_mutations",
     "n_v_unannotated_mutations",
+    # The per-region recoverable counters, beside their event counterparts for
+    # the same reason n_observable_mutations sits beside n_mutations.
+    "n_fwr1_observable_mutations",
+    "n_cdr1_observable_mutations",
+    "n_fwr2_observable_mutations",
+    "n_cdr2_observable_mutations",
+    "n_fwr3_observable_mutations",
+    "n_v_unannotated_observable_mutations",
     # Observation-stage length loss (EndLossPass / primer_trim_*).
     # Distinct from recombination-stage v_trim_*/j_trim_*. See
     # docs/primer_trim_end_loss_audit.md §6.1.
