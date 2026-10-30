@@ -145,7 +145,13 @@ def test_attempt_counters_survive_empty_observation_and_noop_continuation():
     for simulation in (outcome.final_simulation(), child.final_simulation()):
         record = project_duplex_simulation(simulation, ref)["record"]
         assert record["sequence"] == ""
-        assert record["n_pcr_errors"] == 2 and record["n_quality_errors"] == 3
+        # Nothing survives the loss, so the two errors drawn against an empty
+        # observation are attempts that never land. The attempts are retained
+        # and accumulate; the n_* counters report applied substitutions, which
+        # here is none.
+        attempts = record["duplex_repair"]["sampled_error_attempts"]
+        assert attempts["pcr"] == 2 and attempts["quality"] == 3
+        assert record["n_pcr_errors"] == 0 and record["n_quality_errors"] == 0
         assert record["n_mutations"] == 0 and record["n_indels"] == 0
 
 

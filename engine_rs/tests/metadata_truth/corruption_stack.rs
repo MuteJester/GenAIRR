@@ -758,10 +758,14 @@ fn full_corruption_stack_mutation_count_matches_live_call_state_after_many_passe
 }
 
 #[test]
-fn full_corruption_stack_pcr_quality_counts_match_trace() {
-    // n_pcr_errors and n_quality_errors are reads of trace counter
-    // addresses, NOT inferred from base diffs. Verify those match the
-    // counts requested via the plan distributions (1 + 1).
+fn full_corruption_stack_pcr_quality_counts_are_realized_not_requested() {
+    // n_pcr_errors and n_quality_errors count the substitutions each pass
+    // APPLIED that changed a base -- not the counts requested via the plan
+    // distributions, which is what this test used to assert and what the
+    // fields used to report. One error is requested of each pass here; at
+    // this seed the PCR draw lands on the base already present and realizes
+    // nothing, while the quality draw changes a base. That asymmetry from a
+    // single requested error each is the whole point of the distinction.
     let cfg = common::vdj_ambiguous_refdata();
     let v_id = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let d_id = common::allele_id_by_name(&cfg, Segment::D, "d01*01");
@@ -771,12 +775,9 @@ fn full_corruption_stack_pcr_quality_counts_match_trace() {
     let (_outcome, rec) = run_stack(&cfg, plan, 7);
 
     assert_eq!(
-        rec.n_pcr_errors, 1,
-        "n_pcr_errors should match PCRErrorPass count distribution",
-    );
-    assert_eq!(
-        rec.n_quality_errors, 1,
-        "n_quality_errors should match QualityErrorPass count distribution",
+        (rec.n_pcr_errors, rec.n_quality_errors),
+        (0, 1),
+        "one error requested of each pass; PCR realized none at this seed"
     );
     assert_eq!(
         rec.n_indels, 1,

@@ -546,15 +546,28 @@ fn project_counters(
     ] {
         record.insert(field.into(), counts.remove(field).unwrap_or(json!(0)));
     }
-    for (field, stage) in [
-        ("n_pcr_errors", crate::ir::DuplexAttemptStage::Pcr),
-        ("n_quality_errors", crate::ir::DuplexAttemptStage::Quality),
-    ] {
-        record.insert(field.into(), json!(p.sampled_attempts(stage)));
-    }
+    // The applied substitutions, not `sampled_attempts`. This ledger already
+    // separated the two -- the applied counts are published under
+    // `duplex_repair.applied_error_substitutions` below -- while the exported
+    // counters carried the attempt count, so the two halves of the same record
+    // disagreed about how many errors it has. The native builder had the same
+    // defect and is fixed alongside this.
+    let applied_pcr = counts
+        .remove("applied_pcr_substitutions")
+        .unwrap_or(json!(0));
+    let applied_quality = counts
+        .remove("applied_quality_substitutions")
+        .unwrap_or(json!(0));
+    record.insert("n_pcr_errors".into(), applied_pcr.clone());
+    record.insert("n_quality_errors".into(), applied_quality.clone());
+    // Retained so a consumer can see how many draws were made against how
+    // many landed; `sampled_attempts` is the pass's intent, not its effect.
+    record["duplex_repair"]["sampled_error_attempts"] = json!({
+        "pcr": p.sampled_attempts(crate::ir::DuplexAttemptStage::Pcr),
+        "quality": p.sampled_attempts(crate::ir::DuplexAttemptStage::Quality)});
     record["duplex_repair"]["applied_error_substitutions"] = json!({
-        "pcr":counts.remove("applied_pcr_substitutions").unwrap_or(json!(0)),
-        "quality":counts.remove("applied_quality_substitutions").unwrap_or(json!(0))});
+        "pcr": applied_pcr,
+        "quality": applied_quality});
     record.insert("n_mutations".into(), json!(sim.mutation_count));
     // Resolved against the observed molecule exactly as the native builder
     // does it, from the SHM sites this ledger attributes to a mutation pass.

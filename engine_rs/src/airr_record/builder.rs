@@ -194,8 +194,15 @@ pub fn build_airr_record(
     // Each mutation stage records its own input molecule length. Later read
     // loss must not inflate this cumulative event burden.
     rec.mutation_rate = sim.mutation_burden;
-    rec.n_pcr_errors = trace_int_choice(trace, ChoiceAddress::CorruptPcrCount);
-    rec.n_quality_errors = trace_int_choice(trace, ChoiceAddress::CorruptQualityCount);
+    // Realized, not drawn. The trace's `corrupt.*.count` is how many errors
+    // the pass was asked to introduce; a replacement is drawn from A/C/G/T
+    // including the base already present, so some draws write a byte and
+    // introduce no error. Reading the drawn count reported work that did not
+    // happen -- measured at 500 reported against 351 germline-differing bases
+    // over 100 records at count=5, for each of the two passes. This is the
+    // same defect `n_mutations` carried, in the counters beside it.
+    rec.n_pcr_errors = realized_substitutions(outcome, address::CORRUPT_PCR);
+    rec.n_quality_errors = realized_substitutions(outcome, address::CORRUPT_QUALITY);
     // Count realized structural indels from the event ledger, not the
     // trace's `corrupt.indel.count` (which is the *attempted* count
     // and includes pool-empty / contract no-op sentinels). Scoped to
@@ -747,4 +754,32 @@ fn is_canonical_base(base: u8) -> bool {
         base,
         b'A' | b'C' | b'G' | b'T' | b'a' | b'c' | b'g' | b't'
     )
+}
+
+
+/// Count the substitutions a corruption pass applied that changed a base.
+///
+/// Walks that pass's `BaseChanged` events rather than reading its drawn count
+/// from the trace. Compared case-insensitively for the same reason every other
+/// reader of this difference is: case carries the templated/untemplated
+/// channel, not base identity, so a byte comparison sees a change wherever the
+/// write flipped case and nothing else.
+pub(crate) fn realized_substitutions(outcome: &Outcome, pass_name: &str) -> i64 {
+    let mut realized = 0i64;
+    for record in outcome.events() {
+        if record.pass_name != pass_name {
+            continue;
+        }
+        for event in &record.simulation_events {
+            if let SimulationEvent::BaseChanged {
+                old_base, new_base, ..
+            } = event
+            {
+                if !old_base.eq_ignore_ascii_case(new_base) {
+                    realized += 1;
+                }
+            }
+        }
+    }
+    realized
 }

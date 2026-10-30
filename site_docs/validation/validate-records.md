@@ -136,7 +136,7 @@ Every counter on the record is re-derived from a canonical source:
 |---|---|
 | `n_mutations` | `Simulation.mutation_count` - set by S5F / Uniform at seal time |
 | `n_v_mutations` / `n_d_mutations` / `n_j_mutations` / `n_np_mutations` | The same SHM events, partitioned by carried segment |
-| `n_pcr_errors` / `n_quality_errors` | Trace addresses on the corruption passes |
+| `n_pcr_errors` / `n_quality_errors` | Each pass's own `BaseChanged` events, counting only writes that changed a base |
 | `n_indels` / `n_v_indels` / `n_d_indels` / `n_j_indels` | `IndelInserted` + `IndelDeleted` events from the indel pass |
 | `end_loss_5_length` / `end_loss_3_length` | Trace addresses on the end-loss pass |
 

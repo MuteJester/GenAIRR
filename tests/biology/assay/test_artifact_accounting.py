@@ -203,3 +203,89 @@ def test_end_loss_is_recorded_separately_from_trimming():
             "reach the 5' end is not exonuclease loss")
         lost += record["end_loss_5_length"]
     assert lost > 0, "no end loss was produced; the fixture establishes nothing"
+
+
+def _positions_the_pass_changed(add_pass, *, n, seed, count):
+    """Per record, the positions a corruption pass actually changed.
+
+    A cross-run differential, not an oracle: it runs the library twice with
+    one seed, once with the pass and once without, and diffs the sequences.
+    Adding a corruption pass does not disturb the recombination draws that
+    precede it, so every position that differs between the two runs is a base
+    this pass wrote and changed. Measured on this fixture: 3 to 5 differing
+    positions of ~380, the rest byte-identical.
+
+    This cannot be an oracle under ``tests/support/oracles`` because it has to
+    call GenAIRR to produce the second dataset, which an oracle may never do.
+    What makes it independent of the thing under test is that it never reads
+    the event ledger or the trace the counters are derived from -- only two
+    emitted sequences.
+    """
+    plain = [o.airr_record(experiment_builder.recombined().refdata)["sequence"]
+             for o in experiment_builder.recombined().run(n=n, seed=seed)]
+    corrupt_exp = add_pass(experiment_builder.recombined(), count)
+    corrupted = [o.airr_record(corrupt_exp.refdata)["sequence"]
+                 for o in corrupt_exp.run(n=n, seed=seed)]
+    changed = []
+    for before, after in zip(plain, corrupted):
+        assert len(before) == len(after), (
+            "a substitution pass must not change the molecule's length")
+        changed.append(sum(1 for a, b in zip(before, after)
+                           if a.upper() != b.upper()))
+    return changed, corrupt_exp
+
+
+def _realized_and_reported(add_pass, field, *, n=200, seed=11, count=1):
+    """``(changed positions per record, counter per record)`` for one pass."""
+    changed, exp = _positions_the_pass_changed(add_pass, n=n, seed=seed, count=count)
+    reported = [o.airr_record(exp.refdata)[field] for o in exp.run(n=n, seed=seed)]
+    return changed, reported
+
+
+def _assert_counts_realized_not_drawn(field, changed, reported, *, draws):
+    assert sum(changed) > 0, f"{field}: the fixture produced no error at all"
+    for index, (got, expected) in enumerate(zip(reported, changed)):
+        assert got == expected, (
+            f"{field}: record {index} reports {got} where the pass changed "
+            f"{expected} positions")
+    # The gap is the point: if every draw changed a base the two numbers would
+    # coincide and this would establish nothing about which one is counted.
+    assert sum(changed) < draws, (
+        f"{field}: every one of {draws} draws changed a base, so a draw count "
+        f"and a realized count are indistinguishable on this fixture")
+
+
+@verifies("assay.pcr_error",
+          claim="n_pcr_errors counts the amplification errors that changed a "
+                "base, not the number of error draws. A replacement is drawn "
+                "from A/C/G/T including the base already present, so a draw "
+                "landing on it writes a byte and introduces no error",
+          fields=("n_pcr_errors",))
+def test_pcr_error_counter_counts_realized_errors_not_draws():
+    """The same defect `n_mutations` carried: a counter read off the drawn
+    count reports work that did not happen, and a tool scored against it
+    carries a built-in false-negative rate equal to the discrepancy.
+
+    At one error per record a repeat hit is impossible, so the realized count
+    and the number of changed positions are the same number and can be
+    compared exactly.
+    """
+    changed, reported = _realized_and_reported(
+        lambda e, c: e.pcr_amplify(count=c), "n_pcr_errors")
+    _assert_counts_realized_not_drawn(
+        "n_pcr_errors", changed, reported, draws=200)
+
+
+@verifies("assay.quality_error",
+          claim="n_quality_errors counts the base-calling errors that changed "
+                "a base, not the number of error draws. It is populated by "
+                "sequencing_errors(); ambiguous_base_calls() masks positions "
+                "with N and reports on neither error counter",
+          fields=("n_quality_errors",))
+def test_quality_error_counter_counts_realized_errors_not_draws():
+    """Same claim for the base-calling counter, which shares the write path
+    and shared the defect."""
+    changed, reported = _realized_and_reported(
+        lambda e, c: e.sequencing_errors(count=c), "n_quality_errors")
+    _assert_counts_realized_not_drawn(
+        "n_quality_errors", changed, reported, draws=200)
