@@ -62,7 +62,10 @@ def test_clones_keep_parent_mutation_counters_and_rate_through_observation_loss(
     for record in result:
         # `count=N` is N attempts; a uniform draw landing on the base already
         # there is not counted, so the realised total is at most the attempts.
-        assert record["n_mutations"] <= 3 + post_mutations
+        # Bounded above AND below: with a realised count of zero the rate
+        # assertion below compares 0.0 against 0.0 and says nothing about the
+        # denominator, which is this test's whole subject.
+        assert 0 < record["n_mutations"] <= 3 + post_mutations
         # The subject: the rate's denominator is the stage molecule (18), not
         # the shorter read left after the 3' loss.
         assert record["mutation_rate"] == pytest.approx(record["n_mutations"] / 18)

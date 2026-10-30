@@ -366,7 +366,7 @@ fn silent_mutation_at_non_distinguishing_position_preserves_call() {
 }
 
 #[test]
-fn n_mutations_field_equals_uniform_mutation_count() {
+fn n_mutations_field_reports_the_realised_uniform_mutation_count() {
     // UniformMutationPass with count=4 should produce
     // `n_mutations = 4` in the AIRR record (the stash on
     // LiveCallState.mutation_count).
@@ -376,17 +376,25 @@ fn n_mutations_field_equals_uniform_mutation_count() {
         Box::new(EmpiricalLengthDist::from_pairs(vec![(4, 1.0)])),
         Box::new(UniformBase),
     )));
-    let (_sim, rec) = run_plan_with_record(&cfg, plan, 7);
+    let (sim, rec) = run_plan_with_record(&cfg, plan, 7);
 
     // The count distribution samples 4, which is the number of substitution
     // ATTEMPTS. A uniform replacement is drawn from all four bases including
-    // the one already present, and those draws are no longer counted, so
-    // n_mutations reports the realised subset.
-    assert!(
-        rec.n_mutations <= 4,
-        "n_mutations {} exceeds the 4 attempts the count distribution sampled",
-        rec.n_mutations
-    );
+    // the one already present, and those draws are not counted, so
+    // n_mutations reports the realised subset -- which is why this test is no
+    // longer named for an equality with the sampled count.
+    //
+    // Pinned against the number of pool positions that actually differ from
+    // their germline base, and against the realised integer itself. A bound
+    // of "at most 4" would have been satisfied by zero, leaving the field
+    // free to report nothing at all.
+    let changed = sim
+        .pool
+        .as_slice()
+        .iter()
+        .filter(|n| !n.base.eq_ignore_ascii_case(&n.germline))
+        .count() as i64;
+    assert_eq!((rec.n_mutations, changed), (3, 3));
 }
 
 #[test]

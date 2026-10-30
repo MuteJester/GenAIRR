@@ -469,11 +469,19 @@ mod tests {
         // this change does not touch. The count is a different statement:
         // `count=3` is three attempts and a draw landing on the base already
         // there is no longer counted, so the realised total is at most three.
-        assert!(
-            final_sim.mutation_count <= 3,
-            "{} exceeds 3 attempts",
-            final_sim.mutation_count
-        );
+        let changed = final_sim
+            .pool
+            .as_slice()
+            .iter()
+            .filter(|n| !n.base.eq_ignore_ascii_case(&n.germline))
+            .count();
+        // Pinned, not bounded: `count=3` is three attempts, two of which
+        // land on the base already there at this seed. A bound of "at most
+        // three" would have been satisfied by zero realised mutations, and
+        // would not have caught the count drifting away from the number of
+        // positions that actually changed -- which is the claim the field
+        // makes and is asserted here as the second half of the pair.
+        assert_eq!((final_sim.mutation_count, changed), (1, 1));
     }
 
     #[test]
