@@ -48,8 +48,15 @@ def test_fixed_forks_keep_founder_evidence_and_independent_current_maps(strict):
             # its own two attempts and they legitimately differ -- which is
             # also why the sequences below differ. A uniform draw landing on
             # the base already there is not counted, so on this 15-base
-            # molecule the realised count is anywhere from zero to two.
+            # molecule the realised count is anywhere from zero to two; two
+            # of the sixteen descendants realise none, so the band is the
+            # strongest statement available per record. The recoverable count
+            # is pinned exactly instead, against the alignment pair.
             assert record["n_mutations"] <= 2
+            assert record["n_observable_mutations"] == sum(
+                1 for observed, germline in zip(record["sequence_alignment"],
+                                                record["germline_alignment"])
+                if observed.upper() != germline.upper())
             assert record["end_loss_5_length"] == 1
             assert duplex["current_paths"]["v"]["reference_start"] == 1
         assert len({r["sequence"] for r in descendants}) > 1
@@ -268,3 +275,54 @@ def test_duplex_family_stamps_custom_metadata():
               .run_records(seed=0, validate_records=True))
     assert result[0]["sample_id"] == "control"
     assert result.validate_records(refs).ok
+
+
+def _mutated_duplex(**passes):
+    """A duplex family whose descendants carry hypermutation and nothing else."""
+    refs, exp = _base()
+    exp = exp.mutate(model="uniform", count=3)
+    for name, kwargs in passes.items():
+        exp = getattr(exp, name)(**kwargs)
+    return refs, exp.run_records(n=6, seed=17)
+
+
+def test_duplex_records_report_the_recoverable_mutation_count():
+    """`n_observable_mutations` is in the default column order, so a duplex or
+    clonal-duplex export that does not produce it writes a blank column and
+    says nothing about why. The duplex plane has a mechanism for a field it
+    cannot produce -- Null plus an availability reason -- and a field that
+    bypasses it leaves a consumer with no way to tell "none" from "unknown".
+
+    The expected count is derived from the alignment pair rather than from the
+    duplex edit ledger the implementation reads, so the two sides do not share
+    an input.
+    """
+    _, records = _mutated_duplex()
+    total = 0
+    for index, record in enumerate(records):
+        assert "n_observable_mutations" in record, (
+            f"record {index} omits n_observable_mutations entirely")
+        expected = sum(1 for observed, germline
+                       in zip(record["sequence_alignment"],
+                              record["germline_alignment"])
+                       if observed.upper() != germline.upper())
+        assert record["n_observable_mutations"] == expected, (
+            f"record {index} reports {record['n_observable_mutations']} "
+            f"recoverable where the alignment shows {expected} mismatches")
+        assert record["n_observable_mutations"] <= record["n_mutations"]
+        total += record["n_observable_mutations"]
+    assert total > 0, "nothing was mutated, so this proves nothing"
+
+
+def test_duplex_recoverable_count_ignores_library_substitutions():
+    """A duplex record's recoverable count is attributable to hypermutation.
+    The duplex ledger attributes every write to its pass, so a PCR
+    misincorporation is distinguishable from a mutation and must not be
+    counted as one."""
+    _, clean = _mutated_duplex()
+    _, noisy = _mutated_duplex(pcr_amplify={"count": 4})
+    assert [r["n_observable_mutations"] for r in noisy] == \
+           [r["n_observable_mutations"] for r in clean], (
+        "a PCR pass moved the recoverable hypermutation count")
+    assert sum(r["n_pcr_errors"] for r in noisy) > 0, (
+        "fixture error -- no PCR substitution was applied")

@@ -701,7 +701,7 @@ fn original_v_call_from_assignment(
 ///   not recoverable and is not counted.
 /// - A position masked with `N`, on either side, carries no recoverable
 ///   substitution: `N` is the absence of a call, not a base that differs.
-fn observable_mutations(sim: &crate::ir::Simulation, shm_written: &mut Vec<(u8, u16)>) -> i64 {
+pub(crate) fn observable_mutations(sim: &crate::ir::Simulation, shm_written: &mut Vec<(u8, u16)>) -> i64 {
     if shm_written.is_empty() {
         return 0;
     }

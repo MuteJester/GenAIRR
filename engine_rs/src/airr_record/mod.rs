@@ -11,7 +11,7 @@
 //! the `airr_strict=True` export flag in `result.py` does the
 //! 1-based-inclusive conversion at TSV/CSV/DataFrame time.
 
-mod builder;
+pub(crate) mod builder;
 mod coding_end;
 mod junction;
 mod locus;
