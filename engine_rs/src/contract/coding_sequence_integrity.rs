@@ -133,9 +133,45 @@ impl Contract for CodingSequenceIntegrity {
         refdata: Option<&RefDataConfig>,
         site: NucHandle,
     ) -> BaseMask {
+        // Everything here except the candidate byte is the same for all four
+        // bases, so it is computed once rather than four times. This hook runs
+        // per site while constrained sampling builds its support, and this
+        // contract joined the productive bundle after the recorded budget
+        // baselines were taken -- which is most of why the two productive
+        // budgets drifted while the other four did not.
+        //
+        // The repeated work was the coding frame, which walks the simulation
+        // through `coding_span`, plus the two codon bytes that are not this
+        // site. `allows_base` still exists for `admits_fixed_base_at`, which
+        // answers about one byte and cannot amortize anything.
+        const ALL: BaseMask = BaseMask(0b1111);
+        let Some(frame) = refdata.and_then(|r| coding_frame(sim, r)) else {
+            return ALL;
+        };
+        let p = site.index() as usize;
+        if p < frame.start || p >= frame.end {
+            return ALL;
+        }
+        let codon_start = p - (p - frame.start) % 3;
+        if codon_start + 3 > frame.end {
+            return ALL;
+        }
+        let mut codon = [b'N'; 3];
+        for (offset, byte) in codon.iter_mut().enumerate() {
+            let position = codon_start + offset;
+            if position != p {
+                *byte = sim
+                    .pool
+                    .get(NucHandle::new(position as u32))
+                    .map(|n| n.base)
+                    .unwrap_or(b'N');
+            }
+        }
+        let slot = p - codon_start;
         let mut mask = 0u8;
         for bit in 0..4 {
-            if self.allows_base(sim, refdata, site, BaseMask::base_for_bit(bit)) {
+            codon[slot] = BaseMask::base_for_bit(bit);
+            if crate::productivity::codon_stop(codon) == Some(false) {
                 mask |= 1 << bit;
             }
         }

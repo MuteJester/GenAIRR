@@ -441,3 +441,49 @@ fn nullable_record_oracle_uses_certificates_and_observed_reference_end_independe
         assert_eq!(issues.len(), 1);
     }
 }
+
+#[test]
+fn coding_integrity_mask_agrees_with_asking_about_each_base_separately() {
+    // `admissible_bases_at` answers for all four bases at once and
+    // `admits_fixed_base_at` for one; they have to give the same answer.
+    //
+    // Worth stating what this test was and became: before the per-base loop in
+    // `admissible_bases_at` was hoisted, both hooks called one shared
+    // `allows_base` and this assertion was a tautology. The hoisted version
+    // computes the coding frame and the two unchanged codon bytes once, so the
+    // two hooks are now genuinely different code and this is the guard that
+    // they did not diverge -- including on the three early-exit paths, where
+    // the mask has to be "all four admitted" rather than "none".
+    let (cfg, initial) = restored_fixture();
+    let sim = without_cached_restoration(&initial);
+    let mut sites_inside_a_codon = 0;
+    for index in 0..sim.pool.len() {
+        let site = NucHandle::new(index as u32);
+        let combined = CodingSequenceIntegrity.admissible_bases_at(&sim, Some(&cfg), site);
+        let mut separate = 0u8;
+        for bit in 0..4 {
+            if CodingSequenceIntegrity.admits_fixed_base_at(
+                &sim,
+                Some(&cfg),
+                site,
+                crate::contract::BaseMask::base_for_bit(bit),
+            ) {
+                separate |= 1 << bit;
+            }
+        }
+        assert_eq!(
+            combined.0, separate,
+            "site {index}: mask {:#06b} from admissible_bases_at, {separate:#06b} from \
+             four admits_fixed_base_at calls",
+            combined.0
+        );
+        if combined.0 != 0b1111 {
+            sites_inside_a_codon += 1;
+        }
+    }
+    assert!(
+        sites_inside_a_codon > 0,
+        "every site admitted all four bases, so this fixture exercises only the \
+         early-exit paths and the codon comparison is untested"
+    );
+}
