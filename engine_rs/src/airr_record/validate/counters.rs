@@ -22,6 +22,48 @@ pub(super) fn check_counters(
             sim_count: sim.mutation_count as i64,
         });
     }
+    // The recoverable count, recomputed from the hypermutation passes' own
+    // event ledger resolved against the finished pool -- the same derivation
+    // the builder performs, so this catches a tampered or hand-built record
+    // dict, exactly as the `n_mutations` check above does against
+    // `sim.mutation_count`.
+    let mut shm_sites: Vec<(u8, u16)> = Vec::new();
+    for event in outcome.events() {
+        if event.pass_name != crate::address::MUTATE_UNIFORM
+            && event.pass_name != crate::address::MUTATE_S5F
+        {
+            continue;
+        }
+        for sim_event in &event.simulation_events {
+            if let SimulationEvent::BaseChanged {
+                old_base,
+                new_base,
+                segment,
+                germline_pos: Some(pos),
+                ..
+            } = sim_event
+            {
+                if !old_base.eq_ignore_ascii_case(new_base) {
+                    shm_sites.push((*segment as u8, *pos));
+                }
+            }
+        }
+    }
+    let recomputed_observable =
+        crate::airr_record::builder::observable_mutations(sim, &mut shm_sites);
+    if record.n_observable_mutations != recomputed_observable {
+        issues.push(RecordValidationIssue::NObservableMutationsMismatch {
+            reported: record.n_observable_mutations,
+            recomputed: recomputed_observable,
+        });
+    }
+    // Cross-field: a caller cannot recover what was never counted.
+    if record.n_observable_mutations > record.n_mutations {
+        issues.push(RecordValidationIssue::ObservableMutationsExceedCount {
+            observable: record.n_observable_mutations,
+            reported_total: record.n_mutations,
+        });
+    }
     // Start with inherited SHM from a run_from boundary, then independently
     // integrate the actual substitutions using each pass's input length.
     let mut burden = outcome
