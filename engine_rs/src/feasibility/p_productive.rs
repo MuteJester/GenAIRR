@@ -206,33 +206,34 @@ impl Solver<'_> {
                 let Some(after_v) = advance(carry, &body[anchor..], spec.check_stops) else {
                     return false;
                 };
-                p_lengths(spec, query, PEnd::V3).into_iter().any(|length| {
+                p_lengths(spec, query, PEnd::V3).iter().any(|length| {
                     if length as usize > body.len() {
                         return false;
                     }
-                    let p = PAdditionPass::derive_p_bytes(PEnd::V3, body, length as usize);
-                    advance(after_v, &p, spec.check_stops).is_some_and(|next| self.exists(1, next))
+                    let p = PAdditionPass::p_bytes_iter(PEnd::V3, body, length as usize);
+                    advance_iter(after_v, p, spec.check_stops)
+                        .is_some_and(|next| self.exists(1, next))
                 })
             }),
             1 => self.np_exists(Segment::Np1, carry, 2),
             2 if spec.segments.iter().any(|d| d.segment == Segment::D) => {
                 visit_segment(spec, query, Segment::D, |body, _| {
-                    p_lengths(spec, query, PEnd::D5).into_iter().any(|five| {
+                    p_lengths(spec, query, PEnd::D5).iter().any(|five| {
                         if five as usize > body.len() {
                             return false;
                         }
-                        let p5 = PAdditionPass::derive_p_bytes(PEnd::D5, body, five as usize);
-                        let Some(after_d) = advance(carry, &p5, spec.check_stops)
+                        let p5 = PAdditionPass::p_bytes_iter(PEnd::D5, body, five as usize);
+                        let Some(after_d) = advance_iter(carry, p5, spec.check_stops)
                             .and_then(|s| advance(s, body, spec.check_stops))
                         else {
                             return false;
                         };
-                        p_lengths(spec, query, PEnd::D3).into_iter().any(|three| {
+                        p_lengths(spec, query, PEnd::D3).iter().any(|three| {
                             if three as usize > body.len() {
                                 return false;
                             }
-                            let p3 = PAdditionPass::derive_p_bytes(PEnd::D3, body, three as usize);
-                            advance(after_d, &p3, spec.check_stops)
+                            let p3 = PAdditionPass::p_bytes_iter(PEnd::D3, body, three as usize);
+                            advance_iter(after_d, p3, spec.check_stops)
                                 .is_some_and(|s| self.exists(3, s))
                         })
                     })
@@ -244,12 +245,12 @@ impl Solver<'_> {
                 let Some(anchor) = anchor else {
                     return false;
                 };
-                p_lengths(spec, query, PEnd::J5).into_iter().any(|length| {
+                p_lengths(spec, query, PEnd::J5).iter().any(|length| {
                     if length as usize > body.len() {
                         return false;
                     }
-                    let p = PAdditionPass::derive_p_bytes(PEnd::J5, body, length as usize);
-                    advance(carry, &p, spec.check_stops)
+                    let p = PAdditionPass::p_bytes_iter(PEnd::J5, body, length as usize);
+                    advance_iter(carry, p, spec.check_stops)
                         .and_then(|s| advance(s, &body[..anchor + 3], spec.check_stops))
                         .is_some_and(|s| self.exists(5, s))
                 })
@@ -391,27 +392,55 @@ fn integer_candidate(query: Query<'_>) -> Option<u32> {
     }
 }
 
-fn p_lengths(spec: &PProductiveFeasibility, query: Query<'_>, end: PEnd) -> Vec<u32> {
+/// The candidate P lengths for `end`: no candidates, exactly one, or the
+/// declared domain.
+///
+/// Returned as a borrow rather than a `Vec` because the last case is the
+/// common one and `domain.values.clone()` allocated and copied the whole
+/// domain on every call, inside the solver's nested candidate loops. The
+/// other three cases carry at most one value, which needs no allocation
+/// either.
+enum PLengths<'a> {
+    None,
+    One(u32),
+    Domain(&'a [u32]),
+}
+
+impl PLengths<'_> {
+    fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+        let (single, slice) = match self {
+            PLengths::None => (None, [].as_slice()),
+            PLengths::One(value) => (Some(*value), [].as_slice()),
+            PLengths::Domain(values) => (None, *values),
+        };
+        single.into_iter().chain(slice.iter().copied())
+    }
+}
+
+fn p_lengths<'a>(
+    spec: &'a PProductiveFeasibility,
+    query: Query<'a>,
+    end: PEnd,
+) -> PLengths<'a> {
     let Some((_, domain)) = spec.p_lengths.iter().find(|(e, _)| *e == end) else {
-        return vec![0];
+        return PLengths::One(0);
     };
     if query.address == Some(ChoiceAddress::PLength { end }) {
-        return integer_candidate(query).into_iter().collect();
+        return match integer_candidate(query) {
+            Some(value) => PLengths::One(value),
+            None => PLengths::None,
+        };
     }
     if domain.is_committed_before(query.pass_index) {
-        return query
-            .sim
-            .assignments
-            .get(end.source_segment())
-            .map(|inst| {
-                vec![match end {
-                    PEnd::V3 | PEnd::D3 => inst.p_length_3,
-                    _ => inst.p_length_5,
-                }]
-            })
-            .unwrap_or_default();
+        return match query.sim.assignments.get(end.source_segment()) {
+            Some(inst) => PLengths::One(match end {
+                PEnd::V3 | PEnd::D3 => inst.p_length_3,
+                _ => inst.p_length_5,
+            }),
+            None => PLengths::None,
+        };
     }
-    domain.values.clone()
+    PLengths::Domain(&domain.values)
 }
 
 fn trim_values(
@@ -655,8 +684,18 @@ fn push(carry: u8, base: u8, check_stops: bool) -> Option<u8> {
     }
 }
 
-fn advance(mut carry: u8, bytes: &[u8], check_stops: bool) -> Option<u8> {
-    for &base in bytes {
+fn advance(carry: u8, bytes: &[u8], check_stops: bool) -> Option<u8> {
+    advance_iter(carry, bytes.iter().copied(), check_stops)
+}
+
+/// Fold `push` over a stream of bases. The P-addition candidates come through
+/// here as an iterator so they never have to be collected into a `Vec` first.
+fn advance_iter(
+    mut carry: u8,
+    bases: impl Iterator<Item = u8>,
+    check_stops: bool,
+) -> Option<u8> {
+    for base in bases {
         carry = push(carry, base, check_stops)?;
     }
     Some(carry)
