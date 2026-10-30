@@ -34,9 +34,22 @@ sha2 = "0.10"
 # Reserved for proptest / property-based tests.
 
 [profile.release]
-# Keep debug info so py-spy / perf / samply can symbolicate native
-# stacks inside the .so. No effect on codegen / optimizations; adds a
-# few MB to the .so size, fine for a Python extension. Explicit
-# `strip = "none"` overrides any cargo default that might strip.
+# Keep debug info so py-spy / samply can symbolicate native stacks inside
+# the .so. No effect on codegen or optimizations.
+#
+# This alone is NOT enough to profile an installed build: pyproject.toml sets
+# `[tool.maturin] strip = true`, so `maturin develop` and every wheel ship a
+# stripped .so (4 MB rather than 65 MB, which is why the wheel keeps it that
+# way). A profile of such a build symbolicates to bare addresses. To get a
+# profiled build, bypass maturin and copy the artifact in:
+#
+#   cargo build --release --manifest-path engine_rs/Cargo.toml \
+#         --features pyo3/extension-module
+#   cp engine_rs/target/release/libgenairr_engine.so src/GenAIRR/_engine.abi3.so
+#   py-spy record --native -- python your_workload.py
+#   maturin develop --release -m engine_rs/Cargo.toml   # restore afterwards
+#
+# `perf` is not an alternative here: it needs a lower perf_event_paranoid than
+# a stock desktop has, and the stripped .so exports one dynamic symbol.
 debug = true
 strip = "none"
