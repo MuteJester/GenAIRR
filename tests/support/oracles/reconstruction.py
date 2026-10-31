@@ -372,6 +372,29 @@ CIRCULARITY = {
         "puts positions past its end, which the walk counts as out-of-range "
         "(17 of 40 on the d_call probe) and not as a mismatch. Probing "
         "`mismatches` alone made a shorter-allele swap look invisible.",
+    "a visible substitution is bucketed by the region or segment carrying it":
+        "NOT CIRCULAR in the bucketing, which is the step the base comparison "
+        "above does not cover. Probed at one mutation per record, where an "
+        "event and a visible difference are the same thing so the comparison "
+        "is an equality; unperturbed it disagrees on 0 of 60.\n\n"
+        "        Subregions: shifting every declared interval by +15 makes it "
+        "disagree on 58 of 60, emptying the table on 60 of 60, and rotating "
+        "the LABELS across the same intervals on 48 of 60. Reversing the "
+        "order of the interval list does nothing at all (0 of 60) and is not "
+        "a perturbation: the intervals are disjoint, so the same one still "
+        "matches whichever end the search starts from. That measurement is "
+        "recorded because it looked like a blind spot and is not one.\n\n"
+        "        Segments: swapping the recorded V and D counts makes it "
+        "disagree on 55 of 60, so a mutation routed to the wrong segment has "
+        "somewhere to show up -- which the partition identity does not "
+        "provide, since moving one mutation from D to J leaves the sum "
+        "unchanged. The 5 of 60 that survive the swap are records whose V and "
+        "D counts happen to be equal.\n\n"
+        "        At twenty mutations per record the comparison is an "
+        "inequality rather than an equality in both families, because an "
+        "event whose base was overwritten or lost is still an event. That is "
+        "the semantics, not a weakness, and it is why the observable "
+        "counters exist beside the event ones.",
     "an inverted segment's byte == complement of the reference base":
         "NOT CIRCULAR in orientation. Declaring the segment forward when it is "
         "inverted gives mismatches on every inverted position (16 of 16 on the "
@@ -420,4 +443,34 @@ def observable_substitutions_by_v_subregion(simulation, v_subregions) -> dict[st
         label = next((name.lower() for name, start, end in v_subregions
                       if start <= position < end), None)
         counts[label if label in counts else "v_unannotated"] += 1
+    return counts
+
+
+SEGMENT_BUCKETS = ("v", "d", "j", "np")
+
+
+def observable_substitutions_by_segment(simulation) -> dict[str, int]:
+    """Visible substitutions bucketed by the segment carrying them.
+
+    The NP bucket collects both untemplated regions and anything the
+    provenance does not label V, D or J, which is what the record's
+    ``n_np_mutations`` does.
+
+    Same limit as the other two in this family: it sees a difference, not
+    which pass wrote it, so it is valid as an expected value only where
+    hypermutation is the only pass that writes a base.
+    """
+    segments = segments_by_position(simulation)
+    bases, germline = simulation.bases(), simulation.germline_bases()
+    counts = {bucket: 0 for bucket in SEGMENT_BUCKETS}
+    for index in range(len(bases)):
+        observed, reference = chr(bases[index]).upper(), chr(germline[index]).upper()
+        if observed == reference:
+            continue
+        if observed not in "ACGT" or reference not in "ACGT":
+            continue
+        segment = (segments.get(index) or "").upper()
+        counts["v" if segment == "V" else
+               "d" if segment == "D" else
+               "j" if segment == "J" else "np"] += 1
     return counts
