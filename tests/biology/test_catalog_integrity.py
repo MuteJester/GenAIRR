@@ -574,3 +574,84 @@ def test_registrations_live_outside_the_biology_directory():
     assert outside, (
         "every registration lives under biology/, so coverage-by-registration "
         "is not actually exercised and the workflow guard protects nothing")
+
+
+def _loop_products(function):
+    """Names a loop in ``function`` writes to: counters, lists, sets."""
+    import ast
+    produced = set()
+    loops = [node for node in ast.walk(function)
+             if isinstance(node, (ast.For, ast.While))]
+    for loop in loops:
+        for node in ast.walk(loop):
+            if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+                produced.add(node.target.id)
+            elif isinstance(node, ast.Assign):
+                produced.update(target.id for target in node.targets
+                                if isinstance(target, ast.Name))
+            elif (isinstance(node, ast.Call)
+                  and isinstance(node.func, ast.Attribute)
+                  and isinstance(node.func.value, ast.Name)
+                  and node.func.attr in {"append", "add", "update", "extend"}):
+                produced.add(node.func.value.id)
+    return produced
+
+
+def test_a_registered_test_that_can_skip_its_assertions_proves_it_did_not():
+    """The vacuous-pass guard.
+
+    A registered test that iterates records and `continue`s past the
+    uninteresting ones can compare nothing at all and still report green. That
+    is not hypothetical: the NP-translation test keyed both spans off the D
+    coordinates, so on a VJ locus every record was skipped and it passed over
+    zero comparisons. The oracle probe that bucketed D and J coordinates
+    against the V subregion table reported 3 of 60 agreement for the same
+    reason -- it was comparing the wrong thing, and nothing said how much.
+
+    So: a registered test containing a `continue` must, after its loops,
+    assert something that refers to a name the loop writes to -- a counter it
+    incremented, or a collection it filled. "I compared 40 of them" is such an
+    assertion; "the experiment exists" is not.
+
+    Two limits, stated rather than papered over. It cannot tell a meaningful
+    floor from a trivial one: `assert checked >= 0` would satisfy it. And it
+    only fires on `continue`, so a test that skips work another way -- an `if`
+    wrapping its assertions -- is not caught. It targets the shape that has
+    actually failed here, twice.
+    """
+    import ast
+
+    from tests.support import paths
+
+    offenders = []
+    for module in sorted(paths.tests_root().rglob("test_*.py")):
+        source = module.read_text(encoding="utf-8")
+        if "@verifies(" not in source:
+            continue
+        for function in ast.walk(ast.parse(source)):
+            if not isinstance(function, ast.FunctionDef):
+                continue
+            if not any(isinstance(decorator, ast.Call)
+                       and getattr(decorator.func, "id", "") == "verifies"
+                       for decorator in function.decorator_list):
+                continue
+            if not any(isinstance(node, ast.Continue)
+                       for node in ast.walk(function)):
+                continue
+            loops = [node for node in ast.walk(function)
+                     if isinstance(node, (ast.For, ast.While))]
+            inside = {id(node) for loop in loops for node in ast.walk(loop)
+                      if isinstance(node, ast.Assert)}
+            after = [node for node in ast.walk(function)
+                     if isinstance(node, ast.Assert) and id(node) not in inside]
+            produced = _loop_products(function)
+            speaks = any(isinstance(name, ast.Name) and name.id in produced
+                         for node in after for name in ast.walk(node.test))
+            if not speaks:
+                offenders.append(f"{module.name}::{function.name}")
+    assert offenders == [], (
+        "these registered tests can skip every comparison and still pass, "
+        "because nothing after their loops refers to what the loop produced:\n"
+        + "\n".join(f"  {name}" for name in offenders)
+        + "\n\nAdd an assertion on the count compared, or on the collection "
+          "filled, so a run that compared nothing fails.")
