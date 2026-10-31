@@ -18,8 +18,12 @@ record by record. What is asserted:
 - every field the registry declares it may move actually moved, so a
   declaration cannot rot into a blanket allowance;
 - a pass with an off switch, set to off, leaves every exported field
-  identical to a run without the pass -- unless the registry declares
-  otherwise with a measurement;
+  identical to a run without the pass **when nothing draws after it** --
+  unless the registry declares otherwise with a measurement;
+- with a drawing pass after it, an off pass still shifts that pass's draws,
+  because the engine has one RNG stream and no substreams. The rearrangement
+  survives; the final sequence does not. That is pinned rather than asserted
+  away, because it is the thing a seeded ablation runs into;
 - a pass moves no counter belonging to a mechanism it does not exercise,
   which is a property only expressible because the registry knows each pass's
   mechanisms and the catalog knows each mechanism's fields.
@@ -28,12 +32,23 @@ That last one found the exception: `invert_d(prob=0.0)` is not the same as no
 `invert_d`. See `zero_differs` in the registry for the measurement and the
 mechanism.
 
-**Why the comparison is valid.** The engine addresses its choices, so adding a
-pass does not disturb the draws of the passes around it -- which is what makes
-"same seed, pass toggled" a controlled experiment rather than two unrelated
-repertoires. The suite already leans on this in the cross-run basis tests.
-Where it does not hold, that is itself the finding, and `invert_d` is the one
-place it does not.
+**What makes the comparison valid, and its limit.** The recombination facts
+survive a pass being toggled -- measured 200 of 200 on the two-pass form
+below -- so "same seed, pass toggled" is a controlled experiment about the
+rearrangement. It is NOT one about the bases: `engine_rs/src/rng.rs` holds a
+single u64 stream and says so itself ("When we need parallel batches across
+rayon worker threads we'll add `Rng::split()` for sub-stream generation. Not
+needed yet"), so any pass's presence consumes words and shifts every draw
+after it.
+
+An earlier version of this module claimed the engine addressed its choices
+per pass and that `invert_d` was the one exception. That was wrong, and wrong
+in the direction that flatters the engine: `receptor_revision(prob=0.0)`
+looked clean only because the pipelines here are single-pass and nothing drew
+after it. Put a `mutate` behind either pass and the final sequence differs on
+200 of 200 records. `invert_d` is distinctive only in failing the single-pass
+form too, because its coin flip is inlined upstream of a draw that
+`recombine()` itself makes.
 """
 from __future__ import annotations
 
@@ -166,8 +181,13 @@ def test_a_pass_configured_off_is_the_same_as_no_pass(one):
     and without one pass -- which is how anyone studies the effect of one
     pass, and how several tests in this suite build their controls.
 
-    `invert_d` is the one pass where it does not hold, and the registry says
-    so with the measurement. The assertion is inverted for it rather than
+    This is the SINGLE-PASS form: nothing draws after the pass under test, so
+    a pass that fires nothing consumes nothing anyone can see. The two-pass
+    form below is where the engine's single RNG stream shows, and it is the
+    form a real ablation takes.
+
+    `invert_d` is the one pass that fails even here, and the registry says so
+    with the measurement. The assertion is inverted for it rather than
     skipped: if it ever starts behaving like the others, this fails and the
     declaration comes out.
     """
@@ -291,3 +311,77 @@ def test_the_pass_with_no_counter_of_its_own_moves_none():
     assert moved & set(owners) == set(), (
         f"a counter moved for a pass that has none: "
         f"{sorted(moved & set(owners))}")
+
+
+#: A pass that draws per base, placed after the pass under test, so anything
+#: the earlier pass consumed from the stream shows up as a different molecule.
+#: `uniform` rather than `s5f` because its draws are the simplest to reason
+#: about: one site and one replacement base per mutation.
+DOWNSTREAM = ("mutate", {"model": "uniform", "count": 4})
+
+
+@pytest.mark.parametrize("one", ZEROABLE, ids=[one.name for one in ZEROABLE])
+def test_an_off_pass_keeps_the_rearrangement_but_shifts_the_draws_after_it(one):
+    """The two-pass form, which is the form an ablation actually takes.
+
+    `engine_rs/src/rng.rs` holds a single u64 stream and no `split()` -- its
+    own documentation says sub-streams are "not needed yet" -- so every pass's
+    presence consumes words and shifts every draw after it, whether or not the
+    pass does anything. Put a `mutate` behind a pass configured off and the
+    molecule differs.
+
+    Both halves are asserted because the split is the useful fact:
+
+    - the REARRANGEMENT survives, on every record. Which alleles were drawn,
+      how they were trimmed and how long the NP regions are do not depend on
+      a later pass's stream position. That is what makes an ablation valid
+      *about the rearrangement*.
+    - the MOLECULE does not. A seeded ablation that compares sequences, or
+      anything derived from them, is comparing two different draws.
+
+    Measured on human_igh over 200 records, for both passes with an off
+    switch at the recombination stage: rearrangement identical 200/200, final
+    sequence identical 0/200.
+
+    Pinned rather than asserted away. If per-pass substreams are ever added --
+    `Rng::split()` is the module's own stated plan -- the sequence half starts
+    passing, this test fails, and it should be replaced by the stronger claim
+    rather than quietly kept.
+    """
+    keyword, off = one.zero_setting
+    if one.stage not in ("post_recombine", "recombination"):
+        pytest.skip("a pass after `mutate` cannot shift `mutate`'s own draws; "
+                    "this is about a pass that precedes the drawing one")
+    kwargs = _loud_arguments(one)
+    kwargs[keyword] = off
+
+    def records(steps):
+        from tests.support.builders import experiment as experiment_builder
+
+        experiment = experiment_builder.recombined(locus=LOCUS)
+        for name, arguments in steps:
+            experiment = getattr(experiment, name)(**arguments)
+        return [outcome.airr_record(experiment.refdata)
+                for outcome in experiment.run(n=40, seed=SEED)]
+
+    without = records((DOWNSTREAM,))
+    with_off = records(((one.name, kwargs), DOWNSTREAM))
+
+    facts = sorted(RECOMBINATION_FACTS - set(one.may_move))
+    for field in facts:
+        moved = [index for index, (a, b) in enumerate(zip(without, with_off))
+                 if a[field] != b[field]]
+        assert moved == [], (
+            f"{one.name} at {keyword}={off} moved {field} on records {moved[:5]} "
+            "once a drawing pass followed it. The rearrangement is supposed to "
+            "survive a pass being toggled even though the stream position does "
+            "not.")
+
+    same_sequence = sum(a["sequence"] == b["sequence"]
+                        for a, b in zip(without, with_off))
+    assert same_sequence == 0, (
+        f"{one.name} at {keyword}={off} left {same_sequence} of "
+        f"{len(without)} molecules identical with a drawing pass behind it. "
+        "If the engine has gained per-pass RNG substreams, that is better "
+        "behaviour than this test describes: replace it with the stronger "
+        "claim that an off pass is indistinguishable from absence.")
