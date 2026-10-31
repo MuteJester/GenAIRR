@@ -132,7 +132,8 @@ class TemplatedCheck:
                 and self.unresolved_allele == 0 and self.out_of_range == 0)
 
 
-def templated_check(simulation, refdata, *, inverted=()) -> TemplatedCheck:
+def templated_check(simulation, refdata, *, inverted=(),
+                    resolve=None) -> TemplatedCheck:
     """Compare every recorded germline base to the reference's base.
 
     This catches a wrong allele assembled with internally consistent
@@ -143,6 +144,15 @@ def templated_check(simulation, refdata, *, inverted=()) -> TemplatedCheck:
     when it moves independently of the byte beside it, which a record-level
     mutant can do and a trimming defect cannot. Use the ``coordinates`` oracle
     for that.
+
+    ``resolve`` chooses WHICH allele each segment's bases are compared
+    against. It defaults to the allele the simulation's own assignment names,
+    which is what establishes allele identity. Passing a resolver that looks
+    the allele up by the record's exported ``*_call`` instead establishes
+    something this walk could not otherwise see: that the name a benchmark
+    reads is the name of the allele whose bases were actually laid down. The
+    two differ -- the engine's re-projection comparison recomputes the call
+    from the same assignment and so agrees with itself either way.
 
     ``inverted`` names the segments the simulation assembled in reverse
     orientation, which the caller reads from the record's ``d_inverted``. It
@@ -173,7 +183,8 @@ def templated_check(simulation, refdata, *, inverted=()) -> TemplatedCheck:
         if segment not in ("V", "D", "J"):
             continue
         if segment not in cache:
-            cache[segment] = _allele_sequence(refdata, simulation, segment)
+            cache[segment] = (resolve(segment) if resolve is not None
+                              else _allele_sequence(refdata, simulation, segment))
         reference = cache[segment]
         if reference is None:
             unresolved += 1
@@ -344,6 +355,23 @@ CIRCULARITY = {
         "instead. Deriving the field from this comparison rather than from "
         "the mutation passes' own ledger is the defect that was shipped and "
         "then fixed: it reported library noise as hypermutation.",
+    "recorded germline base == base of the allele the CALL names":
+        "NOT CIRCULAR, and it sees what the default resolution cannot. "
+        "Resolving each segment's reference by the record's exported "
+        "`*_call` rather than by the simulation's own assignment: swapping "
+        "v_call to a same-length allele is reported on 40 of 40 records, "
+        "where the assignment-resolved walk reports 0 of 40 -- it is still "
+        "comparing against the allele that was actually used. Swapping "
+        "d_call fires 40 of 40. Swapping v_call to another allele of the "
+        "same gene fires on 37 of 37 records the probe could perturb; the "
+        "other 3 have a V gene with no second allele, so nothing was "
+        "changed in them. 195 of 198 IGH V alleles share an exact length "
+        "with another, so the length relation that was the only external "
+        "check on v_call cannot separate them -- this can. "
+        "Read `clean` rather than `mismatches`: a swap to a shorter allele "
+        "puts positions past its end, which the walk counts as out-of-range "
+        "(17 of 40 on the d_call probe) and not as a mismatch. Probing "
+        "`mismatches` alone made a shorter-allele swap look invisible.",
     "an inverted segment's byte == complement of the reference base":
         "NOT CIRCULAR in orientation. Declaring the segment forward when it is "
         "inverted gives mismatches on every inverted position (16 of 16 on the "

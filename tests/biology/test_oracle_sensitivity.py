@@ -685,3 +685,50 @@ def test_a_junction_bound_moved_off_the_anchor_is_reported():
             f"got {sorted(identities)}")
         reported += 1
     assert reported == 20
+
+
+def test_a_call_naming_the_wrong_allele_is_reported():
+    """The mutant for the by-name resolution: a call swapped to a different
+    allele of the same length.
+
+    This is the defect an allele-caller benchmark would suffer from most and
+    detect least -- every score computed against the truth call would be
+    wrong by the same amount, consistently, with nothing in the record
+    disagreeing. The engine's own re-projection check cannot see it either,
+    because it recomputes the call from the same assignment.
+
+    195 of 198 IGH V alleles share an exact length with another, so a
+    same-length swap is the realistic shape of such a defect rather than a
+    contrived one.
+    """
+    exp = experiment_builder.recombined()
+    by_name = {exp.refdata.v_allele(i).name: bytes(exp.refdata.v_allele(i).seq())
+               for i in range(exp.refdata.v_pool_size())}
+    reported = swapped = 0
+    for outcome in exp.run(n=20, seed=5):
+        record = dict(outcome.airr_record(exp.refdata))
+        simulation = outcome.final_simulation()
+        original = record["v_call"]
+        length = len(by_name[original])
+        alternative = next((name for name, seq in by_name.items()
+                            if name != original and len(seq) == length), None)
+        if alternative is None:
+            continue
+        record["v_call"] = alternative
+        swapped += 1
+
+        def resolve(segment, _record=record):
+            if segment != "V":
+                return None
+            return by_name.get(_record["v_call"])
+
+        check = reconstruction.templated_check(
+            simulation, exp.refdata,
+            inverted=("D",) if record.get("d_inverted") else (),
+            resolve=resolve)
+        assert not check.clean, (
+            f"{original} -> {alternative} was not reported; the two are the "
+            f"same length, so nothing else in the record disagrees")
+        reported += 1
+    assert swapped >= 15, f"only {swapped} records had a same-length alternative"
+    assert reported == swapped
