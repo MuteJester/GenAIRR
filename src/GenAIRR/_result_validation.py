@@ -71,19 +71,32 @@ def _lineage_record_issues(result, record_index, record):
     origins = getattr(result, "_lineage_record_origins", None)
     if origins is None or record_index >= len(origins):
         return []
-    parent_id, clone_id, node_id = origins[record_index]
+    tree_index, clone_id, node_id = origins[record_index]
     node = result._lineage_origin_nodes[record_index]
+    # Checked on every lineage record. Gating the whole function on the duplex
+    # path left the legacy one with no lineage validation at all: all eight of
+    # these could be edited and validate_records still returned ok.
     expected = {
         "clone_id": clone_id,
-        "parent_id": parent_id,
+        # The composition the record is addressed by. This is what the origin
+        # addressing exists for: two cells can carry identical DNA and
+        # history, so an edited namespace tag is invisible to every other
+        # check. Measured as the format on both paths, 17/17 legacy and 3/3
+        # duplex.
+        "sequence_id": f"clone{clone_id}_node{node_id}",
         "lineage_node_id": node_id,
         "lineage_parent_id": node.parent_id if node.parent_id is not None else -1,
         "lineage_generation": node.generation,
         "lineage_abundance": node.abundance,
         "duplicate_count": node.abundance,
         "lineage_affinity": node.affinity,
-        "lineage_mutations_from_parent": node.mutations_from_parent,
     }
+    # Emitted by the duplex path only, so required there and absent elsewhere
+    # rather than checked wherever it happens to appear -- a duplex record
+    # that lost the field has to fail.
+    if getattr(result, "_families", None) is not None:
+        expected["parent_id"] = tree_index
+        expected["lineage_mutations_from_parent"] = node.mutations_from_parent
     issues = []
     if not node.observed:
         issues.append({"kind": "LineageNodeNotObserved", "node_id": node.id})

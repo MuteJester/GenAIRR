@@ -246,6 +246,17 @@ MECHANISMS = (
                 "clone shares one founder, and members of different clones "
                 "never do.",
         truth_fields=("clone_id", "sequence_id"),
+        truth_gap=(
+                  "clone_id is the only always-correct clone key. Membership is "
+                  "exactly recoverable from the per-base germline provenance on a "
+                  "substitution-only pipeline -- identical within a clone, distinct "
+                  "across clones, with 1,500 clones giving 1,500 distinct keys "
+                  "where the V/D/J call triple gives only 1,464 -- but a length- "
+                  "changing pass breaks it: polymerase_indels splits 5 of 5 lineage "
+                  "clones and 14 of 20 repertoire clones, and a variable 3' end "
+                  "loss splits 5 of 5. So the provenance key verifies clone_id "
+                  "where it holds and is not a general substitute for it."
+                  ),
         notes="Driven by the lineage and family-replay machinery rather than "
               "by a scheduled pass.",
     ),
@@ -256,6 +267,22 @@ MECHANISMS = (
                 "which generation. This is the truth a clonal-inference tool "
                 "is scored against.",
         truth_fields=("lineage_node_id", "lineage_parent_id", "lineage_generation"),
+        truth_gap=(
+                  "The exported fields do not describe the tree. lineage_parent_id "
+                  "names no exported record (0 of about 2,400 measured): sampling "
+                  "draws only from the final living generation, so a parent is "
+                  "always an unobserved node one generation up. lineage_node_id is "
+                  "unique within a clone but not globally -- 872 duplicate ids "
+                  "among 1,311 records at 20 clones, and at 1,500 clones it takes "
+                  "only the values 1 to 5 -- so a join or dedup on it alone merges "
+                  "clones. lineage_generation equals max_generations on every "
+                  "record (about 2,500 across 22 configurations), correct by "
+                  "construction since only final-generation cells are sampled and "
+                  "no internal node is ever emitted, and therefore carrying no per- "
+                  "record information about tree position. The topology is exported "
+                  "only through result.lineage_trees. Key records on (clone_id, "
+                  "lineage_node_id) or on sequence_id, both globally unique."
+                  ),
     ),
     Mechanism(
         id="clonality.selection",
@@ -263,6 +290,21 @@ MECHANISMS = (
         summary="Affinity-driven survival across generations, which decides "
                 "which lineages expand rather than die out.",
         truth_fields=("lineage_affinity",),
+        truth_gap=(
+                  "Inert at the defaults and unverifiable when it is not. "
+                  "selection_strength defaults to 0, which makes the field the "
+                  "sentinel 0.0 on every record (1,883 of 1,883). With strength 1 "
+                  "at the default beta of 1.0 it is exp(-beta*d) as documented, but "
+                  "underflows what a consumer would expect: 1.8e-230 to 3.1e-169 on "
+                  "exported records at the default max_generations=10, and the 0.0 "
+                  "sentinel again at max_generations=30. Selection also does not "
+                  "shape the trees at the default beta -- strength 0 and strength 1 "
+                  "give byte-identical record sets and tree sizes -- while "
+                  "beta=0.01 drives every clone extinct. The selection target is on "
+                  "no exported field, so affinity cannot be recomputed from the "
+                  "record: given a known target it reproduces 69 of 69 from the "
+                  "per-region codon rails and 0 of 69 from sequence_aa."
+                  ),
     ),
     Mechanism(
         id="clonality.sampling",
@@ -270,6 +312,18 @@ MECHANISMS = (
         summary="How many times a given sequence was observed, as distinct "
                 "from how many cells carried it.",
         truth_fields=("duplicate_count", "lineage_abundance"),
+        truth_gap=(
+                  "duplicate_count and lineage_abundance are one number stamped "
+                  "twice -- the node's sampling draw count -- and never differ in "
+                  "any configuration measured; clonal_repertoire emits no "
+                  "lineage_abundance at all. Neither is a read count or a tree-cell "
+                  "count, and a single record's value is not a clone size whenever "
+                  "corruption or hypermutation is configured. What IS recoverable "
+                  "is the configured size, as the per-clone sum: n_sample in "
+                  "clonal_lineage, and the drawn size in clonal_repertoire on 150 "
+                  "of 150 clones. The drawn size itself is on no record or result "
+                  "attribute."
+                  ),
     ),
 
     # ── assay: what the protocol did to the molecule ──────────────────────
