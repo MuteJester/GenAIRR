@@ -183,6 +183,12 @@ others worth knowing about as you go deeper:
 - **Per-V-subregion counters** - `n_fwr1_mutations` / `n_cdr1_mutations`
   / `n_fwr2_mutations` / `n_cdr2_mutations` / `n_fwr3_mutations`
   / `n_v_unannotated_mutations`. They partition `n_v_mutations`.
+- **Per-subregion recoverable counters** - the same six regions,
+  counting what a caller can recover rather than what happened:
+  `n_fwr1_observable_mutations` and friends. Use these for a
+  CDR/FWR selection-pressure ratio computed from a read; the event
+  counters above agree with a read on 17 of 60 records once twelve
+  nucleotides are lost from the 5' end.
 - **Custom metadata** - `Experiment.with_metadata(experiment_id=..., tissue=...)`
   stamps arbitrary user fields onto every record.
 

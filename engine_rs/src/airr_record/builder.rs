@@ -354,7 +354,40 @@ pub fn build_airr_record(
             }
         }
     }
-    rec.n_observable_mutations = observable_mutations(sim, &mut shm_written);
+    // The recoverable sites, then the same subregion routing the event
+    // counters above use -- applied to what survived rather than to what
+    // happened. These two groups answer different questions and a CDR/FWR
+    // ratio computed from a read wants this one.
+    let observable = observable_sites(sim, &mut shm_written);
+    rec.n_observable_mutations = observable.len() as i64;
+    for (segment_code, position) in &observable {
+        if *segment_code != Segment::V as u8 {
+            continue;
+        }
+        let label = v_subregions.and_then(|subs| {
+            subs.iter()
+                .find(|s| s.start <= *position && *position < s.end)
+                .map(|s| s.label)
+        });
+        match label {
+            Some(crate::refdata::VSubregionLabel::Fwr1) => {
+                rec.n_fwr1_observable_mutations += 1
+            }
+            Some(crate::refdata::VSubregionLabel::Cdr1) => {
+                rec.n_cdr1_observable_mutations += 1
+            }
+            Some(crate::refdata::VSubregionLabel::Fwr2) => {
+                rec.n_fwr2_observable_mutations += 1
+            }
+            Some(crate::refdata::VSubregionLabel::Cdr2) => {
+                rec.n_cdr2_observable_mutations += 1
+            }
+            Some(crate::refdata::VSubregionLabel::Fwr3) => {
+                rec.n_fwr3_observable_mutations += 1
+            }
+            None => rec.n_v_unannotated_observable_mutations += 1,
+        }
+    }
     rec.n_v_mutations = n_v_mutations;
     rec.n_d_mutations = n_d_mutations;
     rec.n_j_mutations = n_j_mutations;
@@ -713,15 +746,31 @@ fn original_v_call_from_assignment(
 /// - A position masked with `N`, on either side, carries no recoverable
 ///   substitution: `N` is the absence of a call, not a base that differs.
 pub(crate) fn observable_mutations(sim: &crate::ir::Simulation, shm_written: &mut Vec<(u8, u16)>) -> i64 {
+    observable_sites(sim, shm_written).len() as i64
+}
+
+/// The hypermutation sites a caller can recover, as (segment, germline
+/// position) pairs.
+///
+/// `observable_mutations` is this list's length. It is returned rather than
+/// counted directly because the per-V-subregion counters need to know WHICH
+/// positions survived in order to bucket them against the allele's subregion
+/// table: counting events per region and counting recoverable substitutions
+/// per region are different numbers once a position is hit twice or the read
+/// loses the base.
+pub(crate) fn observable_sites(
+    sim: &crate::ir::Simulation,
+    shm_written: &mut Vec<(u8, u16)>,
+) -> Vec<(u8, u16)> {
     if shm_written.is_empty() {
-        return 0;
+        return Vec::new();
     }
     shm_written.sort_unstable();
     shm_written.dedup();
     // Each SHM site counts at most once even if two pool nucleotides were to
     // carry the same (segment, germline position) key.
     let mut counted = vec![false; shm_written.len()];
-    let mut total = 0i64;
+    let mut sites = Vec::new();
     for nuc in sim.pool.as_slice() {
         let Some(pos) = nuc.germline_pos.get() else {
             continue;
@@ -739,9 +788,9 @@ pub(crate) fn observable_mutations(sim: &crate::ir::Simulation, shm_written: &mu
             continue;
         }
         counted[slot] = true;
-        total += 1;
+        sites.push((nuc.segment as u8, pos));
     }
-    total
+    sites
 }
 
 /// Whether `base` is one of A/C/G/T in either case.

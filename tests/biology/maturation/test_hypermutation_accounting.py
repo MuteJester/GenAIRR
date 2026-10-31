@@ -318,3 +318,114 @@ def test_no_bundled_s5f_kernel_draws_the_base_already_present(kernel):
             f"{kernel}: record {index} realised {record['n_mutations']} of "
             f"{attempts} attempts, so this kernel admits the base already "
             f"present as a destination")
+
+
+REGION_FIXTURES = (
+    ("single_hit", lambda: experiment_builder.recombined().mutate(model="s5f", count=1)),
+    ("repeat_hits", lambda: experiment_builder.recombined().mutate(model="s5f", count=20)),
+    ("with_read_loss", lambda: experiment_builder.recombined()
+     .mutate(model="s5f", count=20).end_loss_5prime(length=12)),
+    ("with_indels", lambda: experiment_builder.recombined()
+     .mutate(model="s5f", count=20).polymerase_indels(count=(1, 3), insertion_prob=0.5)),
+)
+
+
+def _reported_region_counters(record):
+    """The six counters, named literally rather than built from a loop.
+
+    The claimed fields have to be readable in the body that claims them, and
+    an f-string is invisible to the static check -- which rejected the first
+    version of this test for exactly that reason.
+    """
+    return {
+        "fwr1": record["n_fwr1_observable_mutations"],
+        "cdr1": record["n_cdr1_observable_mutations"],
+        "fwr2": record["n_fwr2_observable_mutations"],
+        "cdr2": record["n_cdr2_observable_mutations"],
+        "fwr3": record["n_fwr3_observable_mutations"],
+        "v_unannotated": record["n_v_unannotated_observable_mutations"],
+    }
+
+
+def _v_subregions(refdata, v_call):
+    for index in range(refdata.v_pool_size()):
+        allele = refdata.v_allele(index)
+        if allele.name == v_call:
+            return allele.subregions
+    raise AssertionError(f"{v_call} names no allele in the bound reference")
+
+
+@verifies("maturation.hypermutation",
+          claim="the per-subregion recoverable counters are what a CDR/FWR "
+                "selection-pressure ratio computed from a read needs. They "
+                "agree with an oracle that buckets the visible differences by "
+                "the allele's own IMGT table in every configuration measured, "
+                "including repeat hits, read loss and indels -- where the "
+                "event counters do not, because an event whose base is gone "
+                "or overwritten is still an event",
+          fields=("n_fwr1_observable_mutations", "n_cdr1_observable_mutations",
+                  "n_fwr2_observable_mutations", "n_cdr2_observable_mutations",
+                  "n_fwr3_observable_mutations",
+                  "n_v_unannotated_observable_mutations"),
+          basis="provenance")
+@pytest.mark.parametrize("label,make", REGION_FIXTURES,
+                         ids=[name for name, _ in REGION_FIXTURES])
+def test_the_per_region_recoverable_counters_match_what_the_read_shows(label, make):
+    """Why these fields exist, stated as the measurement that motivated them.
+
+    The event counters are a partition of `n_v_mutations` and correct as
+    that. Against what a read shows they agree on 60 of 60 records at one
+    mutation, 32 of 60 at twenty, and 17 of 60 once twelve nucleotides are
+    lost from the 5' end -- the record counting mutations in bases the read
+    no longer contains. A CDR/FWR ratio computed from them is an event ratio,
+    which is a different quantity from the one a selection-pressure analysis
+    of a read is after.
+    """
+    exp = make()
+    agreed = checked = 0
+    for outcome in exp.run(n=60, seed=7):
+        record = outcome.airr_record(exp.refdata)
+        simulation = outcome.final_simulation()
+        expected = reconstruction.observable_substitutions_by_v_subregion(
+            simulation, _v_subregions(exp.refdata, record["v_call"]))
+        reported = _reported_region_counters(record)
+        assert reported == expected, (
+            f"{label}: record reports {reported} where the read shows {expected}")
+        agreed += 1
+        checked += 1
+    assert checked == 60
+    assert agreed == 60
+
+
+@verifies("maturation.hypermutation",
+          claim="the six per-subregion recoverable counters sum to the V part "
+                "of n_observable_mutations, and each is at most its event "
+                "counterpart -- a recoverable substitution had an event "
+                "behind it in the same subregion",
+          fields=("n_observable_mutations",),
+          basis="provenance")
+def test_the_per_region_recoverable_counters_partition_the_v_segment():
+    """The invariant the validator enforces, asserted here against the
+    provenance rather than against the validator's own recomputation."""
+    exp = (experiment_builder.recombined()
+           .mutate(model="s5f", count=20).end_loss_5prime(length=10))
+    checked = 0
+    for outcome in exp.run(n=60, seed=7):
+        record = outcome.airr_record(exp.refdata)
+        simulation = outcome.final_simulation()
+        expected = reconstruction.observable_substitutions_by_v_subregion(
+            simulation, _v_subregions(exp.refdata, record["v_call"]))
+        parts = sum(record[f"n_{bucket}_observable_mutations"]
+                    for bucket in reconstruction.V_SUBREGION_BUCKETS)
+        assert parts == sum(expected.values()), (
+            f"the six counters sum to {parts}, the read shows "
+            f"{sum(expected.values())} recoverable V substitutions")
+        assert parts <= record["n_observable_mutations"], (
+            f"the V buckets sum to {parts}, above the whole-record "
+            f"recoverable count of {record['n_observable_mutations']}")
+        for bucket in reconstruction.V_SUBREGION_BUCKETS:
+            assert (record[f"n_{bucket}_observable_mutations"]
+                    <= record[f"n_{bucket}_mutations"]), (
+                f"{bucket}: more recoverable than counted")
+        checked += 1
+    assert checked == 60

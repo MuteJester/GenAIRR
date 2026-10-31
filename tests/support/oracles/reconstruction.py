@@ -351,3 +351,45 @@ CIRCULARITY = {
         "across the assembly test's fixture. The "
         "coordinate circularity above still applies.",
 }
+
+
+V_SUBREGION_BUCKETS = ("fwr1", "cdr1", "fwr2", "cdr2", "fwr3", "v_unannotated")
+
+
+def observable_substitutions_by_v_subregion(simulation, v_subregions) -> dict[str, int]:
+    """Recoverable V substitutions, bucketed by the allele's own IMGT table.
+
+    ``v_subregions`` is the assigned V allele's ``subregions`` list, read by
+    the caller from the reference and handed in -- the same arrangement the
+    junction oracle uses, because this module may not import GenAIRR and so
+    cannot resolve an allele itself. Each entry is ``(label, start, end)`` in
+    reference coordinates, half-open.
+
+    Restricted to V-segment positions. An earlier version of this bucketed
+    every templated position against the V table, which put D and J
+    coordinates into V subregions and reported 3 of 60 agreement where the
+    truth was 60 of 60 -- a false failure that looked exactly like a defect
+    in the counters.
+
+    Same limit as :func:`observable_substitutions`: it sees a difference, not
+    which pass wrote it, so it is valid as an expected value only where
+    hypermutation is the only pass that writes a base.
+    """
+    segments = segments_by_position(simulation)
+    bases, germline = simulation.bases(), simulation.germline_bases()
+    counts = {bucket: 0 for bucket in V_SUBREGION_BUCKETS}
+    for index in range(len(bases)):
+        if segments.get(index) != "V":
+            continue
+        position = simulation.germline_position(index)
+        if position is None:
+            continue
+        observed, reference = chr(bases[index]).upper(), chr(germline[index]).upper()
+        if observed == reference:
+            continue
+        if observed not in "ACGT" or reference not in "ACGT":
+            continue
+        label = next((name.lower() for name, start, end in v_subregions
+                      if start <= position < end), None)
+        counts[label if label in counts else "v_unannotated"] += 1
+    return counts

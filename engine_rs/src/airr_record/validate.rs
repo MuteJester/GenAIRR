@@ -134,6 +134,21 @@ pub enum RecordValidationIssue {
         observable: i64,
         reported_total: i64,
     },
+    /// A V subregion reports more recoverable substitutions than hypermutation
+    /// events in that same subregion. Every recoverable substitution had at
+    /// least one event behind it, so this cannot happen.
+    VSubregionObservableExceedsEvents {
+        region: &'static str,
+        observable: i64,
+        events: i64,
+    },
+    /// The six per-subregion recoverable counters sum to more than the
+    /// whole-record recoverable count, which also covers D, J and the
+    /// untemplated junction.
+    VSubregionObservableSumExceedsTotal {
+        sum_of_subregion_buckets: i64,
+        reported_total: i64,
+    },
     MutationRateMismatch {
         reported: f64,
         recomputed: f64,

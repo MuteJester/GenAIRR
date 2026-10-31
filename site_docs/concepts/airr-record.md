@@ -320,6 +320,39 @@ V-side CDR3 stretch is the most common); see
 [SHM and mutation targeting](../guides/shm-targeting.md#reading-mutation-counters)
 for the full rules.
 
+
+### Per-subregion recoverable counters
+
+Six more fields, the regional counterpart of `n_observable_mutations`:
+
+```text
+n_fwr1_observable_mutations
+n_cdr1_observable_mutations
+n_fwr2_observable_mutations
+n_cdr2_observable_mutations
+n_fwr3_observable_mutations
+n_v_unannotated_observable_mutations
+```
+
+**Use these for a CDR/FWR selection-pressure ratio computed from a read.**
+The event counters above are a correct partition of `n_v_mutations`, and a
+ratio built from them is an *event* ratio — which is a different quantity
+from what a read shows, because an event whose base was later overwritten or
+lost is still an event.
+
+Measured against an independent oracle that buckets the visible differences
+by the same IMGT table, the event counters agree with the read on 60 of 60
+records at one mutation per record, 32 of 60 at twenty, and 17 of 60 once
+twelve nucleotides are lost from the 5' end. These six agree on 60 of 60 in
+every one of those configurations.
+
+They are derived like `n_observable_mutations` — the hypermutation passes'
+own sites resolved against the finished molecule — so a position restored by
+a repeat hit or removed by read loss is absent from them for the same reason
+it is absent from the whole-record count. They sum to the V part of
+`n_observable_mutations`, and each is at most its event counterpart;
+`validate_records` checks both.
+
 ### Library + sequencing artefacts (non-biological)
 
 ```text
