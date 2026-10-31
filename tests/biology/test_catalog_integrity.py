@@ -467,6 +467,16 @@ def test_the_coverage_report_numbers_are_pinned():
     agrees with itself either way, and the only external check on v_call
     compared the named allele's LENGTH, which cannot separate 195 of the 198
     IGH V alleles.
+
+    Then every remaining `consistent` row was given a basis that establishes
+    its values, which is what that status existed to make visible. Six
+    mechanisms moved and the count is now zero: paired_end reads its reads
+    against the molecule rather than against their own length, contamination
+    against the divergence of the observed bases from the germline the record
+    names, ambiguous_calls against the same seed without the pass,
+    segment_coordinates against the span its bases occupy, receptor_revision
+    against an unrevised run of the same seed, and p_nucleotide against the
+    tip palindrome at all four coding ends rather than one.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -475,9 +485,9 @@ def test_the_coverage_report_numbers_are_pinned():
               for r in rows for status in [r.status]}
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
     assert counts == {
-        "verified": 14,
-        "consistent": 6,
-        "gap-limited": 2,
+        "verified": 19,
+        "consistent": 0,
+        "gap-limited": 3,
         "partial": 2,
         "unverified": 2,
         "no-truth-exported": 5,

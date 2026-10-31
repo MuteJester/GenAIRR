@@ -51,3 +51,18 @@ def with_p_nucleotides(locus: str = DEFAULT_LOCUS, **recombine: Any):
     return (recombined(locus=locus, **recombine)
             .process_coding_ends(v_3=[(-3, 1.0)], j_5=[(-2, 1.0)],
                                  reference_ends_are_coding_ends=True))
+
+
+def with_p_nucleotides_at_every_end(locus: str = DEFAULT_LOCUS, **recombine: Any):
+    """As :func:`with_p_nucleotides`, extended to the two D coding ends.
+
+    The V-and-J fixture produces no D P-addition at all -- measured 0 runs
+    over 60 records -- so three of the four recorded P lengths had nothing to
+    compare and were checked only against the letter case the same pass
+    writes. Extending both D ends gives all four boundaries a run on every
+    record (60 of 60 each).
+    """
+    return (recombined(locus=locus, **recombine)
+            .process_coding_ends(v_3=[(-3, 1.0)], d_5=[(-2, 1.0)],
+                                 d_3=[(-2, 1.0)], j_5=[(-2, 1.0)],
+                                 reference_ends_are_coding_ends=True))
