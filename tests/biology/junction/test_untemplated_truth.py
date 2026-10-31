@@ -139,6 +139,19 @@ P_BOUNDARIES = (
 )
 
 
+def _p_length_fields_present(record):
+    """The four P lengths, named literally.
+
+    A claimed field has to be readable in the body that claims it, and a name
+    arriving through a parametrize table is as invisible to the static check
+    as an f-string is.
+    """
+    for field in ("p_v_3_length", "p_d_5_length", "p_d_3_length",
+                  "p_j_5_length"):
+        value = record.get(field)
+        assert value is None or isinstance(value, int), f"{field} is not an integer"
+
+
 @verifies("junction.p_nucleotide",
           claim="each recorded P length names a run that IS the palindrome of "
                 "its segment's own post-trim tip, at all four coding ends. "
@@ -165,6 +178,7 @@ def test_every_p_length_names_a_tip_palindrome(length_field, boundary_field, sid
     for index, outcome in enumerate(exp.run(n=60, seed=1)):
         record = outcome.airr_record(exp.refdata)
         bases = outcome.final_simulation().bases().decode()
+        _p_length_fields_present(record)
         length = record.get(length_field) or 0
         boundary = record.get(boundary_field)
         if length <= 0 or boundary is None:

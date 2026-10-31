@@ -477,6 +477,17 @@ def test_the_coverage_report_numbers_are_pinned():
     segment_coordinates against the span its bases occupy, receptor_revision
     against an unrevised run of the same seed, and p_nucleotide against the
     tip palindrome at all four coding ends rather than one.
+
+    assay.polymerase_indels joined them from unverified: n_indels is the net
+    length the molecule changed by against the same seed without the pass,
+    120 of 120 in each direction, so it counts applied indels and not drawn
+    ones -- worth establishing because the two error counters beside it did
+    report the drawn number. Its ceiling is gap-limited because the three
+    per-segment counters do not partition it: an indel in an NP region
+    belongs to none of them, on 18 of 200 records.
+
+    That leaves one unverified mechanism, assay.duplex_formation, an
+    experimental surface.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -486,10 +497,11 @@ def test_the_coverage_report_numbers_are_pinned():
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
     assert counts == {
         "verified": 19,
-        "consistent": 0,
-        "gap-limited": 3,
+        # No "consistent" key: the counts are built from the statuses that
+        # occur, and no mechanism carries that status any more.
+        "gap-limited": 4,
         "partial": 2,
-        "unverified": 2,
+        "unverified": 1,
         "no-truth-exported": 5,
     }, (
         f"the declared coverage distribution changed to {counts}. If that was "

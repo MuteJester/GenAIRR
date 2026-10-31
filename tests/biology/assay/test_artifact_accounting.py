@@ -488,3 +488,94 @@ def test_quality_error_counter_counts_realized_errors_not_draws():
         lambda e, c: e.sequencing_errors(count=c), "n_quality_errors")
     _assert_counts_realized_not_drawn(
         "n_quality_errors", changed, reported, draws=200)
+
+
+def _indel_counter_fields_present(record):
+    """The four indel counters, named literally."""
+    for field in ("n_indels", "n_v_indels", "n_d_indels", "n_j_indels"):
+        assert isinstance(record[field], int), f"{field} is not an integer"
+
+
+@verifies("assay.polymerase_indels",
+          claim="n_indels counts the indels the pass APPLIED, not the number "
+                "drawn: it equals the net change in the molecule's length "
+                "against the same seed without the pass, 120 of 120 in each "
+                "direction. The three per-segment counters sum to at most it, "
+                "and to exactly it when no NP region exists -- an indel in an "
+                "NP region belongs to no segment counter, which the "
+                "mechanism's truth gap records",
+          fields=("n_indels", "n_v_indels", "n_d_indels", "n_j_indels"),
+          basis="cross-run")
+@pytest.mark.parametrize("label,insertion_prob", [("insertions", 1.0),
+                                                  ("deletions", 0.0)])
+def test_the_indel_count_is_the_length_the_molecule_changed_by(label, insertion_prob):
+    """A cross-run differential, which is the only way to see this: the record
+    cannot say how long the molecule was before the pass ran.
+
+    Worth checking at all because the neighbouring error counters turned out
+    to report the number of errors REQUESTED rather than applied. This one
+    does not -- it was already read off the event ledger -- and now something
+    says so.
+    """
+    plain = experiment_builder.recombined()
+    with_indels = experiment_builder.recombined().polymerase_indels(
+        count=(1, 3), insertion_prob=insertion_prob)
+    before = [outcome.airr_record(plain.refdata)["sequence"]
+              for outcome in plain.run(n=120, seed=5)]
+    after = [outcome.airr_record(with_indels.refdata)
+             for outcome in with_indels.run(n=120, seed=5)]
+    moved = 0
+    for index, (clean, record) in enumerate(zip(before, after)):
+        _indel_counter_fields_present(record)
+        delta = len(record["sequence"]) - len(clean)
+        expected = delta if insertion_prob == 1.0 else -delta
+        assert record["n_indels"] == expected, (
+            f"{label}: record {index} reports {record['n_indels']} indels "
+            f"where the molecule's length moved by {delta}")
+        per_segment = (record["n_v_indels"] + record["n_d_indels"]
+                       + record["n_j_indels"])
+        assert per_segment <= record["n_indels"], (
+            f"{label}: record {index} attributes {per_segment} indels to "
+            f"segments out of {record['n_indels']}")
+        moved += record["n_indels"] > 0
+    assert moved > 100, f"{label}: only {moved} records had an indel applied"
+
+
+@verifies("assay.polymerase_indels",
+          claim="the per-segment counters account for every indel once no NP "
+                "region exists: with np1 and np2 pinned to zero the three sum "
+                "to n_indels on 200 of 200 records, where at the default NP "
+                "lengths 18 of 200 carry an indel that belongs to no segment",
+          fields=("n_v_indels", "n_d_indels", "n_j_indels"),
+          basis="provenance")
+def test_segment_indels_account_for_everything_when_there_is_no_np_region():
+    """Identifies the cause of the shortfall rather than tolerating it.
+
+    Comparing the two configurations is what distinguishes "the per-segment
+    attribution loses indels" from "NP regions have no counter of their own".
+    It is the second, which is a documented gap and not a defect.
+    """
+    without_np = experiment_builder.recombined(
+        np1_lengths=[(0, 1.0)], np2_lengths=[(0, 1.0)]
+    ).polymerase_indels(count=(1, 3), insertion_prob=0.5)
+    exact = 0
+    for index, outcome in enumerate(without_np.run(n=200, seed=5)):
+        record = outcome.airr_record(without_np.refdata)
+        per_segment = (record["n_v_indels"] + record["n_d_indels"]
+                       + record["n_j_indels"])
+        assert per_segment == record["n_indels"], (
+            f"record {index}: {per_segment} attributed of "
+            f"{record['n_indels']} with no NP region to lose one to")
+        exact += 1
+    assert exact == 200
+
+    with_np = experiment_builder.recombined().polymerase_indels(
+        count=(1, 3), insertion_prob=0.5)
+    unattributed = sum(
+        1 for outcome in with_np.run(n=200, seed=5)
+        for record in [outcome.airr_record(with_np.refdata)]
+        if (record["n_v_indels"] + record["n_d_indels"] + record["n_j_indels"])
+        < record["n_indels"])
+    assert unattributed, (
+        "no record lost an indel to an NP region, so this comparison does not "
+        "establish where the shortfall comes from")
