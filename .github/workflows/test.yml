@@ -82,6 +82,24 @@ jobs:
           HYPOTHESIS_PROFILE: ci
         run: pytest tests/ -q -n auto -m "not performance" --biology-coverage
 
+      # The inventory gate. It hashes every test body, helper and
+      # module-level constant in the base branch and in this tree, and fails
+      # on any change `tools/inventory-declarations.json` does not account
+      # for -- so a weakened assertion costs a declaration with a reason
+      # instead of passing as a green suite. Pull requests only: on a push to
+      # master the base and the tree are the same commit, and the gate would
+      # be comparing master against itself.
+      - name: Inventory gate (tests/ against the base branch)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12' && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          # The matrix checkout is shallow. Deepen only on this leg: the gate
+          # needs the base commit to check it out, the other eleven do not.
+          git fetch --no-tags --unshallow origin "${{ github.base_ref }}" \
+            || git fetch --no-tags origin "${{ github.base_ref }}"
+          python tools/inventory_gate.py check \
+            --since "origin/${{ github.base_ref }}" --declarations
+
       # The package and the build tooling are linted beside the tests. Each
       # path has its own exemptions in pyproject's per-file ignores, with the
       # counts and the reason written there; what is NOT exempted is enforced

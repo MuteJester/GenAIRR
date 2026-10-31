@@ -138,20 +138,14 @@ import re  # noqa: E402
 
 
 def _reporting_oracles():
-    """Oracle modules that report disagreements, so the rule applies to them."""
-    import importlib
+    """Oracle modules that report disagreements, so the rule applies to them.
 
-    root = TESTS_ROOT / "support" / "oracles"
-    found = {}
-    for module in sorted(root.glob("*.py")):
-        if module.name == "__init__.py":
-            continue
-        source = module.read_text(encoding="utf-8")
-        if "class Disagreement" not in source and "class Mismatch" not in source:
-            continue
-        found[module.stem] = importlib.import_module(
-            f"tests.support.oracles.{module.stem}")
-    return found
+    The scan itself lives in the oracles package: the circularity probes need
+    the same list, and a test module may not import another test module.
+    """
+    from tests.support import oracles
+
+    return oracles.reporting_modules()
 
 
 def test_every_reporting_oracle_declares_what_its_identities_do_under_a_both_sides_probe():
@@ -160,18 +154,20 @@ def test_every_reporting_oracle_declares_what_its_identities_do_under_a_both_sid
     What this enforces: the mapping exists, covers something, and every note
     carries a measurement rather than a reassurance.
 
-    Where a module declares ``IDENTITIES``, coverage IS enforced: the mapping
-    must cover exactly those keys. Two modules were found emitting identities
-    absent from their mapping -- projection documented 6 of 13, coordinates 7
-    of 8 -- which is the blind spot the first version of this docstring
-    described as a limitation, realized. Both now declare their keys and
-    validate every reported identity against them at construction.
+    Declaring ``IDENTITIES`` is mandatory, and the mapping must cover exactly
+    those keys. Two modules were found emitting identities absent from their
+    mapping -- projection documented 6 of 13, coordinates 7 of 8 -- which is
+    the blind spot the first version of this docstring described as a
+    limitation, realized. A third, ``reconstruction``, declared no identities
+    at all and said so in a comment, which left two of its comparisons
+    unprobed and the mapping unable to notice.
 
-    What is still NOT enforced: a module that declares no ``IDENTITIES`` gets
-    only the weak checks below, and nothing makes declaring them mandatory.
-    ``reconstruction`` is in that position -- its result type carries no
-    identity field -- so its two notes are the author's judgement of what it
-    compares, and a reviewer should check that rather than trust this test.
+    Four of the oracles additionally validate every reported identity against
+    the tuple at construction, which is stronger than this test: it catches an
+    identity invented at the call site. ``reconstruction``'s result types carry
+    no identity field, so it declares ``REPORTS`` instead and
+    ``test_an_oracle_without_an_identity_field_attributes_every_function``
+    enforces that.
     """
     oracles = _reporting_oracles()
     assert len(oracles) >= 3, (
@@ -183,16 +179,14 @@ def test_every_reporting_oracle_declares_what_its_identities_do_under_a_both_sid
             "mapping. Perturb both sides of each identity, measure what the "
             "oracle says, and record it -- see the oracles package docstring.")
         declared = getattr(module, "IDENTITIES", None)
-        if declared is not None:
-            # Where the module declares its identity keys, coverage is checked
-            # rather than trusted. A review found two modules emitting
-            # identities absent from their mapping -- the blind spot the
-            # package docstring describes, realized -- so the modules now
-            # declare the keys and this closes it for them.
-            assert set(mapping) == set(declared), (
-                f"{name}: CIRCULARITY and IDENTITIES disagree.\n"
-                f"  emitted but unprobed: {sorted(set(declared) - set(mapping))}\n"
-                f"  probed but not emitted: {sorted(set(mapping) - set(declared))}")
+        assert isinstance(declared, tuple) and declared, (
+            f"{name} reports disagreements but declares no IDENTITIES tuple, "
+            "so nothing can check that CIRCULARITY covers what it reports. "
+            "Name every identity the module can report.")
+        assert set(mapping) == set(declared), (
+            f"{name}: CIRCULARITY and IDENTITIES disagree.\n"
+            f"  emitted but unprobed: {sorted(set(declared) - set(mapping))}\n"
+            f"  probed but not emitted: {sorted(set(mapping) - set(declared))}")
         for identity, note in mapping.items():
             assert identity.strip(), f"{name}: an identity with no name"
             assert len(note.split()) >= 12, (
@@ -233,3 +227,85 @@ def test_the_circularity_notes_do_not_all_claim_independence():
         f"{circular}. The coordinate comparisons in reconstruction and "
         "projection are both circular on the coordinate, measured, and the "
         "cigar span identities are true by construction.")
+
+
+def _identity_carrying_result(module):
+    """The module's result dataclass that carries an ``identity`` field, if any."""
+    import dataclasses
+
+    for value in vars(module).values():
+        if (dataclasses.is_dataclass(value) and isinstance(value, type)
+                and any(f.name == "identity" for f in dataclasses.fields(value))):
+            return value
+    return None
+
+
+def test_an_identity_carrying_oracle_refuses_an_identity_it_never_declared():
+    """The construction guard, asserted rather than assumed.
+
+    Four oracles validate ``identity`` in ``__post_init__``. That guard is
+    what makes their IDENTITIES tuple load-bearing instead of decorative, and
+    nothing was checking that it was still there -- the projection oracle
+    carried an f-string identity for months, reachable only on a reverse
+    complemented record, which is how the gap was found.
+    """
+    import dataclasses
+
+    probed = []
+    for name, module in sorted(_reporting_oracles().items()):
+        result = _identity_carrying_result(module)
+        if result is None:
+            continue
+        probed.append(name)
+        fields = {f.name: 0 if f.type in ("int", int) else ""
+                  for f in dataclasses.fields(result)}
+        fields["identity"] = "an identity nobody declared"
+        with pytest.raises(ValueError, match="declared identity"):
+            result(**fields)
+    assert len(probed) >= 3, (
+        f"only {probed} were probed; the scan is not finding the result types")
+
+
+def test_an_oracle_without_an_identity_field_attributes_every_function():
+    """Where there is no construction site to guard, every function says what
+    it reports.
+
+    ``reconstruction`` returns positions, bare strings and tuples, so no
+    ``__post_init__`` can catch an identity invented at the call site. Its
+    ``REPORTS`` mapping is the substitute, and this makes it exhaustive: a new
+    public comparison fails here until its author attributes it, and the
+    attribution has to name a declared -- therefore probed -- identity.
+
+    The previous arrangement was a comment saying coverage could not be
+    enforced for this module, under which two of its four comparisons went
+    unprobed.
+    """
+    import inspect
+
+    checked = []
+    for name, module in sorted(_reporting_oracles().items()):
+        if _identity_carrying_result(module) is not None:
+            continue
+        checked.append(name)
+        reports = getattr(module, "REPORTS", None)
+        assert isinstance(reports, dict) and reports, (
+            f"{name} has no identity-carrying result type and no REPORTS "
+            "mapping, so nothing relates its comparisons to its identities")
+        public = {member for member, value in vars(module).items()
+                  if inspect.isfunction(value) and not member.startswith("_")
+                  and value.__module__ == module.__name__}
+        assert set(reports) == public, (
+            f"{name}: REPORTS does not account for every public function.\n"
+            f"  unattributed: {sorted(public - set(reports))}\n"
+            f"  named but absent: {sorted(set(reports) - public)}")
+        declared = set(module.IDENTITIES)
+        attributed = {identity for value in reports.values() for identity in value}
+        assert attributed <= declared, (
+            f"{name}: REPORTS names identities that are not declared and so "
+            f"are not probed: {sorted(attributed - declared)}")
+        assert attributed == declared, (
+            f"{name}: declared identities that no function reports: "
+            f"{sorted(declared - attributed)}")
+    assert checked, (
+        "no oracle lacks an identity-carrying result type, so this test is "
+        "vacuous -- delete it or restore the case it was written for")

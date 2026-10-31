@@ -16,6 +16,7 @@ import pytest
 
 from tests.biology import catalog
 from tests.biology.catalog import all_rust_sources, coverage_rows, rust_coverage
+from tests.biology.catalog._rust import rust_covered_fields
 from tests.support import paths
 
 pytestmark = pytest.mark.pin
@@ -49,13 +50,41 @@ def test_every_recorded_source_names_a_known_mechanism():
     assert unknown == [], f"Rust records naming unknown mechanisms: {unknown}"
 
 
-def test_recorded_fields_are_owned_by_the_mechanism_claimed():
+def test_every_credited_field_appears_in_the_file_crediting_it():
+    """The guard the hand-written table never had.
+
+    That table was transcribed from module docstrings, and 17 of its 51
+    claims named a field appearing nowhere in the file crediting it. None of
+    the three guards here read the files, so crediting trim_ambiguity.rs with
+    the end-loss fields passed all of them.
+
+    The credit is now derived from the files, so this cannot fail by
+    construction -- which is the point, and why it is written as a guard over
+    the derivation rather than over a list someone maintains. It fails if the
+    derivation stops consulting the file, which is the only way the column
+    could start lying again.
+    """
+    from tests.biology.catalog._rust import _file_text, _mentions
+    absent = []
+    by_file = {source.path: _file_text(source.path) for source in all_rust_sources()}
+    for mechanism_id, fields in rust_covered_fields().items():
+        paths_for = [s.path for s in all_rust_sources()
+                     if mechanism_id in s.mechanism_ids]
+        for field in fields:
+            if not any(_mentions(by_file[path], field) for path in paths_for):
+                absent.append(f"{mechanism_id}:{field}")
+    assert absent == [], (
+        f"fields credited to a mechanism that no crediting file mentions: {absent}")
+
+
+def test_credited_fields_are_owned_by_the_mechanism_claimed():
+    """Derivation intersects with the mechanism's own fields, so a file
+    mentioning someone else's field cannot leak into this column."""
     wrong = []
-    for source in all_rust_sources():
-        for mechanism_id, fields in source.fields.items():
-            owned = set(catalog.by_id(mechanism_id).truth_fields)
-            wrong.extend(f"{source.path}:{mechanism_id}:{f}" for f in fields if f not in owned)
-    assert wrong == [], f"Rust records claiming fields a mechanism does not own: {wrong}"
+    for mechanism_id, fields in rust_covered_fields().items():
+        owned = set(catalog.by_id(mechanism_id).truth_fields)
+        wrong.extend(f"{mechanism_id}:{f}" for f in fields if f not in owned)
+    assert wrong == [], f"Rust credit naming fields a mechanism does not own: {wrong}"
 
 
 def test_rust_records_attach_to_mechanisms_and_are_visible():

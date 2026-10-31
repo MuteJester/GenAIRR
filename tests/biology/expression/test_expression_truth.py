@@ -76,15 +76,19 @@ EXPRESSION_FIXTURES = (
 
 
 @verifies("expression.productivity",
-          claim="each flag is re-derivable rather than merely consistent with "
-                "the others: vj_in_frame from the junction length, stop_codon "
-                "from translating the coding span with an independent codon "
-                "table, and productive as the conjunction of those two with "
-                "both anchors surviving in the molecule. Checked under "
+          claim="stop_codon is re-derived by translating the coding span with "
+                "an independent codon table, and productive is the "
+                "conjunction of frame, no stop, and both anchors surviving as "
+                "C and W/F in the molecule itself. Checked under "
                 "hypermutation, which is where an anchor actually gets "
                 "destroyed, and on a light chain, where the J anchor residue "
-                "is phenylalanine rather than tryptophan",
-          fields=("productive", "stop_codon", "vj_in_frame"),
+                "is phenylalanine rather than tryptophan. vj_in_frame is "
+                "deliberately NOT claimed here: the oracle derives it from "
+                "the exported junction_length, which is a comparison between "
+                "two of the record's own fields, and the trusted-landmark "
+                "test under components/ is what gives that flag an expected "
+                "value from outside the engine",
+          fields=("productive", "stop_codon"),
           basis="reference")
 @pytest.mark.parametrize("label,make", EXPRESSION_FIXTURES,
                          ids=[name for name, _ in EXPRESSION_FIXTURES])
@@ -123,7 +127,12 @@ def test_the_productivity_flags_are_each_derivable_from_the_molecule(label, make
                 "with the junction fields empty and productive false, and the "
                 "reasons naming anchor_removed and vj_frame_unresolved",
           fields=("vj_in_frame", "productivity_reasons"),
-          basis="provenance")
+          # The expected values come from the fixture's configuration -- a V 3'
+          # trim deep enough to remove the anchor codon on every record -- not
+          # from the engine's per-base record, which is what `provenance`
+          # means. Mislabelled between two strong bases, so no status moved,
+          # but the column is supposed to say which one.
+          basis="reference")
 def test_an_unresolvable_frame_is_null_rather_than_false():
     """The three-valued case, which a consumer treating the flag as a boolean
     gets wrong: `None` means "could not tell" and reads as "out of frame".

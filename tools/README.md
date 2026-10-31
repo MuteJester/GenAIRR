@@ -80,3 +80,47 @@ The release workflow writes its version into `pyproject.toml` before its test
 gate, so a release, or a release dry run, must use exactly the version that was
 committed and regenerated: with any other version the builder test fails. This
 is intended.
+
+## `inventory_gate.py`
+
+Proves a change to `tests/` did not quietly weaken a test. It records a hash
+of the normalized source of every test function, helper and module-level
+constant, then compares this branch against its base.
+
+```bash
+# What CI runs on every pull request:
+python tools/inventory_gate.py check --since origin/master --declarations
+
+# Against a captured file instead (capture is ~25s for the whole suite):
+python tools/inventory_gate.py capture --out /tmp/base.json --tests-dir tests
+python tools/inventory_gate.py check --baseline /tmp/base.json --declarations
+```
+
+Normalization drops the signature and the imports and unparses the AST, so
+moving a test between modules, into a class, or past a rewritten import is
+invisible. Editing its body is not. Decorators are kept, because editing a
+`parametrize` table changes what is tested.
+
+**Declaring a change.** The gate does not know which changes are legitimate;
+the author says so in `tools/inventory-declarations.json`, with a reason per
+entry:
+
+```json
+{"revised":  {"test_x": "why its body changed"},
+ "replaced": {"test_old": {"by": "test_new", "why": "..."}},
+ "allow":    {"dead-code": "why a helper went away"}}
+```
+
+- `revised` accepts an edited body, by exact name. It never excuses a removal.
+- `replaced` is the one route a removed test passes, and it is checked rather
+  than trusted: the successor must be a test function the tree collects.
+- `allow` names one of the transform classes in the script, each of which has
+  to explain every differing line by a token it is about — so naming
+  `cross-import` cannot wave through a loosened comparison.
+
+An entry that explained nothing on a run is reported stale, so the file
+empties itself as branches merge instead of growing into a standing
+allowlist.
+
+`duplicates` is a separate subcommand that lists identical test bodies across
+modules; a group is a real duplicate only if its resolved inputs match too.

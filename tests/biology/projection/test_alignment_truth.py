@@ -22,7 +22,7 @@ import pytest
 
 from tests.biology.catalog import verifies
 from tests.support.builders import experiment as experiment_builder
-from tests.support.oracles import projection
+from tests.support.oracles import projection, reconstruction
 
 pytestmark = pytest.mark.behavior
 
@@ -146,6 +146,66 @@ def test_every_cigar_describes_the_span_it_claims_against_the_reference(locus, s
 
 
 @verifies("projection.germline_alignment",
+          claim="sequence_alignment reduces to the molecule the engine "
+                "RECORDED, base for base, and the D mask covers exactly those "
+                "columns whose bases the provenance says came from the D "
+                "segment. Neither expectation is built from the alignment's "
+                "sibling fields, which is what the oracle run beside this one "
+                "does: there, the read and the D span both come from the same "
+                "projection as the strings being checked",
+          fields=("sequence_alignment", "germline_alignment_d_mask"),
+          basis="provenance")
+@pytest.mark.parametrize("locus", sorted(VDJ_LOCI))
+def test_the_alignment_and_the_d_mask_against_the_recorded_molecule(locus):
+    """What the oracle's own two identities cannot establish.
+
+    The oracle compares ``sequence_alignment`` with its gaps removed to
+    ``record["sequence"]``, and rebuilds the mask from ``d_alignment_*``. Both
+    expected values come from the same projection that wrote the strings, which
+    its circularity map records: the mask "is built in the same walk whose
+    boundaries become d_alignment_start/end, so the span it covers and the span
+    it is compared against are one number".
+
+    Here the read comes from the engine's per-base record and the D span from
+    the provenance segment of each position, so a mask applied to the wrong
+    span has somewhere to show up. Measured over 25 records per locus: 25 of 25
+    agree on both, the mask covers 505 columns on IGH and 280 on TCRB, and a
+    mask shifted one column along agrees on 0 of 25 -- as does an unmasked one.
+
+    The plain stack only. An indel puts gaps in the strings, and then a column
+    index is no longer a read index; the oracle's gap-aware walk is what covers
+    those, on the fixture above.
+    """
+    exp = experiment_builder.recombined(locus=locus)
+    checked = masked = 0
+    for index, outcome in enumerate(exp.run(n=25, seed=41)):
+        record = outcome.airr_record(exp.refdata)
+        simulation = outcome.final_simulation()
+        recorded = simulation.bases().decode()
+        segment_of = reconstruction.segments_by_position(simulation)
+        aligned = record["sequence_alignment"]
+        germline = record["germline_alignment"]
+        assert aligned.replace("-", "").upper() == recorded.upper(), (
+            f"{locus}: record {index} sequence_alignment does not reduce to "
+            "the molecule the engine recorded")
+        expected = "".join("N" if segment_of.get(column) == "D" else base
+                           for column, base in enumerate(germline))
+        assert record["germline_alignment_d_mask"].upper() == expected.upper(), (
+            f"{locus}: record {index} masks a different span than the "
+            "provenance assigns to D")
+        covered = sum(1 for a, b in zip(germline, expected) if a != b)
+        assert covered > 0, (
+            f"{locus}: record {index} has no D column to mask, so the "
+            "comparison establishes nothing about the mask")
+        masked += covered
+        checked += 1
+    assert checked == 25, f"{locus}: only {checked} records were checked"
+    assert masked > 200, (
+        f"{locus}: only {masked} columns were masked across 25 records, which "
+        "is too few for the claim to rest on")
+
+
+@verifies("projection.germline_alignment",
           claim="the two alignment strings are the same length, are longer than "
                 "the read by exactly the deletions the cigars record, reduce to "
                 "the read itself once gaps are removed -- to its reverse "
@@ -160,8 +220,7 @@ def test_every_cigar_describes_the_span_it_claims_against_the_reference(locus, s
                 "the right place: the mask is built in the same walk whose "
                 "boundaries become d_alignment_start/end, so the span it "
                 "covers and the span it is compared against are one number",
-          fields=("sequence_alignment", "germline_alignment",
-                  "germline_alignment_d_mask"),
+          fields=("germline_alignment",),
           basis="reference")
 @pytest.mark.parametrize("stack", sorted(STACKS))
 @pytest.mark.parametrize("locus", LOCI)

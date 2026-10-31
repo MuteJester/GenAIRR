@@ -501,25 +501,82 @@ def test_the_coverage_report_numbers_are_pinned():
 
     So every mechanism is now at verified, at a declared gapped ceiling, or
     carrying no exported truth at all -- except assay.duplex_formation.
+
+    Then an audit of the basis column against the bodies that declare it found
+    six mechanisms claiming a basis stronger than their test supported on at
+    least one field, and the headline fell from 20 to 19. Three were
+    strengthened rather than relabelled, because the stronger check was
+    available and nobody had written it: assay.paired_end now reads its
+    windows against the declared layout and its reads against the engine's own
+    per-base record, junction.assembly derives the junction window from the
+    reference anchor codons instead of slicing at the bounds the record
+    reports, and projection.germline_alignment compares the alignment to the
+    recorded molecule and the D mask to the span the provenance assigns to D.
+    Two were label corrections between two strong bases, so no status moved.
+    One, recombination.assembly, is now reported `consistent`: sequence_length
+    against len(sequence) is two views of one exported string and there is no
+    stronger comparison available for it, which is the status existing to be
+    visible rather than a regression in the engine.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
                                  basis_by_mechanism=bases)
-    counts = {status: sum(1 for r in rows if r.status == status)
-              for r in rows for status in [r.status]}
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
-    assert counts == {
-        "verified": 20,
-        # No "consistent" or "partial" key: the counts are built from the
-        # statuses that occur, and no mechanism carries either any more.
-        "gap-limited": 5,
-        "unverified": 1,
-        "no-truth-exported": 5,
-    }, (
-        f"the declared coverage distribution changed to {counts}. If that was "
-        "deliberate, update this pin in the same commit and say why in the "
-        "message. If it was not, a registration or a truth field moved without "
-        "anyone noticing.")
+    # Pinned per mechanism, not as a distribution. The distribution was the
+    # original pin and it cannot see a swap: one mechanism falling out of
+    # verified while another rises into it leaves every count untouched, and
+    # the row that fell is exactly the thing a pin is for. Six of these rows
+    # moved individually over this branch's work and the headline count moved
+    # three times, which is how the blind spot was noticed.
+    status = {row.mechanism_id: row.status for row in rows}
+    expected = {
+        "germline.allele_choice":         "verified",
+        "germline.genotype":              "no-truth-exported",
+        "recombination.assembly":         "consistent",
+        "recombination.d_inversion":      "verified",
+        "recombination.trimming":         "verified",
+        "junction.assembly":              "verified",
+        "junction.coding_end_processing": "verified",
+        "junction.n_addition":            "gap-limited",
+        "junction.p_nucleotide":          "verified",
+        "expression.productivity":        "verified",
+        "expression.receptor_revision":   "verified",
+        "maturation.class_switching":     "no-truth-exported",
+        "maturation.hypermutation":       "verified",
+        "clonality.founder":              "gap-limited",
+        "clonality.sampling":             "gap-limited",
+        "clonality.selection":            "no-truth-exported",
+        "clonality.tree_topology":        "no-truth-exported",
+        "assay.ambiguous_calls":          "gap-limited",
+        "assay.contamination":            "verified",
+        "assay.duplex_formation":         "unverified",
+        "assay.end_loss":                 "verified",
+        "assay.orientation":              "verified",
+        "assay.paired_end":               "verified",
+        "assay.pcr_error":                "verified",
+        "assay.polymerase_indels":        "gap-limited",
+        "assay.quality_error":            "verified",
+        "projection.alignment_scores":    "no-truth-exported",
+        "projection.cigar":               "verified",
+        "projection.germline_alignment":  "verified",
+        "projection.segment_coordinates": "verified",
+        "projection.translation":         "verified",
+    }
+    assert status == expected, (
+        "the declared coverage changed, per mechanism:\n"
+        + "\n".join(f"    {mechanism}: {was} -> {status.get(mechanism, 'absent')}"
+                     for mechanism, was in expected.items()
+                     if status.get(mechanism) != was)
+        + "\n".join(f"    {mechanism}: not pinned, reports {value}"
+                     for mechanism, value in status.items()
+                     if mechanism not in expected)
+        + "\nIf that was deliberate, update this pin in the same commit and "
+        "say why in the message. If it was not, a registration or a truth "
+        "field moved without anyone noticing.")
+    counts = {name: sum(1 for value in status.values() if value == name)
+              for name in sorted(set(status.values()))}
+    assert counts == {"consistent": 1, "gap-limited": 5, "no-truth-exported": 5,
+                      "unverified": 1, "verified": 19}, counts
 
 
 def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():
@@ -574,3 +631,84 @@ def test_registrations_live_outside_the_biology_directory():
     assert outside, (
         "every registration lives under biology/, so coverage-by-registration "
         "is not actually exercised and the workflow guard protects nothing")
+
+
+def _loop_products(function):
+    """Names a loop in ``function`` writes to: counters, lists, sets."""
+    import ast
+    produced = set()
+    loops = [node for node in ast.walk(function)
+             if isinstance(node, (ast.For, ast.While))]
+    for loop in loops:
+        for node in ast.walk(loop):
+            if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+                produced.add(node.target.id)
+            elif isinstance(node, ast.Assign):
+                produced.update(target.id for target in node.targets
+                                if isinstance(target, ast.Name))
+            elif (isinstance(node, ast.Call)
+                  and isinstance(node.func, ast.Attribute)
+                  and isinstance(node.func.value, ast.Name)
+                  and node.func.attr in {"append", "add", "update", "extend"}):
+                produced.add(node.func.value.id)
+    return produced
+
+
+def test_a_registered_test_that_can_skip_its_assertions_proves_it_did_not():
+    """The vacuous-pass guard.
+
+    A registered test that iterates records and `continue`s past the
+    uninteresting ones can compare nothing at all and still report green. That
+    is not hypothetical: the NP-translation test keyed both spans off the D
+    coordinates, so on a VJ locus every record was skipped and it passed over
+    zero comparisons. The oracle probe that bucketed D and J coordinates
+    against the V subregion table reported 3 of 60 agreement for the same
+    reason -- it was comparing the wrong thing, and nothing said how much.
+
+    So: a registered test containing a `continue` must, after its loops,
+    assert something that refers to a name the loop writes to -- a counter it
+    incremented, or a collection it filled. "I compared 40 of them" is such an
+    assertion; "the experiment exists" is not.
+
+    Two limits, stated rather than papered over. It cannot tell a meaningful
+    floor from a trivial one: `assert checked >= 0` would satisfy it. And it
+    only fires on `continue`, so a test that skips work another way -- an `if`
+    wrapping its assertions -- is not caught. It targets the shape that has
+    actually failed here, twice.
+    """
+    import ast
+
+    from tests.support import paths
+
+    offenders = []
+    for module in sorted(paths.tests_root().rglob("test_*.py")):
+        source = module.read_text(encoding="utf-8")
+        if "@verifies(" not in source:
+            continue
+        for function in ast.walk(ast.parse(source)):
+            if not isinstance(function, ast.FunctionDef):
+                continue
+            if not any(isinstance(decorator, ast.Call)
+                       and getattr(decorator.func, "id", "") == "verifies"
+                       for decorator in function.decorator_list):
+                continue
+            if not any(isinstance(node, ast.Continue)
+                       for node in ast.walk(function)):
+                continue
+            loops = [node for node in ast.walk(function)
+                     if isinstance(node, (ast.For, ast.While))]
+            inside = {id(node) for loop in loops for node in ast.walk(loop)
+                      if isinstance(node, ast.Assert)}
+            after = [node for node in ast.walk(function)
+                     if isinstance(node, ast.Assert) and id(node) not in inside]
+            produced = _loop_products(function)
+            speaks = any(isinstance(name, ast.Name) and name.id in produced
+                         for node in after for name in ast.walk(node.test))
+            if not speaks:
+                offenders.append(f"{module.name}::{function.name}")
+    assert offenders == [], (
+        "these registered tests can skip every comparison and still pass, "
+        "because nothing after their loops refers to what the loop produced:\n"
+        + "\n".join(f"  {name}" for name in offenders)
+        + "\n\nAdd an assertion on the count compared, or on the collection "
+          "filled, so a run that compared nothing fails.")

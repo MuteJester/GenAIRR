@@ -41,6 +41,52 @@ from . import provenance
 COMPLEMENT = {"A": "T", "T": "A", "C": "G", "G": "C", "N": "N"}
 
 
+#: Every identity this module can report, in the order the comparisons appear
+#: below. Declared so ``CIRCULARITY`` can be checked to cover them. Unlike the
+#: sibling oracles, the result types here carry no identity field -- a
+#: ``Mismatch`` is a position, and two of the comparisons return a bare string
+#: or tuple -- so there is no construction site to validate against this
+#: tuple. :data:`REPORTS` is the substitute: it names, per public function,
+#: which of these identities that function can report.
+IDENTITIES = (
+    "recorded germline base == reference base at the claimed coordinate",
+    "recorded germline base == base of the allele the CALL names",
+    "an inverted segment's byte == complement of the reference base",
+    "observable_substitutions == the engine's n_observable_mutations",
+    "a visible substitution is bucketed by the region or segment carrying it",
+    "the np fields are the untemplated runs' bases and lengths",
+    "a P run is the reverse complement of the segment's post-trim tip",
+)
+
+#: Every public function here, against the identities whose disagreements it
+#: can report -- ``()`` where it reports none and only supplies material to
+#: another comparison. Exhaustive by test: the meta test requires the keys to
+#: be exactly this module's public functions, so a new comparison added here
+#: fails until its author says which identity it reports, and an identity has
+#: to be in :data:`IDENTITIES` and therefore probed.
+REPORTS = {
+    "segments_by_position": (),
+    "templated_check": (
+        "recorded germline base == reference base at the claimed coordinate",
+        "recorded germline base == base of the allele the CALL names",
+        "an inverted segment's byte == complement of the reference base",
+    ),
+    "untemplated_runs": (),
+    "split_by_case": (),
+    "observable_substitutions": (
+        "observable_substitutions == the engine's n_observable_mutations",),
+    "reverse_complement": (),
+    "np_fields_disagreement": (
+        "the np fields are the untemplated runs' bases and lengths",),
+    "p_tip_disagreement": (
+        "a P run is the reverse complement of the segment's post-trim tip",),
+    "observable_substitutions_by_v_subregion": (
+        "a visible substitution is bucketed by the region or segment carrying it",),
+    "observable_substitutions_by_segment": (
+        "a visible substitution is bucketed by the region or segment carrying it",),
+}
+
+
 @dataclass(frozen=True)
 class Mismatch:
     """A position whose recorded germline base is not what the reference says."""
@@ -318,15 +364,18 @@ def p_tip_disagreement(sequence: str, boundary: int, p_length: int) -> tuple[str
 #: What a both-sides perturbation produces, per identity. See the package
 #: docstring for why this is required and what it does not guarantee.
 #:
-#: SCOPE, stated because it is narrower than the module: this covers
-#: ``templated_check``'s comparison only. ``np_fields_disagreement`` and
-#: ``p_tip_disagreement`` also report, and the ``unresolved_allele`` and
-#: ``out_of_range`` counters can each sink a verdict, and none of those is
-#: probed here. They are checked by their own mutants in
-#: tests/biology/test_oracle_sensitivity.py, which is weaker than a probe:
-#: a mutant shows the check can fire, a probe shows what it cannot see. This
-#: module declares no IDENTITIES because its result type carries no identity
-#: field, so the meta test cannot enforce coverage for it.
+#: Keys are checked against :data:`IDENTITIES` by the meta test, so an
+#: identity this module reports cannot stay unprobed. The two that used to be
+#: outside the mapping -- ``np_fields_disagreement`` and
+#: ``p_tip_disagreement`` -- were in it only as a sentence saying they were
+#: not, which is how an unprobed comparison survives a review. Both are
+#: probed below.
+#:
+#: Still outside: the ``unresolved_allele`` and ``out_of_range`` counters,
+#: which can each sink a verdict without a mismatch being reported. They are
+#: checked by their own mutants in tests/biology/test_oracle_sensitivity.py,
+#: which is weaker than a probe -- a mutant shows the check can fire, a probe
+#: shows what it cannot see.
 CIRCULARITY = {
     "recorded germline base == reference base at the claimed coordinate":
         "CIRCULAR. Shift the germline coordinate by one and re-read each byte "
@@ -372,18 +421,48 @@ CIRCULARITY = {
         "puts positions past its end, which the walk counts as out-of-range "
         "(17 of 40 on the d_call probe) and not as a mismatch. Probing "
         "`mismatches` alone made a shorter-allele swap look invisible.",
+    "the np fields are the untemplated runs' bases and lengths":
+        "CIRCULAR IN CONTENT. Rewriting every untemplated base to A in the "
+        "sequence AND in the np fields together leaves the comparison clean "
+        "on 60 of 60 records: both sides are views of the same bytes, so the "
+        "np bases the NP pass actually drew are not what this establishes. "
+        "Rewriting the sequence alone fires on 59 of 60 -- the 60th record's "
+        "only untemplated run already read 'AA', so the rewrite changed "
+        "nothing there. What the identity does establish is that the exported "
+        "np1/np2 strings and lengths are the untemplated stretches of the "
+        "read, in order, which is what a consumer slicing the junction gets. "
+        "Where the untemplated bases came from is the np composition "
+        "question, and no test here answers it.",
+    "a P run is the reverse complement of the segment's post-trim tip":
+        "CIRCULAR IN POSITION, independent in palindromy. Overwriting the tip "
+        "and the P run together with a matched pair (A*n and its reverse "
+        "complement) leaves the comparison clean on 60 of 60 records, so this "
+        "says nothing about the tip being the real post-trim germline tip -- "
+        "that is the coordinates oracle's end-loss and trim arithmetic. "
+        "Overwriting the P run alone is caught, measured by "
+        "test_a_p_nucleotide_that_is_not_a_palindrome_is_caught. The "
+        "palindrome relation itself is independent: it is nowhere in the "
+        "record, so the engine cannot satisfy it except by having written the "
+        "bases the P pass is defined to write.",
     "a visible substitution is bucketed by the region or segment carrying it":
         "NOT CIRCULAR in the bucketing, which is the step the base comparison "
-        "above does not cover. Probed at one mutation per record, where an "
-        "event and a visible difference are the same thing so the comparison "
-        "is an equality; unperturbed it disagrees on 0 of 60.\n\n"
-        "        Subregions: shifting every declared interval by +15 makes it "
-        "disagree on 58 of 60, emptying the table on 60 of 60, and rotating "
-        "the LABELS across the same intervals on 48 of 60. Reversing the "
-        "order of the interval list does nothing at all (0 of 60) and is not "
-        "a perturbation: the intervals are disjoint, so the same one still "
-        "matches whichever end the search starts from. That measurement is "
-        "recorded because it looked like a blind spot and is not one.\n\n"
+        "above does not cover. Unperturbed, the buckets equal the record's "
+        "own counters on 60 of 60 at one mutation per record and at twenty.\n\n"
+        "        Subregions, at TWENTY mutations per record: shifting every "
+        "declared interval by +15 stops matching on 58 of 60, emptying the "
+        "table on 60 of 60, and rotating the LABELS across the same intervals "
+        "on 48 of 60. At ONE mutation the same shift stops matching on only "
+        "11 of the 49 records whose mutation lands in V, and the emptied "
+        "table on 48 of 49 -- a single substitution usually sits far enough "
+        "inside its region that a 15-base displacement does not move it out. "
+        "The earlier version of this note carried the twenty-mutation numbers "
+        "under a sentence saying the probe was run at one, which executing it "
+        "as test_a_displaced_subregion_table_no_longer_matches_the_recorded_"
+        "counters corrected. Reversing the order of the interval list does "
+        "nothing at all (0 of 60) and is not a perturbation: the intervals "
+        "are disjoint, so the same one still matches whichever end the search "
+        "starts from. That measurement is recorded because it looked like a "
+        "blind spot and is not one.\n\n"
         "        Segments: swapping the recorded V and D counts makes it "
         "disagree on 55 of 60, so a mutation routed to the wrong segment has "
         "somewhere to show up -- which the partition identity does not "

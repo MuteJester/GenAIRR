@@ -309,16 +309,133 @@ PAIRED_END_CONFIGS = (
 )
 
 
+#: A layout with no drawn component, so every window the engine reports is
+#: determined by the configuration alone. The drawn layouts above cannot do
+#: this: where the insert size is sampled per record, the only thing that
+#: knows which value a record drew is the record.
+FIXED_LAYOUT = dict(r1_length=120, r2_length=90, insert_size=250)
+
+
 @verifies("assay.paired_end",
-          claim="each read IS the stretch of the molecule its offsets name: R1 "
-                "the forward slice and R2 the reverse complement of its slice, "
-                "which is the orientation a paired-end consumer assembles "
-                "from. Read against the molecule rather than against its own "
-                "length, so a read whose content came from somewhere else is "
-                "caught",
-          fields=("r1_sequence", "r2_sequence", "r1_start", "r1_end",
-                  "r2_start", "r2_end", "insert_size"),
+          claim="the read windows are where the declared layout puts them: R1 "
+                "at 0..r1_length and R2 ending at the declared insert size, "
+                "with the expected offsets computed from the configuration "
+                "and not read back from the record. A layout that cannot fit "
+                "the molecule tags read_layout and leaves the windows empty "
+                "rather than looking like a record with no layout at all",
+          fields=("r1_start", "r1_end", "r2_start", "r2_end"),
           basis="reference")
+def test_the_read_windows_are_where_the_declared_layout_puts_them():
+    """The offsets against the configuration, which is the only external side.
+
+    The breadth test below compares each read to the molecule at the offsets
+    the record itself reports, so a projection that placed both windows
+    consistently wrong would satisfy it. Here the expected offsets come from
+    the three numbers the caller declared -- 0..120 for R1, 160..250 for R2 --
+    and the record has no say in them. Measured: 40 of 40 records agree.
+
+    The second half is the geometry the engine cannot honour. An insert size
+    larger than the molecule is rejected by the projection kernel, and the
+    builder deliberately tags `read_layout` without populating the windows so
+    the record stays distinguishable from one that never asked for reads. That
+    path had no test on this side of the boundary.
+    """
+    layout = FIXED_LAYOUT
+    exp = experiment_builder.recombined().paired_end(**layout)
+    checked = 0
+    for index, outcome in enumerate(exp.run(n=40, seed=7)):
+        record = outcome.airr_record(exp.refdata)
+        assert (record["r1_start"], record["r1_end"]) == (0, layout["r1_length"]), (
+            f"record {index}: R1 is at {record['r1_start']}..{record['r1_end']}, "
+            f"not at 0..{layout['r1_length']} as declared")
+        expected_r2 = (layout["insert_size"] - layout["r2_length"],
+                       layout["insert_size"])
+        assert (record["r2_start"], record["r2_end"]) == expected_r2, (
+            f"record {index}: R2 is at {record['r2_start']}..{record['r2_end']}, "
+            f"not at {expected_r2[0]}..{expected_r2[1]} as declared")
+        checked += 1
+    assert checked == 40
+
+    # A declared insert size no molecule can satisfy. 900 is well past the
+    # longest IGH rearrangement this builder produces (404 bases on the
+    # longest of the records above).
+    impossible = experiment_builder.recombined().paired_end(
+        r1_length=120, r2_length=90, insert_size=900)
+    rejected = 0
+    for index, outcome in enumerate(impossible.run(n=5, seed=7)):
+        record = outcome.airr_record(impossible.refdata)
+        assert record["read_layout"] == "paired_end", (
+            f"record {index} asked for paired-end reads and the geometry was "
+            f"rejected, but read_layout is {record['read_layout']!r} -- the "
+            "record is now indistinguishable from one with no layout")
+        assert record["r1_start"] is None and record["r2_end"] is None, (
+            f"record {index}: the rejected geometry still produced windows "
+            f"{record['r1_start']}..{record['r1_end']} and "
+            f"{record['r2_start']}..{record['r2_end']}")
+        rejected += 1
+    assert rejected == 5
+
+
+@verifies("assay.paired_end",
+          claim="each read is the recorded molecule at the window the declared "
+                "layout fixes: R1 the forward slice and R2 the reverse "
+                "complement of its slice. Compared against the engine's own "
+                "per-base record rather than against the exported sequence "
+                "field, so a read sliced from a mis-exported molecule is "
+                "caught",
+          fields=("r1_sequence", "r2_sequence"),
+          basis="provenance")
+def test_each_read_is_the_recorded_molecule_at_the_declared_window():
+    """Read content against the nucleotide record, not against a sibling field.
+
+    The breadth test below slices ``record["sequence"]``, which is the same
+    projection pass's output as the reads themselves -- so the two agree
+    whether or not that molecule is what the engine built. This slices the
+    recorded per-base molecule at offsets computed from the declared layout,
+    which leaves nothing on the expected side that the paired-end projection
+    produced.
+
+    No orientation step: with a reverse-complement pass in the pipeline the
+    exported molecule is the flipped read and the recorded pool is not, so the
+    two sides would legitimately differ. Flipping is `assay.orientation`'s
+    own claim.
+
+    Measured: 40 of 40 records agree, and comparing R2 forward rather than
+    reverse-complemented agrees on 0 of 40.
+    """
+    layout = FIXED_LAYOUT
+    exp = experiment_builder.recombined().paired_end(**layout)
+    r2_window = slice(layout["insert_size"] - layout["r2_length"],
+                      layout["insert_size"])
+    checked = 0
+    for index, outcome in enumerate(exp.run(n=40, seed=7)):
+        record = outcome.airr_record(exp.refdata)
+        recorded = outcome.final_simulation().bases().decode()
+        assert record["r1_sequence"].upper() == \
+            recorded[0:layout["r1_length"]].upper(), (
+            f"record {index}: R1 is not the recorded molecule's first "
+            f"{layout['r1_length']} bases")
+        assert record["r2_sequence"].upper() == reconstruction.reverse_complement(
+            recorded[r2_window]).upper(), (
+            f"record {index}: R2 is not the reverse complement of the recorded "
+            f"molecule at {r2_window.start}..{r2_window.stop}")
+        assert record["r2_sequence"].upper() != recorded[r2_window].upper(), (
+            f"record {index}: R2 reads the same forward and reverse, so the "
+            "orientation half of this test establishes nothing")
+        checked += 1
+    assert checked == 40
+
+
+@verifies("assay.paired_end",
+          claim="each read is the stretch of the molecule its own offsets "
+                "name, across a fixed insert size, a drawn one and an "
+                "asymmetric pair. Both sides of this comparison are exported "
+                "by the same projection, so it establishes that the reads and "
+                "the molecule agree and not where either came from -- the two "
+                "claims above do that for one declared layout",
+          fields=("r1_sequence", "r2_sequence", "r1_start", "r1_end",
+                  "r2_start", "r2_end"),
+          basis="consistent")
 @pytest.mark.parametrize("label,layout", PAIRED_END_CONFIGS,
                          ids=[name for name, _ in PAIRED_END_CONFIGS])
 def test_each_read_is_the_molecule_at_its_own_offsets(label, layout):
@@ -333,6 +450,12 @@ def test_each_read_is_the_molecule_at_its_own_offsets(label, layout):
     rather than reverse-complemented matches on 0 of 40 records, so a build
     that stopped reverse-complementing R2 would fail here and pass every
     existing check.
+
+    What this does NOT establish, and what it was registered as `reference`
+    for three weeks claiming: where the reads or the molecule came from. Both
+    sides are the same projection's output, so a window placed consistently
+    wrong satisfies it. That is why the two tests above exist, and why this
+    one is now registered on the basis it has.
     """
     exp = experiment_builder.recombined().paired_end(**layout)
     checked = 0
@@ -353,6 +476,27 @@ def test_each_read_is_the_molecule_at_its_own_offsets(label, layout):
             f"so the orientation half of this test establishes nothing")
         checked += 1
     assert checked == 40
+
+
+@verifies("assay.paired_end",
+          claim="insert_size is the fragment length the caller declared: "
+                "inside a declared range on every record and reaching both of "
+                "its endpoints, or constant where a constant was declared. "
+                "The expected values come from the configuration, which is "
+                "the one part of a read layout that is not the projection's "
+                "own output",
+          fields=("insert_size",),
+          basis="reference")
+@pytest.mark.parametrize("label,layout", PAIRED_END_CONFIGS,
+                         ids=[name for name, _ in PAIRED_END_CONFIGS])
+def test_insert_sizes_follow_the_declared_layout(label, layout):
+    """Registered on its own rather than tacked onto the test above.
+
+    It was the last assertion in the content test, which meant one field with
+    an external expectation was carrying the `reference` label for six fields
+    that had none. Splitting it is most of why that row's basis was wrong.
+    """
+    exp = experiment_builder.recombined().paired_end(**layout)
     _insert_sizes_follow_the_declared_layout(exp, layout)
 
 

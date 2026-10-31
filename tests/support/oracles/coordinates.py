@@ -88,6 +88,13 @@ class Disagreement:
     expected: object
     tolerated: int = 0
 
+    def __post_init__(self) -> None:
+        if self.identity not in IDENTITIES:
+            raise ValueError(
+                f"{self.identity!r} is not a declared identity. Add it to "
+                "IDENTITIES and probe it for circularity, or reuse the key it "
+                "belongs to.")
+
     def __str__(self) -> str:
         return (f"{self.sequence_id}: {self.segment.upper()} {self.identity}: "
                 f"recorded {self.recorded}, expected {self.expected}"

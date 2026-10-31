@@ -345,10 +345,16 @@ def disagreements(record, allele_sequences, *, inverted=(), segments=SEGMENTS
     expected_read = (reverse_complement(sequence) if on_other_strand
                      else sequence.upper())
     if bare != expected_read.upper():
-        report("-",
-               "sequence_alignment without gaps is the read"
-               + (" reverse complemented" if on_other_strand else ""),
-               bare[:40], expected_read.upper()[:40])
+        # The orientation goes in `detail`, not in the identity. Suffixing the
+        # identity with " reverse complemented" produced a string that is not
+        # in IDENTITIES, so on a reverse-complemented record this call raised
+        # ValueError out of Disagreement.__post_init__ instead of reporting
+        # the disagreement -- a real defect in `sequence_alignment` became a
+        # crash in the oracle. Nothing caught it because no mutant corrupted
+        # that field on a flipped record.
+        report("-", "sequence_alignment without gaps is the read",
+               bare[:40], expected_read.upper()[:40],
+               detail="reverse complemented" if on_other_strand else "forward")
 
     # 7. The D mask replaces the D span's bases and leaves its gaps.
     mask = record.get("germline_alignment_d_mask")
