@@ -22,7 +22,7 @@ from tests.biology.catalog import verifies
 from tests.support.asserts import records as record_asserts
 from tests.support.builders import experiment as experiment_builder
 from tests.support.strategies import experiments as experiment_strategies
-from tests.support.oracles import coordinates
+from tests.support.oracles import coordinates, reconstruction
 
 pytestmark = pytest.mark.behavior
 
@@ -299,3 +299,102 @@ def test_stacked_end_loss_at_one_end_reports_the_total_it_removed(end, builder, 
     # coordinates, so assert the fixture actually moved them.
     if end == "5'":
         assert record["v_germline_start"] == total
+
+
+SEGMENT_COORDINATE_FIXTURES = (
+    ("plain", lambda: experiment_builder.recombined()),
+    ("mutated", lambda: experiment_builder.recombined().mutate(model="s5f", count=8)),
+    ("reverse_complemented", lambda: experiment_builder.recombined()
+     .random_strand_orientation(prob=1.0)),
+    ("with_indels", lambda: experiment_builder.recombined()
+     .polymerase_indels(count=(1, 3), insertion_prob=0.5)),
+    ("light_chain", lambda: experiment_builder.recombined(locus="human_igk")),
+)
+
+
+def _sequence_coordinate_fields_present(record):
+    """The six read coordinates, named literally. See ``_trim_fields_present``."""
+    for field in ("v_sequence_start", "v_sequence_end", "d_sequence_start",
+                  "d_sequence_end", "j_sequence_start", "j_sequence_end"):
+        value = record.get(field)
+        assert value is None or isinstance(value, int), f"{field} is not an integer"
+
+
+def _alignment_coordinate_fields_present(record):
+    """The six alignment coordinates, named literally."""
+    for field in ("v_alignment_start", "v_alignment_end", "d_alignment_start",
+                  "d_alignment_end", "j_alignment_start", "j_alignment_end"):
+        value = record.get(field)
+        assert value is None or isinstance(value, int), f"{field} is not an integer"
+
+
+@verifies("projection.segment_coordinates",
+          claim="a segment's read coordinates are exactly the span its bases "
+                "occupy in the molecule -- (start, end) == (first, last + 1) "
+                "of the positions the provenance labels with that segment, and "
+                "the slice is those bases -- and its alignment coordinates cut "
+                "the alignment string to the same bases once gaps are removed. "
+                "Checked against the assembled molecule and its provenance, "
+                "not against the germline span, which the coordinates oracle "
+                "records as silent when both sides move together",
+          fields=("v_sequence_start", "v_sequence_end", "d_sequence_start",
+                  "d_sequence_end", "j_sequence_start", "j_sequence_end",
+                  "v_alignment_start", "v_alignment_end", "d_alignment_start",
+                  "d_alignment_end", "j_alignment_start", "j_alignment_end"),
+          basis="provenance")
+@pytest.mark.parametrize("label,make", SEGMENT_COORDINATE_FIXTURES,
+                         ids=[name for name, _ in SEGMENT_COORDINATE_FIXTURES])
+def test_segment_coordinates_are_the_span_the_bases_occupy(label, make):
+    """What the existing read-span test could not establish.
+
+    That one compares a segment's read span to its germline span, and the
+    coordinates oracle's own circularity entry records the result: displacing
+    both by the same amount leaves it silent. The anchor it rests on is the
+    reference allele length, which pins the trims rather than the read
+    coordinates.
+
+    These coordinates come from the column walker; the pool bases and their
+    segment labels come from the assembly passes. Measured exact on 440
+    segments across five fixtures, including 22 records carrying an alignment
+    gap, where the gap-removal step is what is actually under test.
+    """
+    exp = make()
+    checked_segments = 0
+    for index, outcome in enumerate(exp.run(n=40, seed=5)):
+        record = outcome.airr_record(exp.refdata)
+        simulation = outcome.final_simulation()
+        _sequence_coordinate_fields_present(record)
+        _alignment_coordinate_fields_present(record)
+        segment_of = reconstruction.segments_by_position(simulation)
+        pool = simulation.bases().decode()
+        subject = (reconstruction.reverse_complement(record["sequence"])
+                   if record.get("rev_comp") else record["sequence"])
+        alignment = record["sequence_alignment"]
+        for segment in ("v", "d", "j"):
+            start = record.get(f"{segment}_sequence_start")
+            end = record.get(f"{segment}_sequence_end")
+            if start is None or end is None:
+                continue
+            positions = [position for position in range(len(pool))
+                         if segment_of.get(position) == segment.upper()]
+            if not positions:
+                continue
+            checked_segments += 1
+            assert (start, end) == (min(positions), max(positions) + 1), (
+                f"{label}: record {index} {segment} reads {start}..{end} where "
+                f"its bases occupy {min(positions)}..{max(positions) + 1}")
+            assert subject[start:end].upper() == \
+                pool[min(positions):max(positions) + 1].upper(), (
+                f"{label}: record {index} {segment}: the molecule at those "
+                f"coordinates is not that segment's bases")
+            align_start = record.get(f"{segment}_alignment_start")
+            align_end = record.get(f"{segment}_alignment_end")
+            if align_start is None or align_end is None:
+                continue
+            assert alignment[align_start:align_end].replace("-", "").upper() == \
+                subject[start:end].upper(), (
+                f"{label}: record {index} {segment}: the alignment at "
+                f"{align_start}..{align_end} does not reduce to the read at "
+                f"{start}..{end}")
+    assert checked_segments >= 80, (
+        f"{label}: only {checked_segments} segments were compared")
