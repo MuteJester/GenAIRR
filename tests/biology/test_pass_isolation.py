@@ -19,7 +19,10 @@ record by record. What is asserted:
   declaration cannot rot into a blanket allowance;
 - a pass with an off switch, set to off, leaves every exported field
   identical to a run without the pass -- unless the registry declares
-  otherwise with a measurement.
+  otherwise with a measurement;
+- a pass moves no counter belonging to a mechanism it does not exercise,
+  which is a property only expressible because the registry knows each pass's
+  mechanisms and the catalog knows each mechanism's fields.
 
 That last one found the exception: `invert_d(prob=0.0)` is not the same as no
 `invert_d`. See `zero_differs` in the registry for the measurement and the
@@ -216,3 +219,75 @@ def test_the_one_pass_whose_off_switch_is_not_absence_is_pinned_exactly():
     assert moved & RECOMBINATION_FACTS == {"np2_length"}, (
         f"the re-draw now reaches further than NP2: "
         f"{sorted(moved & RECOMBINATION_FACTS)}")
+
+
+def _counter_owners():
+    """``counter field -> the mechanisms answerable for it``.
+
+    Read from the catalog rather than listed here, so a mechanism that gains a
+    counter is covered by this property the moment it is declared.
+    """
+    from tests.biology import catalog
+
+    owners: dict[str, set[str]] = {}
+    for mechanism in catalog.all_mechanisms():
+        for field in mechanism.truth_fields:
+            if field.startswith("n_"):
+                owners.setdefault(field, set()).add(mechanism.id)
+    return owners
+
+
+@pytest.mark.parametrize("one", COMPARABLE, ids=[one.name for one in COMPARABLE])
+def test_a_pass_moves_no_counter_belonging_to_another_mechanism(one):
+    """A pass's counters are its own.
+
+    This property is only expressible because two structures exist: the
+    registry knows which mechanisms each pass exercises, and the catalog knows
+    which fields each mechanism is answerable for. Neither could state it
+    alone.
+
+    What it rules out is a counter drifting under a pass that has no business
+    touching it -- a sequencing-error pass nudging `n_mutations`, say, which
+    would make every hypermutation benchmark on a corrupted read wrong in a
+    way no single record reveals. Measured: every pass's counter movement is
+    confined to its own mechanisms, with `mutate` moving sixteen,
+    `polymerase_indels` two, `pcr_amplify` and `sequencing_errors` one each,
+    and the rest none.
+    """
+    owners = _counter_owners()
+    baseline = _records(())
+    after = _records(((one.name, _loud_arguments(one)),))
+    moved = _moved(baseline, after) & set(owners)
+    foreign = sorted(field for field in moved
+                     if not (owners[field] & set(one.mechanisms)))
+    assert foreign == [], (
+        f"{one.name} moved {foreign}, which belong to mechanisms it does not "
+        f"exercise ({sorted(one.mechanisms)}). Either the pass is reaching "
+        "into another mechanism's truth, or the registry understates what it "
+        "does.")
+
+
+def test_the_pass_with_no_counter_of_its_own_moves_none():
+    """`ambiguous_base_calls` masks bases and is reported on no counter.
+
+    Its count lives in the trace (`corrupt.ns.count`) and nowhere in the
+    record, which is a declared truth gap on `assay.ambiguous_calls` rather
+    than an oversight -- an N is not a mutation and the suite is explicit that
+    counting it as one would be wrong. Asserted here because the property
+    above is satisfied trivially by a pass that moves no counter at all, and
+    the reason it moves none should be visible rather than inferred.
+    """
+    from tests.biology import catalog
+
+    mechanism = catalog.by_id("assay.ambiguous_calls")
+    assert mechanism.truth_gap, (
+        "assay.ambiguous_calls no longer declares a truth gap, so its count "
+        "may now be exported -- in which case this test should check it moves")
+    owners = _counter_owners()
+    baseline = _records(())
+    after = _records((("ambiguous_base_calls", {"count": 4}),))
+    moved = _moved(baseline, after)
+    assert moved, "masking four bases changed nothing at all"
+    assert moved & set(owners) == set(), (
+        f"a counter moved for a pass that has none: "
+        f"{sorted(moved & set(owners))}")
