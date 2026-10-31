@@ -505,21 +505,62 @@ def test_the_coverage_report_numbers_are_pinned():
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
                                  basis_by_mechanism=bases)
-    counts = {status: sum(1 for r in rows if r.status == status)
-              for r in rows for status in [r.status]}
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
-    assert counts == {
-        "verified": 20,
-        # No "consistent" or "partial" key: the counts are built from the
-        # statuses that occur, and no mechanism carries either any more.
-        "gap-limited": 5,
-        "unverified": 1,
-        "no-truth-exported": 5,
-    }, (
-        f"the declared coverage distribution changed to {counts}. If that was "
-        "deliberate, update this pin in the same commit and say why in the "
-        "message. If it was not, a registration or a truth field moved without "
-        "anyone noticing.")
+    # Pinned per mechanism, not as a distribution. The distribution was the
+    # original pin and it cannot see a swap: one mechanism falling out of
+    # verified while another rises into it leaves every count untouched, and
+    # the row that fell is exactly the thing a pin is for. Six of these rows
+    # moved individually over this branch's work and the headline count moved
+    # three times, which is how the blind spot was noticed.
+    status = {row.mechanism_id: row.status for row in rows}
+    expected = {
+        "germline.allele_choice":         "verified",
+        "germline.genotype":              "no-truth-exported",
+        "recombination.assembly":         "verified",
+        "recombination.d_inversion":      "verified",
+        "recombination.trimming":         "verified",
+        "junction.assembly":              "verified",
+        "junction.coding_end_processing": "verified",
+        "junction.n_addition":            "gap-limited",
+        "junction.p_nucleotide":          "verified",
+        "expression.productivity":        "verified",
+        "expression.receptor_revision":   "verified",
+        "maturation.class_switching":     "no-truth-exported",
+        "maturation.hypermutation":       "verified",
+        "clonality.founder":              "gap-limited",
+        "clonality.sampling":             "gap-limited",
+        "clonality.selection":            "no-truth-exported",
+        "clonality.tree_topology":        "no-truth-exported",
+        "assay.ambiguous_calls":          "gap-limited",
+        "assay.contamination":            "verified",
+        "assay.duplex_formation":         "unverified",
+        "assay.end_loss":                 "verified",
+        "assay.orientation":              "verified",
+        "assay.paired_end":               "verified",
+        "assay.pcr_error":                "verified",
+        "assay.polymerase_indels":        "gap-limited",
+        "assay.quality_error":            "verified",
+        "projection.alignment_scores":    "no-truth-exported",
+        "projection.cigar":               "verified",
+        "projection.germline_alignment":  "verified",
+        "projection.segment_coordinates": "verified",
+        "projection.translation":         "verified",
+    }
+    assert status == expected, (
+        "the declared coverage changed, per mechanism:\n"
+        + "\n".join(f"    {mechanism}: {was} -> {status.get(mechanism, 'absent')}"
+                     for mechanism, was in expected.items()
+                     if status.get(mechanism) != was)
+        + "\n".join(f"    {mechanism}: not pinned, reports {value}"
+                     for mechanism, value in status.items()
+                     if mechanism not in expected)
+        + "\nIf that was deliberate, update this pin in the same commit and "
+        "say why in the message. If it was not, a registration or a truth "
+        "field moved without anyone noticing.")
+    counts = {name: sum(1 for value in status.values() if value == name)
+              for name in sorted(set(status.values()))}
+    assert counts == {"gap-limited": 5, "no-truth-exported": 5,
+                      "unverified": 1, "verified": 20}, counts
 
 
 def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():
