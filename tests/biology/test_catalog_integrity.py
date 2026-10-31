@@ -182,10 +182,11 @@ def test_a_truth_gap_stays_visible_even_when_the_mechanism_verifies():
 
 
 def test_a_field_the_catalog_calls_unclaimed_does_not_count_toward_coverage():
-    """Seven fields are in both UNCLAIMED_FIELDS and some mechanism's truth
-    fields, and the entries say why: each is a configuration echo, a harness
-    label or a derived ratio, listed beside the mechanism it belongs to but not
-    something that mechanism can be held to as truth.
+    """Thirteen fields are in both UNCLAIMED_FIELDS and some mechanism's truth
+    fields, and the entries say why: a configuration echo, a harness label, a
+    derived ratio, or an inference output of a search this tool does not run.
+    Each is listed beside the mechanism it belongs to but is not something that
+    mechanism can be held to as truth.
 
     Counting them in the denominator would make their owners permanently
     partial however thoroughly either was tested, so the denominator is the
@@ -232,6 +233,16 @@ def test_the_fields_excluded_from_coverage_are_pinned():
         "read_layout",             # assay.paired_end
         "mutation_rate",           # maturation.hypermutation
         "c_call",                  # maturation.class_switching
+        # projection.alignment_scores. The one exclusion that is not a
+        # modelling decision: a score and a support are what an alignment
+        # SEARCH produces, and GenAIRR assembles from a known allele. The
+        # columns are exported as null because the AIRR schema has them, which
+        # test_the_score_columns_are_still_exported pins, and
+        # test_score_and_support_are_null_on_every_record pins the premise --
+        # if the engine ever populates one, the exclusion has to be argued
+        # again rather than quietly outlived.
+        "v_score", "d_score", "j_score",
+        "v_support", "d_support", "j_support",
     }, (
         "the set of fields excluded from coverage changed. Each exclusion "
         "raises its mechanism's ratio without any test being written, so a "
@@ -517,6 +528,22 @@ def test_the_coverage_report_numbers_are_pinned():
     against len(sequence) is two views of one exported string and there is no
     stronger comparison available for it, which is the status existing to be
     visible rather than a regression in the engine.
+
+    The last two rows then closed, and no status is left that means "nobody
+    looked". projection.alignment_scores reached verified on the three
+    identity fields -- each segment's fraction of matching templated positions,
+    counted off the provenance, exact across mutation, reverse complement and
+    an inverted D -- once score and support were recorded as unclaimable
+    rather than as missing truth: they are an alignment search's outputs, and
+    this tool assembles from a known allele. assay.duplex_formation reached
+    verified against repair scripts authored in the test, including the one
+    measurement that justifies its whole plane -- a base resected and
+    refilled produces a molecule byte-identical to a blunt ligation's, so the
+    read cannot tell them apart and duplex_repair is the only record that a
+    base was cut and resynthesised.
+
+    So the surface is now: 21 verified, 5 at a declared gapped ceiling, 4 with
+    no exported truth at all, and 1 consistent. `unverified` is empty.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -549,14 +576,14 @@ def test_the_coverage_report_numbers_are_pinned():
         "clonality.tree_topology":        "no-truth-exported",
         "assay.ambiguous_calls":          "gap-limited",
         "assay.contamination":            "verified",
-        "assay.duplex_formation":         "unverified",
+        "assay.duplex_formation":         "verified",
         "assay.end_loss":                 "verified",
         "assay.orientation":              "verified",
         "assay.paired_end":               "verified",
         "assay.pcr_error":                "verified",
         "assay.polymerase_indels":        "gap-limited",
         "assay.quality_error":            "verified",
-        "projection.alignment_scores":    "no-truth-exported",
+        "projection.alignment_scores":    "verified",
         "projection.cigar":               "verified",
         "projection.germline_alignment":  "verified",
         "projection.segment_coordinates": "verified",
@@ -575,8 +602,8 @@ def test_the_coverage_report_numbers_are_pinned():
         "field moved without anyone noticing.")
     counts = {name: sum(1 for value in status.values() if value == name)
               for name in sorted(set(status.values()))}
-    assert counts == {"consistent": 1, "gap-limited": 5, "no-truth-exported": 5,
-                      "unverified": 1, "verified": 19}, counts
+    assert counts == {"consistent": 1, "gap-limited": 5, "no-truth-exported": 4,
+                      "verified": 21}, counts
 
 
 def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():

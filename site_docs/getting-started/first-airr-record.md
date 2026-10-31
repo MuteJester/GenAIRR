@@ -115,6 +115,19 @@ rec["n_quality_errors"]  # 0  (from .sequencing_errors pass)
 rec["n_indels"]          # 0  (from .polymerase_indels pass)
 ```
 
+`v_identity` is the fraction of that segment's alignment matching the
+germline — matches over every column the segment's CIGAR covers, so an
+inserted or deleted column counts against it. A segment with no bases in
+the read reports `None` rather than `1.0`.
+
+`v_score` / `d_score` / `j_score` and `v_support` / `d_support` /
+`j_support` are **always `None`**. They are an aligner's outputs: how well
+the chosen allele explains the read, and how confident the choice is.
+GenAIRR assembles from a known allele, so there is no hypothesis to score
+and no call to be uncertain about. The columns are present because the AIRR
+schema has them — if you are scoring an aligner, compute these from its
+alignment, not from ours.
+
 `n_mutations` is the biological SHM total; the per-segment fields
 partition it exactly (`n_v + n_d + n_j + n_np == n_mutations` by
 construction). PCR / quality / indel artefacts are reported on

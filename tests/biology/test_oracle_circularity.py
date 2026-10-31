@@ -24,6 +24,8 @@ import pytest
 
 from tests.support import alleles
 from tests.support.builders import experiment as experiment_builder
+from tests.support.cases import duplex as duplex_case
+from tests.support.oracles import duplex as duplex_oracle
 from tests.support.oracles import expression as expression_oracle
 from tests.support.oracles import junction as junction_oracle
 from tests.support.oracles import reconstruction
@@ -469,6 +471,198 @@ def test_swapping_the_recorded_segment_counts_is_caught():
         f"{compared - equal_counts} records where the two counts differ")
 
 
+# ── duplex: the whole plane, probed at record level ──────────────────────────
+
+TOP_IS_SEQUENCE = "the product's top strand is the exported sequence"
+COMPLEMENT = "each column's bottom base is the complement of its top base"
+KIND = "a column's kind accounts for its origin"
+COUNTS = "the physical counts are what the product shows"
+NP1 = "the untemplated additions on the top strand are the np1 field"
+SELECTION = "the selected history is one the model offers"
+
+#: The authored repairs the duplex notes were measured on: a blunt ligation,
+#: one with two untemplated bases added, and one with a base resected and
+#: refilled. Three because each identity's note is a count out of three.
+DUPLEX_SCRIPTS = {"blunt": {}, "added": dict(added="GG"), "restore": dict(restore=True)}
+
+#: A base that is neither the original nor its complement, so a perturbation
+#: cannot accidentally stay valid.
+_OTHER = {"A": "C", "C": "A", "G": "T", "T": "G"}
+
+
+def _duplex_records():
+    """One record per authored script, as plain dicts a probe can rewrite."""
+    import GenAIRR as ga
+
+    out = {}
+    for label, script in DUPLEX_SCRIPTS.items():
+        reference = duplex_case.references()
+        model = duplex_case.model(reference, rows=[duplex_case.history(**script)])
+        experiment = ga.Experiment.on(reference).recombine(duplex_repair=model)
+        out[label] = experiment.run(n=1, seed=0)[0].airr_record(reference)
+    return out
+
+
+def _duplex_fires(records, identity, mutate, *, offered=()):
+    """``{label: bool}`` -- did ``identity`` fire once ``mutate`` was applied?
+
+    A script the perturbation does not apply to is left out rather than
+    counted as silent: "there was nothing to perturb" and "the oracle did not
+    notice" are the two things a probe must not confuse.
+    """
+    import copy
+
+    out = {}
+    for label, record in records.items():
+        perturbed = copy.deepcopy(record)
+        if mutate(perturbed) is False:
+            continue
+        found = duplex_oracle.disagreements(perturbed, offered_histories=offered)
+        out[label] = any(d.identity == identity for d in found)
+    return out
+
+
+def _first_top_base(record, kind=None):
+    for column in duplex_oracle.columns(record):
+        top = column.get("top")
+        if top and (kind is None or top["kind"] == kind):
+            return column
+    return None
+
+
+@probes("duplex", TOP_IS_SEQUENCE)
+def test_rewriting_the_molecule_and_the_product_together_is_invisible():
+    """Both sides are projections of one repaired duplex.
+
+    What the identity does establish is that the read a consumer gets is the
+    strand the plane describes, which is what a benchmark needs. What it
+    cannot establish is that either is the molecule the script built -- the
+    authored comparison in test_duplex_truth.py does that.
+    """
+    records = _duplex_records()
+    assert all(duplex_oracle.disagreements(r) == () for r in records.values())
+
+    def both_sides(record):
+        base = record["sequence"][0]
+        record["sequence"] = _OTHER[base] + record["sequence"][1:]
+        duplex_oracle.columns(record)[0]["top"]["base"] = _OTHER[base]
+
+    def sequence_only(record):
+        base = record["sequence"][0]
+        record["sequence"] = _OTHER[base] + record["sequence"][1:]
+
+    silent = _duplex_fires(records, TOP_IS_SEQUENCE, both_sides)
+    assert silent == {label: False for label in DUPLEX_SCRIPTS}, silent
+    caught = _duplex_fires(records, TOP_IS_SEQUENCE, sequence_only)
+    assert caught == {label: True for label in DUPLEX_SCRIPTS}, caught
+
+
+@probes("duplex", COMPLEMENT)
+def test_a_complementary_pair_swap_is_invisible_and_one_strand_is_not():
+    """Complementarity is nowhere in the plane -- nothing stores "these two are
+    a pair" -- so the engine can only satisfy it by having written a real
+    duplex. Replacing a column with a different complementary pair is
+    therefore a true duplex and silence is correct; moving one strand alone is
+    a nick, and caught."""
+    records = _duplex_records()
+
+    def pair_swap(record):
+        column = duplex_oracle.columns(record)[0]
+        new = _OTHER[column["top"]["base"]]
+        column["top"]["base"] = new
+        column["bottom"]["base"] = duplex_oracle.COMPLEMENT[new]
+        record["sequence"] = new + record["sequence"][1:]
+
+    def top_only(record):
+        column = duplex_oracle.columns(record)[0]
+        new = _OTHER[column["top"]["base"]]
+        column["top"]["base"] = new
+        record["sequence"] = new + record["sequence"][1:]
+
+    assert _duplex_fires(records, COMPLEMENT, pair_swap) == \
+        {label: False for label in DUPLEX_SCRIPTS}
+    assert _duplex_fires(records, COMPLEMENT, top_only) == \
+        {label: True for label in DUPLEX_SCRIPTS}
+
+
+@probes("duplex", KIND)
+def test_a_base_whose_kind_and_origin_disagree_is_caught():
+    """The kind is what a consumer filters on to tell templated from
+    untemplated content; the origin is what it would use to place the base in
+    a germline. A record where they disagree misleads either way round, so
+    both directions are probed."""
+    records = _duplex_records()
+
+    def relabel_as_untemplated(record):
+        column = _first_top_base(record, "original_strand")
+        if column is None:
+            return False
+        column["top"]["kind"] = "n_addition"       # origin left in place
+
+    def clear_the_origin(record):
+        column = _first_top_base(record, "original_strand")
+        if column is None:
+            return False
+        column["top"]["original"] = None
+
+    assert _duplex_fires(records, KIND, relabel_as_untemplated) == \
+        {label: True for label in DUPLEX_SCRIPTS}
+    assert _duplex_fires(records, KIND, clear_the_origin) == \
+        {label: True for label in DUPLEX_SCRIPTS}
+
+
+@probes("duplex", COUNTS)
+def test_a_physical_count_that_drifts_from_the_product_is_caught():
+    """The counts are a summary the engine writes beside the columns, not a
+    recount of them, so the two can disagree -- and the relation that makes
+    this more than arithmetic is that a resected base is counted as original
+    and a refilled one is not."""
+    records = _duplex_records()
+
+    def bump(record):
+        record["duplex_repair"]["counts"]["physical"]["untemplated_additions"] += 1
+
+    assert _duplex_fires(records, COUNTS, bump) == \
+        {label: True for label in DUPLEX_SCRIPTS}
+    restored = records["restore"]["duplex_repair"]["counts"]["physical"]
+    assert (restored["original_nucleotides"], restored["resected_nucleotides"],
+            restored["templated_synthesis"]) == (30, 1, 1), restored
+
+
+@probes("duplex", NP1)
+def test_an_np1_field_that_contradicts_the_duplex_product_is_caught():
+    """Two planes written by different projections: the legacy junction fields
+    and the duplex product's own columns. A repair that added bases without
+    reporting them in np1 would leave a consumer reading the junction fields
+    blind to untemplated content that is in the read."""
+    records = _duplex_records()
+
+    def rewrite(record):
+        if not record.get("np1"):
+            return False                  # nothing was added on this script
+        record["np1"] = "T" * len(record["np1"])
+
+    fired = _duplex_fires(records, NP1, rewrite)
+    assert fired == {"added": True}, fired
+    assert records["added"]["np1"] == duplex_oracle.untemplated_run(records["added"])
+
+
+@probes("duplex", SELECTION)
+def test_a_selection_naming_a_history_the_model_does_not_offer_is_caught():
+    """Only checked when the caller supplies the offered set, which it reads
+    from the model it authored. Unchecked when the set is empty, because an
+    expectation invented in the oracle would be worse than the declared gap."""
+    records = _duplex_records()
+    offered = _duplex_fires(records, SELECTION, lambda record: None,
+                            offered=("blunt",))
+    assert offered == {label: False for label in DUPLEX_SCRIPTS}, offered
+    foreign = _duplex_fires(records, SELECTION, lambda record: None,
+                            offered=("a-history-nobody-authored",))
+    assert foreign == {label: True for label in DUPLEX_SCRIPTS}, foreign
+    unchecked = _duplex_fires(records, SELECTION, lambda record: None)
+    assert unchecked == {label: False for label in DUPLEX_SCRIPTS}, unchecked
+
+
 # ── the coverage pin ─────────────────────────────────────────────────────────
 
 def test_every_circularity_identity_is_either_probed_or_pinned_as_prose():
@@ -493,6 +687,6 @@ def test_every_circularity_identity_is_either_probed_or_pinned_as_prose():
     stale = sorted(set(PROSE_ONLY) & probed)
     assert stale == [], (
         f"these identities are probed and still pinned as prose: {stale}")
-    assert len(probed) >= 5, (
+    assert len(probed) >= 11, (
         f"only {len(probed)} identities have an executable probe; the "
         "decorator is not registering them")

@@ -53,6 +53,21 @@ UNCLAIMED_FIELDS = {
                      "maturation.hypermutation rather than separately",
     "c_call": "always empty: no isotype or class-switch recombination is "
               "modelled. See maturation.class_switching's truth_gap",
+    # The fourth kind of unclaimed field, and the only one that is unclaimable
+    # by the nature of the tool rather than by a modelling decision: an
+    # inference output of a search that never happens.
+    "v_score": "an alignment score: how well the chosen allele explains the "
+               "read, which only a search produces. GenAIRR assembles from a "
+               "known allele, so there is no hypothesis to score. Exported as "
+               "null because the AIRR column exists",
+    "d_score": "see v_score",
+    "j_score": "see v_score",
+    "v_support": "an alignment support -- an e-value or posterior over the "
+                 "call. There is no inference here to be confident about: the "
+                 "call names the allele the simulation used. Exported as null "
+                 "because the AIRR column exists",
+    "d_support": "see v_support",
+    "j_support": "see v_support",
 }
 
 #: Truth fields more than one mechanism is answerable for, each with the reason.
@@ -470,13 +485,19 @@ MECHANISMS = (
     Mechanism(
         id="projection.alignment_scores",
         stage="projection",
-        summary="Per-segment identity, score and support for the reported call.",
+        summary="Per-segment identity for the reported call. Score and support "
+                "are exported as the AIRR schema requires the columns to be, "
+                "and are always null: see UNCLAIMED_FIELDS.",
         truth_fields=("v_identity", "d_identity", "j_identity",
                       "v_score", "d_score", "j_score",
                       "v_support", "d_support", "j_support"),
-        truth_gap="identity is populated, but score and support are None on every "
-                  "record measured. A benchmark reading them gets nothing, and a "
-                  "claim on identity alone would report the mechanism verified "
-                  "while two thirds of its fields carry no value.",
+        notes="score and support are an aligner's inference outputs -- how "
+              "well the chosen allele explains the read, and how confident "
+              "the choice is. GenAIRR performs no alignment search: the "
+              "allele is the one it used, so there is no hypothesis to score "
+              "and nothing to be confident about. The columns stay in the "
+              "output as null, which the AIRR schema permits, so a consumer "
+              "reading by column name finds them. A benchmark that needs a "
+              "score has to compute one from the alignment itself.",
     ),
 )

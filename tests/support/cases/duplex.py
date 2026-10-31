@@ -37,3 +37,13 @@ def history(name="blunt", *, weight=1.0, v_call="V1*01", **kwargs):
 
 def model(ref, rows=None, **kwargs):
     return DuplexRepairModel.bind(ref, rows or [history()], reference_ends_are_coding_ends=True, **kwargs)
+
+
+def history_from_script(s, name="authored", *, weight=1.0, v_call="V1*01"):
+    """A one-row history over a script the caller built itself.
+
+    `history()` builds the script too, from keywords; this takes one already
+    assembled, for a test that needs an arrangement the keywords do not reach
+    -- a resection with no fill, say.
+    """
+    return DuplexHistory(name, s, v_call, "D*01", "J*01", weight)
