@@ -12,7 +12,14 @@
     "Disagreement": "the coordinates oracle now refuses an identity absent from its IDENTITIES.",
     "disagreements": "the projection oracle's orientation detail moved out of the identity string, which made it raise on a flipped record.",
     "_projection_case": "gained the flipped-record case that exposed the crash.",
-    "_coverage_line": "can now cover every field of a mechanism, so the registration row reaches `verified` in the test."
+    "_coverage_line": "can now cover every field of a mechanism, so the registration row reaches `verified` in the test.",
+    "test_each_read_is_the_molecule_at_its_own_offsets": "relabelled from reference to consistent (both sides are the same projection's output) and the insert_size assertion moved into its own registered test.",
+    "test_the_productivity_flags_are_each_derivable_from_the_molecule": "stopped claiming vj_in_frame, which the oracle derives from the exported junction_length; the assertions are unchanged.",
+    "test_an_unresolvable_frame_is_null_rather_than_false": "basis corrected from provenance to reference: the expected values come from the fixture's configuration, not from the per-base record.",
+    "test_the_junction_string_is_the_molecule_between_its_bounds": "narrowed to junction_aa, the field whose expected value comes from the codon table; junction and junction_length are now established against the reference anchors by their own test.",
+    "test_the_alignment_strings_reduce_to_the_read_and_the_reference": "narrowed to germline_alignment; sequence_alignment and the D mask are now compared against the recorded molecule and the provenance D span by their own test.",
+    "test_germline_coordinates_bound_the_span_the_trims_account_for": "the sequence_length assertion moved into its own test registered as consistent, which is what that comparison is; the coordinate assertions are unchanged.",
+    "test_the_coverage_report_numbers_are_pinned": "pinned per mechanism instead of as four counts, and recombination.assembly moved to consistent with the headline falling from 20 to 19."
   },
   "replaced": {
     "test_recorded_fields_are_owned_by_the_mechanism_claimed": {

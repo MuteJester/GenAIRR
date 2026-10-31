@@ -115,16 +115,14 @@ def _germline_coordinate_fields_present(record):
           claim="each segment's germline coordinates bound exactly the span the "
                 "trim amounts and end loss account for, against the reference "
                 "allele's own length, and the segment sits at the absolute read "
-                "position the untemplated lengths leave for it. sequence_length "
-                "is checked against the sequence it measures. These are "
+                "position the untemplated lengths leave for it. These are "
                 "consistency claims across the record's own coordinate books "
                 "and the reference table -- which germline bases the pool "
                 "actually holds is not established here, because the record "
                 "builder back-fills a missing coordinate as a deletion rather "
                 "than narrowing the reported range",
           fields=("v_germline_start", "v_germline_end", "d_germline_start",
-                  "d_germline_end", "j_germline_start", "j_germline_end",
-                  "sequence_length"),
+                  "d_germline_end", "j_germline_start", "j_germline_end"),
           basis="reference")
 @pytest.mark.parametrize("locus", LOCI)
 def test_germline_coordinates_bound_the_span_the_trims_account_for(locus):
@@ -136,9 +134,36 @@ def test_germline_coordinates_bound_the_span_the_trims_account_for(locus):
         found = coordinates.disagreements(record, lengths)
         assert found == (), f"{locus}: {len(found)} coordinate disagreement(s); first: {found[0]}"
         _germline_coordinate_fields_present(record)
+
+
+@verifies("recombination.assembly",
+          claim="sequence_length is the length of the sequence it measures. "
+                "Both sides are the same exported record, so this establishes "
+                "that the two agree and NOT that either is the molecule the "
+                "engine built -- a read truncated in projection takes the "
+                "field with it. It was registered as a reference claim for "
+                "three weeks beside six coordinates that do reach the "
+                "reference table",
+          fields=("sequence_length",),
+          basis="consistent")
+@pytest.mark.parametrize("locus", LOCI)
+def test_sequence_length_measures_the_sequence(locus):
+    """Split out of the coordinate test so one weak field stops carrying that
+    test's basis.
+
+    What would raise this to a strong basis is a comparison against the
+    engine's own per-base record rather than against the exported string. The
+    projection oracle's `sequence_alignment` check does exactly that for the
+    read itself; nothing does it for the length, which is why this row is
+    reported `consistent` rather than quietly left green."""
+    exp = experiment_builder.recombined(locus=locus)
+    checked = 0
+    for record, _lengths in _observed(exp, n=40, seed=37):
         assert record["sequence_length"] == len(record["sequence"]), (
             f"{locus}: sequence_length is {record['sequence_length']} but the "
             f"sequence is {len(record['sequence'])} bases")
+        checked += 1
+    assert checked == 40, f"{locus}: only {checked} records were checked"
 
 
 @verifies("projection.segment_coordinates",

@@ -501,6 +501,22 @@ def test_the_coverage_report_numbers_are_pinned():
 
     So every mechanism is now at verified, at a declared gapped ceiling, or
     carrying no exported truth at all -- except assay.duplex_formation.
+
+    Then an audit of the basis column against the bodies that declare it found
+    six mechanisms claiming a basis stronger than their test supported on at
+    least one field, and the headline fell from 20 to 19. Three were
+    strengthened rather than relabelled, because the stronger check was
+    available and nobody had written it: assay.paired_end now reads its
+    windows against the declared layout and its reads against the engine's own
+    per-base record, junction.assembly derives the junction window from the
+    reference anchor codons instead of slicing at the bounds the record
+    reports, and projection.germline_alignment compares the alignment to the
+    recorded molecule and the D mask to the span the provenance assigns to D.
+    Two were label corrections between two strong bases, so no status moved.
+    One, recombination.assembly, is now reported `consistent`: sequence_length
+    against len(sequence) is two views of one exported string and there is no
+    stronger comparison available for it, which is the status existing to be
+    visible rather than a regression in the engine.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -516,7 +532,7 @@ def test_the_coverage_report_numbers_are_pinned():
     expected = {
         "germline.allele_choice":         "verified",
         "germline.genotype":              "no-truth-exported",
-        "recombination.assembly":         "verified",
+        "recombination.assembly":         "consistent",
         "recombination.d_inversion":      "verified",
         "recombination.trimming":         "verified",
         "junction.assembly":              "verified",
@@ -559,8 +575,8 @@ def test_the_coverage_report_numbers_are_pinned():
         "field moved without anyone noticing.")
     counts = {name: sum(1 for value in status.values() if value == name)
               for name in sorted(set(status.values()))}
-    assert counts == {"gap-limited": 5, "no-truth-exported": 5,
-                      "unverified": 1, "verified": 20}, counts
+    assert counts == {"consistent": 1, "gap-limited": 5, "no-truth-exported": 5,
+                      "unverified": 1, "verified": 19}, counts
 
 
 def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():

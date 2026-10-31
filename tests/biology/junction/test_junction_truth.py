@@ -117,22 +117,83 @@ def test_the_junction_bounds_are_the_surviving_anchor_codons(locus):
 
 
 @verifies("junction.assembly",
+          claim="junction and junction_length are the window the REFERENCE "
+                "anchors fix: the expected bounds are walked out of the "
+                "recorded provenance to the surviving bases of the V and J "
+                "anchor codons the reference declares, and the exported "
+                "junction_start / junction_end are not consulted. A window "
+                "displaced as a whole satisfies the slice identity beside "
+                "this one and fails here",
+          fields=("junction", "junction_length"),
+          basis="reference")
+@pytest.mark.parametrize("locus", LOCI)
+def test_the_junction_is_the_window_the_reference_anchors_fix(locus):
+    """Why the slice identity next door is not enough.
+
+    That one compares ``junction`` to the molecule sliced at the recorded
+    bounds. Both bounds come from the record, so a junction and a pair of
+    bounds that moved together satisfy it -- the oracle's circularity map
+    records the identity as CIRCULAR once the bounds move with it, and
+    ``junction_length == end - start`` is arithmetic over those same two
+    exported numbers.
+
+    Here the expected window comes from the anchor coordinates the reference
+    declares, walked through the recorded provenance to whichever anchor bases
+    survived trimming. Nothing on the expected side is the record builder's
+    output. Measured over both loci, 40 records each: 40 of 40 agree, and 0 of
+    40 would agree with the window shifted one base along -- so a displaced
+    junction has somewhere to show up.
+    """
+    exp = experiment_builder.recombined(locus=locus)
+    checked = 0
+    for index, outcome in enumerate(exp.run(n=40, seed=5)):
+        record = outcome.airr_record(exp.refdata)
+        simulation = outcome.final_simulation()
+        v_allele = _allele_by_name(exp.refdata, "V", record["v_call"])
+        j_allele = _allele_by_name(exp.refdata, "J", record["j_call"])
+        segment_of = reconstruction.segments_by_position(simulation)
+        v_codon = junction_oracle.anchor_codon_positions(
+            simulation, segment_of, "V", v_allele.anchor)
+        j_codon = junction_oracle.anchor_codon_positions(
+            simulation, segment_of, "J", j_allele.anchor)
+        if not v_codon or not j_codon:
+            # No surviving anchor codon means there is no window to compare.
+            # The empty-junction group is its own identity, checked by the
+            # oracle run in the test below.
+            continue
+        start, end = v_codon[0], j_codon[-1] + 1
+        expected = junction_oracle.subject(record)[start:end]
+        assert record["junction"].upper() == expected.upper(), (
+            f"{locus}: record {index} reports a junction that is not the "
+            f"molecule between the surviving anchor bases at {start}..{end}")
+        assert record["junction_length"] == end - start, (
+            f"{locus}: record {index} reports junction_length "
+            f"{record['junction_length']} for an anchor-fixed window of "
+            f"{end - start}")
+        checked += 1
+    assert checked == 40, (
+        f"{locus}: only {checked} of 40 records had a window to compare, so "
+        "this ran on less than the fixture it claims")
+
+
+@verifies("junction.assembly",
           claim="junction is the molecule sliced at the recorded bounds -- in "
                 "germline orientation, which is probed rather than assumed -- "
                 "junction_length is the distance between them, and junction_aa "
                 "is the translation of junction under an independent codon "
                 "table",
-          fields=("junction", "junction_aa", "junction_length"),
+          fields=("junction_aa",),
           basis="reference")
 @pytest.mark.parametrize("locus", LOCI)
 def test_the_junction_string_is_the_molecule_between_its_bounds(locus):
     """The three reported fields and the window they claim to describe.
 
-    Of these, the slice identity is the one with an independent side: the
-    assembled molecule is written by the assembly passes and the junction by
-    the record builder from the coding span. The length and the translation
-    are consistency checks over one producer, recorded as such in the oracle's
-    circularity map, and they ride along here because they share the fixture.
+    Of these, the translation is the one registered here: the codon table is
+    outside the engine, so ``junction_aa`` has an independent expected value.
+    The slice and the length are comparisons among the record's own fields --
+    the oracle's circularity map says so, and the test above is what gives
+    those two an external side. They still run here, because the oracle checks
+    every identity it has on one fixture.
     """
     exp = experiment_builder.recombined(locus=locus)
     found, checked, records = _check(exp, n=40, seed=5)
