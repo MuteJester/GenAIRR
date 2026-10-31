@@ -128,6 +128,7 @@ markers = [
     "composition: runs the feature against the full release stack",
     "slow: excluded from the fast path; run with the full suite",
     "biology: verifies a declared biological mechanism (see tests/biology)",
+    "campaign: a property-based discovery campaign over generated pipelines.\n        Excluded from the matrix run and given its own CI step with a\n        commit-derived seed: it is the one test meant to explore new ground on\n        every commit rather than to assert the same thing twice, and running it\n        in the suite as well replays Hypothesis's stored examples from earlier\n        runs, which fails a pull request on a defect already fixed.",
 ]
 
 [tool.ruff]

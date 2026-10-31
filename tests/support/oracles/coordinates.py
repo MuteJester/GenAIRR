@@ -236,12 +236,28 @@ def _chain_disagreements(record, identifier, allele_lengths, segments):
                 recorded=gap, expected=expected))
 
     trailing = _count(record, "sequence_length") - record[f"{last}_sequence_end"]
-    if trailing != 0:
+    # An insertion that lands at the last segment's 3' boundary is placed
+    # outside every region -- the provenance agrees with the record, the base
+    # belongs to no segment, and the segment spans stop tiling the read. Found
+    # by the pipeline-space sweep on 2 of 200 IGH and 1 of 200 IGK records
+    # under polymerase_indels(count=1, insertion_prob=1.0); in those records
+    # n_j_indels is 1 while the J cigar carries no I, so the per-segment indel
+    # count and the per-segment alignment disagree about where the base is.
+    #
+    # Tolerated up to the number of indels the record itself reports, which is
+    # the most a boundary insertion can displace, so a read end that is wrong
+    # for any other reason still fires. Whether the engine should instead
+    # extend the span and emit the I is an open question for the owner; the
+    # behaviour is pinned exactly in
+    # tests/biology/recombination/test_boundary_insertions.py.
+    tolerated = _count(record, "n_indels")
+    if trailing != 0 and not 0 < trailing <= tolerated:
         out.append(Disagreement(
             sequence_id=identifier, segment=last,
             identity="the read ends where the last segment ends",
             recorded=record[f"{last}_sequence_end"],
-            expected=_count(record, "sequence_length")))
+            expected=_count(record, "sequence_length"),
+            tolerated=tolerated))
     return out
 
 
@@ -288,5 +304,8 @@ CIRCULARITY = {
     "the read ends where the last segment ends":
         "NOT CIRCULAR -- the second absolute anchor. The same +5 displacement "
         "fires it 1 time of 2, against sequence_length, which the segment "
-        "coordinates do not produce.",
+        "coordinates do not produce. Tolerant of a trailing run no longer "
+        "than the recorded n_indels, because an insertion at the last "
+        "segment's 3' boundary is placed outside every region: 2 of 200 IGH "
+        "and 1 of 200 IGK records under one forced insertion.",
 }

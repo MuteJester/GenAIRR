@@ -18,7 +18,12 @@ from tests.support.oracles import reconstruction
 
 pytestmark = pytest.mark.behavior
 
-LOCI = ("human_igh", "human_igk")
+#: TCRB is here because the pipeline-space sweep ran the junction oracle on it
+#: and nothing else ever had: both junction mechanisms were verified on the two
+#: BCR loci only, while TCRB is the locus whose reference carries six alleles
+#: with an unresolvable anchor and so the one where the null-junction contract
+#: actually fires.
+LOCI = ("human_igh", "human_igk", "human_tcrb")
 
 
 def _check(exp, *, n, seed):
@@ -41,7 +46,14 @@ def _check(exp, *, n, seed):
             reconstruction.segments_by_position(simulation),
             v_anchor=v_allele.anchor, j_anchor=j_allele.anchor,
             v_sequence=alleles.sequence(v_allele),
-            j_sequence=alleles.sequence(j_allele)))
+            j_sequence=alleles.sequence(j_allele),
+            # Whether a bundled allele's anchor codon is canonical is a claim
+            # about the reference cartridge, and six TCRB alleles are not --
+            # correctly, with the engine refusing to emit a junction for them.
+            # test_anchor_reference_quality.py owns that claim; leaving it on
+            # here would make every TCRB record carrying one of those alleles
+            # a failure of a per-record test.
+            reference_residue=False))
         checked += 1
     return tuple(found), checked, records
 
@@ -55,15 +67,64 @@ def _junction_bound_fields_present(record):
     weakest part of this file; the oracle comparison above it is what
     establishes the values.
     """
+    if _has_no_junction(record):
+        return False
     for field in ("junction_start", "junction_end"):
         assert isinstance(record[field], int), f"{field} is not an integer"
     assert 0 <= record["junction_start"] < record["junction_end"] <= len(record["sequence"]), (
         f"bounds {record['junction_start']}..{record['junction_end']} fall "
         f"outside a {len(record['sequence'])}-base molecule")
+    return True
+
+
+def _reference_resolves_both_anchors(v_allele, j_allele):
+    """Whether the reference resolves this record's two anchors.
+
+    The engine's own rule: an anchor is resolved when the codon at it is the
+    conserved residue for that segment. Six bundled TCRB alleles fail it, and
+    for those the engine computes no junction at all -- which is right, and
+    means there is no window for a test to check.
+    """
+    for allele, canonical in ((v_allele, junction_oracle.CYSTEINE),
+                              (j_allele, junction_oracle.TRYPTOPHAN_OR_PHENYLALANINE)):
+        codon = junction_oracle.reference_anchor_codon(
+            alleles.sequence(allele), allele.anchor)
+        if codon is None or codon not in canonical:
+            return False
+    return True
+
+
+def _has_no_junction(record):
+    """Whether this record legitimately reports no junction, asserted as a group.
+
+    A record whose anchor the reference does not resolve -- six of the bundled
+    TCRB alleles -- or whose anchor codon trimming removed has no window to
+    report. The presence helpers must not read that as a missing field, and
+    must not let it pass unchecked either: the whole group goes null together
+    or the record is lying about something.
+    """
+    if record["junction_start"] is not None:
+        return False
+    assert record["junction_end"] is None, (
+        "junction_start is null while junction_end is not, so half a window "
+        "is being reported")
+    assert record["junction"] == "" and record["junction_aa"] == "", (
+        f"no junction bounds but junction={record['junction']!r} "
+        f"junction_aa={record['junction_aa']!r}")
+    assert record["junction_length"] is None, (
+        f"no junction bounds but junction_length={record['junction_length']!r}")
+    assert record["vj_in_frame"] is None, (
+        "no junction bounds but vj_in_frame is "
+        f"{record['vj_in_frame']!r}, which a consumer reads as out-of-frame")
+    assert record["productivity_reasons"], (
+        "a record with no junction says nothing about why")
+    return True
 
 
 def _junction_string_fields_present(record):
     """The three reported fields, named literally. See above."""
+    if _has_no_junction(record):
+        return False
     assert isinstance(record["junction"], str) and record["junction"], (
         "junction is empty")
     assert record["junction_length"] == len(record["junction"]), (
@@ -72,6 +133,7 @@ def _junction_string_fields_present(record):
     assert len(record["junction_aa"]) == record["junction_length"] // 3, (
         f"junction_aa has {len(record['junction_aa'])} residues for "
         f"{record['junction_length']} nucleotides")
+    return True
 
 
 @verifies("junction.coding_end_processing",
@@ -99,8 +161,11 @@ def test_the_junction_bounds_are_the_surviving_anchor_codons(locus):
     found, checked, records = _check(exp, n=40, seed=5)
     assert found == (), f"{locus}: {found[:3]}"
     assert checked == 40, f"{locus}: only {checked} records were checked"
-    for record in records:
-        _junction_bound_fields_present(record)
+    with_window = sum(_junction_bound_fields_present(record) for record in records)
+    assert with_window >= 35, (
+        f"{locus}: only {with_window} of {len(records)} records reported a "
+        "junction window; on TCRB a few draw an allele whose anchor the "
+        "reference does not resolve, many more than that is a defect")
 
 
 @verifies("junction.assembly",
@@ -132,21 +197,34 @@ def test_the_junction_is_the_window_the_reference_anchors_fix(locus):
     junction has somewhere to show up.
     """
     exp = experiment_builder.recombined(locus=locus)
-    checked = 0
+    checked = unresolved = 0
     for index, outcome in enumerate(exp.run(n=40, seed=5)):
         record = outcome.airr_record(exp.refdata)
         simulation = outcome.final_simulation()
         v_allele = alleles.by_name(exp.refdata, "V", record["v_call"])
         j_allele = alleles.by_name(exp.refdata, "J", record["j_call"])
         segment_of = reconstruction.segments_by_position(simulation)
+        if not _reference_resolves_both_anchors(v_allele, j_allele):
+            # The reference does not resolve one of these anchors, so there is
+            # no anchor-fixed window to compute. Gated on the REFERENCE rather
+            # than on the record reporting no junction: the record's own
+            # null-ness is what test_anchor_reference_quality.py establishes,
+            # and using it here would skip exactly the records a wrongly-null
+            # junction would hide in.
+            unresolved += 1
+            continue
         v_codon = junction_oracle.anchor_codon_positions(
             simulation, segment_of, "V", v_allele.anchor)
         j_codon = junction_oracle.anchor_codon_positions(
             simulation, segment_of, "J", j_allele.anchor)
         if not v_codon or not j_codon:
-            # No surviving anchor codon means there is no window to compare.
-            # The empty-junction group is its own identity, checked by the
-            # oracle run in the test below.
+            # No surviving anchor codon means there is no window to compare:
+            # either trimming removed it, or -- on TCRB -- the reference never
+            # resolved it. The empty-junction group is its own identity,
+            # checked by the oracle run in the test below, and the six
+            # unresolvable TCRB alleles are pinned by name in
+            # test_anchor_reference_quality.py.
+            unresolved += 1
             continue
         start, end = v_codon[0], j_codon[-1] + 1
         expected = junction_oracle.subject(record)[start:end]
@@ -158,9 +236,14 @@ def test_the_junction_is_the_window_the_reference_anchors_fix(locus):
             f"{record['junction_length']} for an anchor-fixed window of "
             f"{end - start}")
         checked += 1
-    assert checked == 40, (
-        f"{locus}: only {checked} of 40 records had a window to compare, so "
-        "this ran on less than the fixture it claims")
+    assert checked + unresolved == 40, (
+        f"{locus}: {checked} compared and {unresolved} unresolvable of 40 "
+        "records, which do not add up -- a record was dropped silently")
+    assert checked >= 35, (
+        f"{locus}: only {checked} of 40 records had a window to compare. On "
+        "TCRB a few draw one of the six alleles whose anchor the reference "
+        "does not resolve; many more than that means something else is "
+        "removing windows")
 
 
 @verifies("junction.assembly",
@@ -186,8 +269,10 @@ def test_the_junction_string_is_the_molecule_between_its_bounds(locus):
     found, checked, records = _check(exp, n=40, seed=5)
     assert found == (), f"{locus}: {found[:3]}"
     assert checked == 40
-    for record in records:
-        _junction_string_fields_present(record)
+    with_window = sum(_junction_string_fields_present(record) for record in records)
+    assert with_window >= 35, (
+        f"{locus}: only {with_window} of {len(records)} records reported a "
+        "junction string; see the bound test for why a few may not")
 
 
 @verifies("junction.assembly",

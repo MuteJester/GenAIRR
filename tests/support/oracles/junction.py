@@ -125,8 +125,22 @@ def subject(record) -> str:
 
 def disagreements(record, simulation, segment_of, *,
                   v_anchor: int, j_anchor: int,
-                  v_sequence: bytes, j_sequence: bytes) -> tuple[Disagreement, ...]:
-    """Every identity above that does not hold for this record."""
+                  v_sequence: bytes, j_sequence: bytes,
+                  reference_residue: bool = True) -> tuple[Disagreement, ...]:
+    """Every identity above that does not hold for this record.
+
+    ``reference_residue`` turns off the conserved-residue identity, which is
+    the one claim here that is about the reference cartridge rather than about
+    this record. The engine's own rule for "this reference resolves an anchor"
+    is that the codon at it IS canonical, so an allele that fails this
+    identity is one the engine refuses to compute a junction for at all --
+    correctly, and with ``reference_anchor_unresolved`` in the record's
+    reasons. Six of the 114 bundled TCRB alleles are in that position
+    (TRBV17*01/*02, TRBV7-3*02/*03, TRBJ2-2P*01, TRBJ2-7*02), so a per-record
+    sweep that left this on would report six non-findings per TCRB campaign.
+    The reference-level claim is tested where it belongs, in
+    tests/biology/junction/test_anchor_reference_quality.py.
+    """
     out: list[Disagreement] = []
     sequence_id = record.get("sequence_id", "?")
     start = record["junction_start"]
@@ -153,8 +167,9 @@ def disagreements(record, simulation, segment_of, *,
                 "frame is unresolved",
                 recorded, expected,
                 detail="(junction, junction_aa, junction_length, vj_in_frame)"))
-        out.extend(_reference_residue_disagreements(
-            sequence_id, v_sequence, v_anchor, j_sequence, j_anchor))
+        if reference_residue:
+            out.extend(_reference_residue_disagreements(
+                sequence_id, v_sequence, v_anchor, j_sequence, j_anchor))
         return tuple(out)
 
     v_codon = anchor_codon_positions(simulation, segment_of, "V", v_anchor)
@@ -191,8 +206,9 @@ def disagreements(record, simulation, segment_of, *,
             sequence_id, "junction_aa == translation of junction",
             record["junction_aa"], expected_aa))
 
-    out.extend(_reference_residue_disagreements(
-        sequence_id, v_sequence, v_anchor, j_sequence, j_anchor))
+    if reference_residue:
+        out.extend(_reference_residue_disagreements(
+            sequence_id, v_sequence, v_anchor, j_sequence, j_anchor))
     return tuple(out)
 
 

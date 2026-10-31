@@ -1,12 +1,15 @@
 {
   "revised": {
-    "test_every_circularity_identity_is_either_probed_or_pinned_as_prose": "the floor on executable probes rises from 5 identities to 11, the six added being the duplex oracle's.",
-    "REPORTS": "reconstruction gains germline_match_counts, attributed to no identity: it derives the two numbers a fractional identity is made of and reports no disagreement of its own.",
-    "test_the_coverage_report_numbers_are_pinned": "projection.alignment_scores and assay.duplex_formation reached verified, so the headline is 21 verified and the unverified count is zero.",
-    "test_a_field_the_catalog_calls_unclaimed_does_not_count_toward_coverage": "six more fields are unclaimable (the per-segment score and support), so the docstring's count and its description of the kinds changed; the assertions are unchanged.",
-    "test_the_fields_excluded_from_coverage_are_pinned": "the pin gains v/d/j_score and v/d/j_support, with the argument for the exclusion and the two tests that pin its premise named beside them.",
-    "MECHANISMS": "projection.alignment_scores loses its truth gap and gains a note: score and support are an alignment search's outputs and this tool runs no search.",
-    "UNCLAIMED_FIELDS": "the six score and support fields are declared unclaimable, each with its reason \u2014 the only kind of unclaimed field that is unclaimable by the nature of the tool rather than by a modelling decision."
+    "_check": "runs the junction oracle with the conserved-residue identity off: whether a bundled allele's anchor codon is canonical is a claim about the reference cartridge, which test_anchor_reference_quality.py now owns.",
+    "_junction_bound_fields_present": "returns whether the record reported a window, and asserts the null group together when it did not \u2014 six bundled TCRB alleles have an anchor the reference does not resolve, and the engine correctly emits no junction for them.",
+    "_junction_string_fields_present": "same as the bound helper: the null group is asserted as a group rather than read as a missing field.",
+    "LOCI": "human_tcrb added. The pipeline-space sweep ran the junction oracle on TCRB and nothing else ever had, so both junction mechanisms were verified on the two BCR loci only.",
+    "test_the_junction_bounds_are_the_surviving_anchor_codons": "counts how many of the 40 records reported a window instead of assuming all of them did; TCRB draws a few alleles with an unresolvable anchor.",
+    "test_the_junction_string_is_the_molecule_between_its_bounds": "same window accounting as the bound test.",
+    "test_the_junction_is_the_window_the_reference_anchors_fix": "gates on the reference resolving both anchors rather than on the record reporting a junction, so a wrongly-null junction cannot hide in the skip.",
+    "CIRCULARITY": "coordinates records the boundary-insertion tolerance and expression records the two limits the sweep found under indels, each with its measurement.",
+    "_chain_disagreements": "the read-end identity tolerates a trailing run no longer than the recorded n_indels: an insertion at the last segment's 3' boundary is placed outside every region, measured on 2 of 200 IGH and 1 of 200 IGK records. The behaviour is pinned in test_boundary_insertions.py and is an open question for the owner.",
+    "disagreements": "the junction oracle can turn off the reference-residue identity (a cartridge claim, not a record claim) and the expression oracle can turn off the two identities an indel invalidates, weakening the productive conjunction to the implication that still holds rather than skipping it. Both limits were found by the pipeline-space sweep and are measured in the oracles' circularity notes."
   },
   "replaced": {},
   "allow": {}

@@ -62,7 +62,7 @@ jobs:
       - name: Run pytest
         env:
           HYPOTHESIS_PROFILE: ci
-        run: pytest tests/ -q -n auto -m "not performance"
+        run: pytest tests/ -q -n auto -m "not performance and not campaign"
 
       - name: Run wall-time budgets
         run: pytest tests/ -q -m performance
@@ -80,7 +80,30 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         env:
           HYPOTHESIS_PROFILE: ci
-        run: pytest tests/ -q -n auto -m "not performance" --biology-coverage
+        run: pytest tests/ -q -n auto -m "not performance and not campaign" --biology-coverage
+
+      # The discovery campaign. Draws pass stacks across the space the DSL
+      # accepts and puts every applicable truth check over every record, so a
+      # defect in an interaction nobody thought to test fails here with the
+      # pipeline that produced it.
+      #
+      # The seed is derived from the commit: every commit explores new ground,
+      # and a failure reproduces exactly from the seed the message prints. Not
+      # derandomized, because a campaign that draws the same examples for ever
+      # finds nothing new; not random either, because an unreproducible
+      # failure on an unrelated pull request is how a campaign gets switched
+      # off. The exhaustive pairwise matrix in the same module runs with the
+      # rest of the suite above and needs no seed.
+      - name: Discovery campaign (drawn pipelines)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        shell: bash
+        env:
+          HYPOTHESIS_PROFILE: campaign
+        run: |
+          SEED=$(( 0x$(git rev-parse HEAD | cut -c1-7) % 2147483647 ))
+          echo "campaign seed: $SEED (from commit $(git rev-parse --short HEAD))"
+          pytest tests/ -q -m campaign \
+            --hypothesis-seed="$SEED" --hypothesis-show-statistics
 
       # The inventory gate. It hashes every test body, helper and
       # module-level constant in the base branch and in this tree, and fails
