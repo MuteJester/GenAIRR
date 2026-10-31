@@ -430,9 +430,20 @@ def test_a_reference_too_short_for_the_coordinates_is_not_reported_clean():
 # whether crossing to the reference actually catches anything.
 
 
-def _projection_case(*, invert=False):
-    """``(record, allele_sequences, inverted)`` for one indel-bearing record."""
+def _projection_case(*, invert=False, flip=False):
+    """``(record, allele_sequences, inverted)`` for one indel-bearing record.
+
+    ``flip`` reverse-complements every record. The oracle reports the
+    alignment in germline orientation, and that branch had no mutant at all
+    until one was needed: it built an identity string absent from IDENTITIES,
+    so reporting a real disagreement on a flipped record raised ValueError
+    instead.
+    """
     exp = experiment_builder.recombined().polymerase_indels(count=3)
+    if flip:
+        exp = (experiment_builder.recombined()
+               .random_strand_orientation(prob=1.0)
+               .polymerase_indels(count=3))
     if invert:
         # Compose the two: the first version built the indel experiment and
         # then discarded it, so the inverted mutant only ever ran on a
@@ -732,3 +743,34 @@ def test_a_call_naming_the_wrong_allele_is_reported():
         reported += 1
     assert swapped >= 15, f"only {swapped} records had a same-length alternative"
     assert reported == swapped
+
+def test_a_corrupted_alignment_on_a_flipped_record_is_reported_not_raised():
+    """The mutant that was missing when the projection oracle could crash.
+
+    On a reverse-complemented record the oracle used to build the identity
+    "sequence_alignment without gaps is the read reverse complemented", which
+    is not in its IDENTITIES, so reporting a real disagreement raised
+    ValueError out of `Disagreement.__post_init__` instead. A defect in
+    `sequence_alignment` on a flipped record became a crash in the thing meant
+    to find it, and nothing noticed because no mutant corrupted that field on
+    that kind of record.
+
+    Both halves are asserted: that the record really is flipped, and that the
+    corruption comes back as a disagreement rather than as an exception.
+    """
+    record, sequences, inverted = _projection_case(flip=True)
+    assert record["rev_comp"], "the fixture produced an unflipped record"
+    aligned = record["sequence_alignment"]
+    position = next(i for i, base in enumerate(aligned) if base != "-")
+    swapped = "A" if aligned[position].upper() != "A" else "C"
+    record["sequence_alignment"] = (
+        aligned[:position] + swapped + aligned[position + 1:])
+    found = projection.disagreements(record, sequences, inverted=inverted)
+    identities = {d.identity for d in found}
+    assert "sequence_alignment without gaps is the read" in identities, (
+        f"a corrupted alignment on a flipped record was not reported; got "
+        f"{sorted(identities)}")
+    details = {d.detail for d in found
+               if d.identity == "sequence_alignment without gaps is the read"}
+    assert "reverse complemented" in details, (
+        f"the orientation is not recorded in the detail: {details}")
