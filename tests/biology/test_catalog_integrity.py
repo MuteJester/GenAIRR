@@ -448,6 +448,16 @@ def test_the_coverage_report_numbers_are_pinned():
     went from no registered tests at all to verified on a reference basis --
     against the anchor coordinate and the conserved residue the reference
     declares, rather than against another exported field.
+
+    The clonality block then moved four rows at once, without a single new
+    engine field. Two gained a strong basis and a declared gap
+    (clonality.founder on clone_id, clonality.sampling on both its fields);
+    two were reclassified to no-truth-exported, because measurement showed
+    there is nothing in the record to test -- lineage_parent_id names no
+    exported record, lineage_node_id is unique only within a clone, and
+    lineage_affinity is the 0.0 sentinel at the default selection strength.
+    "unverified" fell from 7 to 3 and "no truth exported" rose from 3 to 5,
+    which is the honest reading: those two were never waiting for a test.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -458,9 +468,10 @@ def test_the_coverage_report_numbers_are_pinned():
     assert counts == {
         "verified": 13,
         "consistent": 6,
+        "gap-limited": 2,
         "partial": 2,
-        "unverified": 7,
-        "no-truth-exported": 3,
+        "unverified": 3,
+        "no-truth-exported": 5,
     }, (
         f"the declared coverage distribution changed to {counts}. If that was "
         "deliberate, update this pin in the same commit and say why in the "

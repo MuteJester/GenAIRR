@@ -109,6 +109,20 @@ All notable changes to GenAIRR are documented here.
 
 ### Fixed
 
+- Lineage and clone metadata is now validated on the legacy `clonal_lineage`
+  path. The check that resolves a record back to its tree node ran only in
+  duplex mode, so on the legacy path **every one of the eight clonal fields
+  could be edited and `validate_records` still returned ok** — `clone_id`,
+  `sequence_id`, `lineage_node_id`, `lineage_parent_id`,
+  `lineage_generation`, `lineage_affinity`, `duplicate_count` and
+  `lineage_abundance`. The immutable (tree, clone, node) origin addressing is
+  now collected on both paths, and `sequence_id` is checked against the
+  `clone{clone_id}_node{lineage_node_id}` composition it is built from —
+  which is what the addressing exists for, since two cells can carry
+  identical DNA and history and an edited namespace tag is invisible to every
+  other check. `parent_id` and `lineage_mutations_from_parent` remain
+  duplex-only and are required there rather than checked wherever they appear.
+
 - `n_pcr_errors` and `n_quality_errors` now count the substitutions each
   corruption pass **applied that changed a base**, not the number it was asked
   to introduce. A replacement is drawn from A/C/G/T including the base already

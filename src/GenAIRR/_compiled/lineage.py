@@ -142,7 +142,12 @@ class CompiledLineageExperiment:
         duplex = "duplex.recombine" in self._pre.pass_names()
         parents = [] if duplex else None
         families = [] if duplex else None
-        lineage_record_origins = [] if duplex else None
+        # Collected on every path, not just duplex. These are the immutable
+        # (family, clone, node) addresses validation resolves a record back to
+        # its tree node through; gating them on duplex meant that on the
+        # legacy path no lineage field was validated at all, and all eight of
+        # them could be edited with validate_records still returning ok.
+        lineage_record_origins = []
 
         # Bound on founder-survival retries. Sampling draws from the LIVING
         # final-generation population, so an extinct founder (drew 0 offspring)
@@ -264,7 +269,9 @@ class CompiledLineageExperiment:
                     if duplex:
                         rec["parent_id"] = parent_id
                         rec["lineage_mutations_from_parent"] = node.mutations_from_parent
-                        lineage_record_origins.append((parent_id, clone_idx, node.id))
+                    lineage_record_origins.append(
+                        (parent_id if parent_id is not None else clone_idx,
+                         clone_idx, node.id))
                     if expose_provenance and node_outcome is not None:
                         if capture is not None:
                             _truth_aliases(rec)
@@ -314,7 +321,9 @@ class CompiledLineageExperiment:
                 if duplex:
                     rec["parent_id"] = parent_id
                     rec["lineage_mutations_from_parent"] = node.mutations_from_parent
-                    lineage_record_origins.append((parent_id, clone_idx, node.id))
+                lineage_record_origins.append(
+                    (parent_id if parent_id is not None else clone_idx,
+                     clone_idx, node.id))
                 if expose_provenance:
                     if capture is not None:
                         _truth_aliases(rec)

@@ -255,9 +255,13 @@ class SimulationResultWithLineages(SimulationResult):
             # needed to check record metadata without cloning a whole arena
             # for every record during validation.
             native_nodes = [tree.nodes() for tree in self._lineage_origin_trees]
+            # The first slot is the index into the trees: the duplex family
+            # index where there are families, the clone index otherwise. It
+            # was named `parent_id` while only the duplex path collected
+            # these, and the two coincide there.
             self._lineage_origin_nodes = tuple(
-                native_nodes[parent_id][node_id]
-                for parent_id, _, node_id in self._lineage_record_origins
+                native_nodes[tree_index][node_id]
+                for tree_index, _, node_id in self._lineage_record_origins
             )
 
     @property
