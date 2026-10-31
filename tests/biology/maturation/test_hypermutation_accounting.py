@@ -429,3 +429,126 @@ def test_the_per_region_recoverable_counters_partition_the_v_segment():
                 f"{bucket}: more recoverable than counted")
         checked += 1
     assert checked == 60
+
+
+def _event_region_counters(record):
+    """The six event counters, named literally."""
+    return {
+        "fwr1": record["n_fwr1_mutations"],
+        "cdr1": record["n_cdr1_mutations"],
+        "fwr2": record["n_fwr2_mutations"],
+        "cdr2": record["n_cdr2_mutations"],
+        "fwr3": record["n_fwr3_mutations"],
+        "v_unannotated": record["n_v_unannotated_mutations"],
+    }
+
+
+@verifies("maturation.hypermutation",
+          claim="the six per-subregion event counters partition n_v_mutations "
+                "and are never below what the read shows in the same region. "
+                "At one mutation per record, where an event and a visible "
+                "difference are the same thing, they equal the read exactly "
+                "on 60 of 60. At twenty they equal it on 32 of 60 and exceed "
+                "it on the rest, which is the direction the semantics require "
+                "-- an event whose base was overwritten or lost is still an "
+                "event -- and is why the observable counters exist beside them",
+          fields=("n_fwr1_mutations", "n_cdr1_mutations", "n_fwr2_mutations",
+                  "n_cdr2_mutations", "n_fwr3_mutations",
+                  "n_v_unannotated_mutations"),
+          basis="provenance")
+@pytest.mark.parametrize("count,expect_exact", [(1, True), (20, False)])
+def test_the_per_region_event_counters_bound_what_the_read_shows(count, expect_exact):
+    """These are correct as event counts, and this establishes that rather
+    than leaving them claimed by the partition alone.
+
+    The partition says the six add up to `n_v_mutations`, which holds whatever
+    the buckets are -- a routing error that moved a mutation from CDR1 to FWR2
+    would satisfy it. What pins the buckets is the comparison against the
+    read, bucketed by the allele's own IMGT table.
+
+    At one mutation per record the two coincide and the comparison is an
+    equality. At twenty it becomes an inequality in a known direction, which
+    is weaker but is exactly what the field means: `n_fwr1_mutations` counts
+    events in FWR1, not differences visible in FWR1.
+    """
+    exp = experiment_builder.recombined().mutate(model="s5f", count=count)
+    exact = checked = 0
+    for index, outcome in enumerate(exp.run(n=60, seed=7)):
+        record = outcome.airr_record(exp.refdata)
+        simulation = outcome.final_simulation()
+        visible = reconstruction.observable_substitutions_by_v_subregion(
+            simulation, _v_subregions(exp.refdata, record["v_call"]))
+        events = _event_region_counters(record)
+        assert sum(events.values()) == record["n_v_mutations"], (
+            f"record {index}: the six counters sum to {sum(events.values())} "
+            f"against n_v_mutations {record['n_v_mutations']}")
+        for region, counted in events.items():
+            assert counted >= visible[region], (
+                f"record {index} {region}: {counted} events counted but "
+                f"{visible[region]} differences visible, which cannot happen "
+                f"-- every visible difference had an event behind it")
+        exact += events == visible
+        checked += 1
+    assert checked == 60
+    if expect_exact:
+        assert exact == 60, (
+            f"at one mutation per record the counters should equal the read "
+            f"exactly; {exact} of 60 did")
+    else:
+        assert exact < 60, (
+            "at twenty mutations per record the counters matched the read on "
+            "every record, so this fixture cannot distinguish an event count "
+            "from a difference count")
+
+
+def _segment_counters(record):
+    """The four per-segment counters, named literally."""
+    return {
+        "v": record["n_v_mutations"],
+        "d": record["n_d_mutations"],
+        "j": record["n_j_mutations"],
+        "np": record["n_np_mutations"],
+    }
+
+
+@verifies("maturation.hypermutation",
+          claim="each per-segment counter is the number of mutations in that "
+                "segment, not merely a share of a sum that adds up. At one "
+                "mutation per record they equal what the read shows per "
+                "segment on 60 of 60; at twenty they equal it on 28 of 60 and "
+                "are never below it, the gap being repeat hits and bases the "
+                "read no longer carries",
+          fields=("n_v_mutations", "n_d_mutations", "n_j_mutations",
+                  "n_np_mutations"),
+          basis="provenance")
+@pytest.mark.parametrize("count,expect_exact", [(1, True), (20, False)])
+def test_the_per_segment_counters_bound_what_the_read_shows(count, expect_exact):
+    """The partition test beside this one asserts the four add up to
+    `n_mutations`, which a routing error between two segments satisfies
+    exactly: move one mutation from D to J and the sum is unchanged.
+
+    This buckets the visible differences by the segment the provenance
+    assigns, so a misrouted mutation has somewhere to show up.
+    """
+    exp = experiment_builder.recombined().mutate(model="s5f", count=count)
+    exact = checked = 0
+    for index, outcome in enumerate(exp.run(n=60, seed=7)):
+        record = outcome.airr_record(exp.refdata)
+        visible = reconstruction.observable_substitutions_by_segment(
+            outcome.final_simulation())
+        counters = _segment_counters(record)
+        for segment, counted in counters.items():
+            assert counted >= visible[segment], (
+                f"record {index} {segment}: {counted} counted but "
+                f"{visible[segment]} visible, which cannot happen")
+        exact += counters == visible
+        checked += 1
+    assert checked == 60
+    if expect_exact:
+        assert exact == 60, (
+            f"at one mutation per record the counters should equal the read "
+            f"per segment; {exact} of 60 did")
+    else:
+        assert exact < 60, (
+            "at twenty per record every counter matched the read, so this "
+            "fixture cannot distinguish an event count from a visible one")
