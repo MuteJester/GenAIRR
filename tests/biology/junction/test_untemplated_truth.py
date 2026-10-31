@@ -5,7 +5,7 @@ import pytest
 
 from tests.biology.catalog import verifies
 from tests.support.builders import experiment as experiment_builder
-from tests.support.oracles import reconstruction
+from tests.support.oracles import projection, reconstruction
 
 pytestmark = pytest.mark.behavior
 
@@ -194,3 +194,82 @@ def test_every_p_length_names_a_tip_palindrome(length_field, boundary_field, sid
     assert checked == 60, (
         f"{length_field}: only {checked} of 60 records carried a run, so the "
         f"fixture does not exercise this boundary")
+
+
+NP_TRANSLATION_FIXTURES = (
+    ("plain", lambda: experiment_builder.recombined()),
+    ("mutated", lambda: experiment_builder.recombined().mutate(model="s5f", count=8)),
+    ("reverse_complemented", lambda: experiment_builder.recombined()
+     .random_strand_orientation(prob=1.0)),
+    ("light_chain", lambda: experiment_builder.recombined(locus="human_igk")),
+)
+
+
+def _np_translation_fields_present(record):
+    """Both NP translations, named literally."""
+    for field in ("np1_aa", "np2_aa"):
+        value = record.get(field)
+        assert value is None or isinstance(value, str), f"{field} is not a string"
+
+
+@verifies("junction.n_addition",
+          claim="np1_aa and np2_aa are the whole codons inside the NP "
+                "interval, translated in the record's own reading frame with "
+                "an independent codon table. A partial codon at either end is "
+                "dropped rather than padded. Measured 60 of 60 on plain, "
+                "hypermutated, reverse-complemented and light-chain records",
+          fields=("np1_aa", "np2_aa"),
+          basis="reference")
+@pytest.mark.parametrize("label,make", NP_TRANSLATION_FIXTURES,
+                         ids=[name for name, _ in NP_TRANSLATION_FIXTURES])
+def test_the_np_translations_are_the_whole_codons_of_the_interval(label, make):
+    """The last two fields of this mechanism that nothing read.
+
+    The frame comes from the translation oracle rather than being
+    reconstructed here, because getting it from `v_trim_5 + end_loss_5_length`
+    is wrong whenever two 5' truncations compose -- a mistake that oracle
+    records having made, with 30 of 30 false failures.
+
+    The codon table is this package's own, so the expected residues do not
+    come from the engine. What makes the interval independent is the
+    coordinate pair: the NP span is bounded by the segment coordinates, which
+    are themselves anchored to the span their bases occupy.
+    """
+    exp = make()
+    checked = 0
+    for index, outcome in enumerate(exp.run(n=60, seed=5)):
+        record = outcome.airr_record(exp.refdata)
+        _np_translation_fields_present(record)
+        phase = projection.translation_phase(record, native_phase=0)
+        subject = (reconstruction.reverse_complement(record["sequence"])
+                   if record.get("rev_comp") else record["sequence"])
+        # On a VJ chain there is no D, so np1 spans V to J directly and np2
+        # does not exist. Keying the spans off d_sequence_* unconditionally
+        # compared nothing at all on IGK -- 0 translations, which the
+        # `checked` floor below is what caught.
+        if record.get("d_sequence_start") is None:
+            assert not record.get("np2_aa"), (
+                f"{label}: record {index} has no D yet carries np2_aa "
+                f"{record.get('np2_aa')!r}")
+            spans = (("np1_aa", "v_sequence_end", "j_sequence_start"),)
+        else:
+            spans = (("np1_aa", "v_sequence_end", "d_sequence_start"),
+                     ("np2_aa", "d_sequence_end", "j_sequence_start"))
+        for field, start_field, end_field in spans:
+            span_start = record.get(start_field)
+            span_end = record.get(end_field)
+            recorded = record.get(field)
+            if span_start is None or span_end is None or recorded is None:
+                continue
+            first = span_start + ((phase - span_start) % 3)
+            last = span_end - ((span_end - first) % 3)
+            expected = projection.translate(subject[first:last]) if last > first else ""
+            assert recorded.upper() == expected.upper(), (
+                f"{label}: record {index} {field} is {recorded!r}, not the "
+                f"whole codons of {span_start}..{span_end} in frame {phase}")
+            checked += 1
+    # A floor rather than a count, because a VJ chain contributes one
+    # translation per record and a VDJ chain two. It exists because keying the
+    # spans off the D coordinates silently compared nothing on IGK and the
+    # test passed.
+    assert checked >= 55, f"{label}: only {checked} translations were compared"

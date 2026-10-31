@@ -488,6 +488,19 @@ def test_the_coverage_report_numbers_are_pinned():
 
     That leaves one unverified mechanism, assay.duplex_formation, an
     experimental surface.
+
+    Both partial rows then closed. junction.n_addition reached its gapped
+    ceiling on np1_aa and np2_aa, the whole codons of the NP interval in the
+    record's own frame. maturation.hypermutation reached verified on all
+    eighteen: the four per-segment and six per-subregion EVENT counters are
+    now compared against what the read shows, bucketed by segment and by the
+    allele's IMGT table, which is an equality at one mutation per record and
+    an inequality in a known direction above it. The partition those counters
+    had before is satisfied by a mutation routed to the wrong bucket; this is
+    not.
+
+    So every mechanism is now at verified, at a declared gapped ceiling, or
+    carrying no exported truth at all -- except assay.duplex_formation.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -496,11 +509,10 @@ def test_the_coverage_report_numbers_are_pinned():
               for r in rows for status in [r.status]}
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
     assert counts == {
-        "verified": 19,
-        # No "consistent" key: the counts are built from the statuses that
-        # occur, and no mechanism carries that status any more.
-        "gap-limited": 4,
-        "partial": 2,
+        "verified": 20,
+        # No "consistent" or "partial" key: the counts are built from the
+        # statuses that occur, and no mechanism carries either any more.
+        "gap-limited": 5,
         "unverified": 1,
         "no-truth-exported": 5,
     }, (
