@@ -12,7 +12,7 @@ a record cannot credit a mechanism with a field it does not own.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field as _field
+from dataclasses import dataclass
 
 ROOT = "engine_rs/tests/metadata_truth"
 
@@ -24,7 +24,9 @@ class RustSource:
     path: str
     scope: str
     mechanism_ids: tuple[str, ...] = ()
-    fields: dict = _field(default_factory=dict)
+    # No field list: which fields a file covers is derived from the file in
+    # `rust_covered_fields`. The hand-written table it replaced had 17 claims
+    # naming a field absent from the crediting file.
 
 
 RUST_SOURCES = (
@@ -33,8 +35,6 @@ RUST_SOURCES = (
         scope="Trimming can leave too few bases to distinguish the truth allele, "
               "so the call must surface every indistinguishable allele.",
         mechanism_ids=("germline.allele_choice", "recombination.trimming"),
-        fields={"germline.allele_choice": ("v_call", "d_call", "j_call"),
-                "recombination.trimming": ("v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5")},
     ),
     RustSource(
         path=f"{ROOT}/np_extension.rs",
@@ -42,18 +42,12 @@ RUST_SOURCES = (
               "keep the generating assignments and every generated NP byte stays "
               "inside its actual junction interval.",
         mechanism_ids=("junction.n_addition", "germline.allele_choice"),
-        fields={"junction.n_addition": ("np1", "np2", "np1_length", "np2_length"),
-                "germline.allele_choice": ("v_call", "d_call", "j_call")},
     ),
     RustSource(
         path=f"{ROOT}/cross_segment.rs",
         scope="One segment's suffix matching the next segment's prefix lets a "
               "live call extend past the structural boundary.",
         mechanism_ids=("recombination.assembly", "germline.allele_choice"),
-        fields={"recombination.assembly": ("v_germline_start", "v_germline_end",
-                                           "d_germline_start", "d_germline_end",
-                                           "j_germline_start", "j_germline_end"),
-                "germline.allele_choice": ("v_call", "d_call", "j_call")},
     ),
     RustSource(
         path=f"{ROOT}/mutation_effects.rs",
@@ -62,21 +56,12 @@ RUST_SOURCES = (
         mechanism_ids=("maturation.hypermutation", "assay.pcr_error",
                        "assay.quality_error", "assay.ambiguous_calls",
                        "germline.allele_choice"),
-        fields={"maturation.hypermutation": ("n_mutations", "n_v_mutations",
-                                             "n_d_mutations", "n_j_mutations"),
-                "assay.pcr_error": ("n_pcr_errors",),
-                "assay.quality_error": ("n_quality_errors",),
-                "assay.ambiguous_calls": ("sequence",),
-                "germline.allele_choice": ("v_call", "d_call", "j_call")},
     ),
     RustSource(
         path=f"{ROOT}/indel_effects.rs",
         scope="Indels shift the whole pool layout below the affected position; "
               "coordinates must follow and the truth allele must be retained.",
         mechanism_ids=("assay.polymerase_indels", "recombination.assembly"),
-        fields={"assay.polymerase_indels": ("n_indels", "n_v_indels", "n_d_indels",
-                                            "n_j_indels"),
-                "recombination.assembly": ("sequence", "sequence_length")},
     ),
     RustSource(
         path=f"{ROOT}/junction_anchor.rs",
@@ -84,18 +69,12 @@ RUST_SOURCES = (
               "the productive flag stay self-consistent under every corruption.",
         mechanism_ids=("junction.assembly", "junction.coding_end_processing",
                        "expression.productivity"),
-        fields={"junction.assembly": ("junction", "junction_aa", "junction_length"),
-                "junction.coding_end_processing": ("junction_start", "junction_end"),
-                "expression.productivity": ("productive", "stop_codon", "vj_in_frame")},
     ),
     RustSource(
         path=f"{ROOT}/corruption_stack.rs",
         scope="Every corruption source applied to one record at once; bugs hide "
               "in the interactions rather than in any single source.",
         mechanism_ids=("assay.end_loss", "assay.orientation", "assay.contamination"),
-        fields={"assay.end_loss": ("end_loss_5_length", "end_loss_3_length"),
-                "assay.orientation": ("rev_comp",),
-                "assay.contamination": ("is_contaminant",)},
     ),
 )
 
@@ -125,10 +104,47 @@ def rust_coverage() -> dict[str, tuple[str, ...]]:
     return {k: tuple(v) for k, v in out.items()}
 
 
+def _file_text(path: str) -> str:
+    from tests.support import paths
+    candidate = paths.repo_root() / path
+    return candidate.read_text(encoding="utf-8") if candidate.exists() else ""
+
+
+def _mentions(text: str, field: str) -> bool:
+    """Whether ``field`` appears in ``text`` as a whole word.
+
+    Word-bounded on purpose: a substring test credits ``np_extension.rs`` with
+    ``j_call`` on the strength of ``j_call_names``, which is a different
+    identifier.
+    """
+    import re
+    return re.search(rf"\b{re.escape(field)}\b", text) is not None
+
+
 def rust_covered_fields() -> dict[str, tuple[str, ...]]:
-    """mechanism id -> the truth fields the Rust suite covers."""
+    """mechanism id -> the truth fields the Rust suite covers.
+
+    Derived from what each file actually mentions, not from a hand-written
+    table. The table was transcribed from module docstrings and 17 of its 51
+    claims named a field that appears nowhere in the file crediting it -- six
+    in cross_segment.rs, five in mutation_effects.rs, three in
+    indel_effects.rs, two in corruption_stack.rs, one in np_extension.rs. None
+    of the three guards over this module read the files, so crediting
+    trim_ambiguity.rs with the end-loss fields passed all of them.
+
+    A mention is weaker evidence than a reading: a file that names a field is
+    not thereby proved to verify it. That is the price of a claim that cannot
+    drift, and it is why this column still cannot move a status.
+    """
+    from ._stages import MECHANISMS
+    owned = {m.id: m.truth_fields for m in MECHANISMS}
     out: dict[str, set[str]] = {}
     for source in RUST_SOURCES:
-        for mechanism_id, fields in source.fields.items():
-            out.setdefault(mechanism_id, set()).update(fields)
+        text = _file_text(source.path)
+        if not text:
+            continue
+        for mechanism_id in source.mechanism_ids:
+            for field in owned.get(mechanism_id, ()):
+                if _mentions(text, field):
+                    out.setdefault(mechanism_id, set()).add(field)
     return {k: tuple(sorted(v)) for k, v in out.items()}
