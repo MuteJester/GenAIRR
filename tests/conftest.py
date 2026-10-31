@@ -80,8 +80,48 @@ else:
     }
     settings.register_profile("dev", max_examples=25, **_COMMON)
     # derandomize so a CI failure reproduces from the commit alone, with no
-    # seed to hunt for in the log.
-    settings.register_profile("ci", max_examples=100, derandomize=True, **_COMMON)
+    # seed to hunt for in the log. `database=None` because CI checks out a
+    # fresh tree and so never has one: with the database on, running this
+    # profile locally replays stored failures from earlier runs and fails a
+    # clean tree on a defect already fixed, which happened and cost an hour.
+    settings.register_profile("ci", max_examples=100, derandomize=True,
+                              database=None, **_COMMON)
+    # `deep` is the discovery campaign's profile: many examples, and no
+    # example database, so a run carries no state from the last one. NOT
+    # derandomized, unlike `ci` -- a derandomized campaign explores the same
+    # examples for ever, which is the opposite of what a campaign is for. The
+    # seed comes from the caller instead (CI derives it from the commit), so
+    # every commit covers new ground and every failure reproduces from the
+    # seed in the log.
+    # The discovery campaign's profiles. NOT derandomized, unlike `ci`: a
+    # derandomized campaign explores the same examples for ever, which is the
+    # opposite of what a campaign is for. The seed comes from the caller
+    # instead (CI derives it from the commit), so every commit covers new
+    # ground and every failure reproduces from the seed in the log. No example
+    # database either, so a run carries no state from the last one.
+    #
+    # `explain` is off in both. It re-runs a failing example dozens of times
+    # to attribute it to lines of code, which cost 88 seconds of a 92-second
+    # run and tells us nothing: the campaign prints the pipeline and the seed
+    # itself. Shrinking is capped the same way -- on a property where every
+    # example builds a repertoire, an unbounded shrink spent five minutes and
+    # gave up, which is 16 minutes of a pull request spent on presentation.
+    from hypothesis import Phase
+
+    _CAMPAIGN_PHASES = (Phase.explicit, Phase.reuse, Phase.generate,
+                        Phase.target, Phase.shrink)
+    settings.register_profile(
+        "campaign", max_examples=200, database=None, phases=_CAMPAIGN_PHASES,
+        report_multiple_bugs=False, **_COMMON)
+    settings.register_profile(
+        "deep", max_examples=600, database=None, phases=_CAMPAIGN_PHASES,
+        report_multiple_bugs=False, **_COMMON)
+    # `scout` is for working a finding by hand: generate only, so the first
+    # failing example arrives in seconds instead of after a shrink.
+    settings.register_profile(
+        "scout", max_examples=300, database=None,
+        phases=(Phase.explicit, Phase.reuse, Phase.generate, Phase.target),
+        report_multiple_bugs=False, **_COMMON)
     settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "dev"))
 
 

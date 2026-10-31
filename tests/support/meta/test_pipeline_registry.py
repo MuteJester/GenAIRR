@@ -240,3 +240,40 @@ def test_the_registry_reaches_most_of_the_mechanism_catalog():
         "germline.genotype",           # changes which alleles exist, not a record's truth
         "maturation.class_switching",  # nothing exported to find
     ], f"the sweep's blind spot changed: {missed}"
+
+
+def test_ci_runs_the_campaign_with_a_seed_derived_from_the_commit():
+    """The campaign's reproducibility contract, pinned.
+
+    Deep on every pull request means a coin-flip failure would block
+    unrelated work, and a derandomized campaign would explore the same
+    examples for ever. The seed comes from the commit, which gives both: new
+    ground per commit, and a failure that reproduces from the seed in the log.
+    """
+    from tests.support import paths
+
+    text = (paths.repo_root() / ".github" / "workflows" / "test.yml").read_text(
+        encoding="utf-8")
+    assert "Discovery campaign" in text, "no CI step runs the campaign"
+    lines = [line for line in text.splitlines()
+             if "hypothesis-seed" in line or "rev-parse" in line]
+    assert any("rev-parse" in line for line in lines), (
+        f"the campaign's seed is not derived from the commit: {lines}")
+    assert any("--hypothesis-seed" in line for line in lines), (
+        f"the campaign runs without an explicit seed: {lines}")
+    assert "HYPOTHESIS_PROFILE: campaign" in text, (
+        "the campaign step does not select the campaign profile, so it would "
+        "run at the default example count")
+    assert "-m campaign" in text, (
+        "the campaign step does not select the campaign marker")
+    # Excluded from the matrix run, in both of its pytest invocations. The
+    # matrix profile keeps Hypothesis's example database, so a campaign run
+    # there replays a stored failure from before a fix and fails a clean tree;
+    # and two runs per commit means two example sets where the point is one
+    # deliberate campaign.
+    matrix_runs = [line for line in text.splitlines()
+                   if "pytest tests/" in line and "-n auto" in line]
+    assert matrix_runs, "the matrix no longer runs the suite"
+    for line in matrix_runs:
+        assert "not campaign" in line, (
+            f"the matrix run would also run the campaign: {line.strip()}")

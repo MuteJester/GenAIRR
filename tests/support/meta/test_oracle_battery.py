@@ -36,13 +36,45 @@ def _case(locus="human_igh", **passes):
     return outcome, outcome.airr_record(experiment.refdata), experiment.refdata
 
 
-def test_a_clean_record_produces_no_findings_and_runs_every_check():
+def test_a_clean_record_produces_no_findings_and_runs_every_applicable_check():
     outcome, record, refdata = _case()
     result = battery.run(outcome, record, refdata, PLAIN)
     assert result.findings == (), result.report()
-    assert set(result.ran) == {check.name for check in battery.CHECKS}, (
+    # Every check but the paired-end one, which has nothing to check without a
+    # declared layout -- the one check whose expectation comes from the
+    # pipeline rather than from the record or the reference.
+    assert set(result.ran) == {check.name for check in battery.CHECKS} - {"paired_end"}, (
         f"only {sorted(result.ran)} ran on a plain pipeline")
-    assert result.skipped == {}
+    assert set(result.skipped) == {"paired_end"}
+
+
+def test_the_declared_read_layout_is_checked_against_the_molecule():
+    """The paired-end check, both ways round.
+
+    A layout the molecule can satisfy must produce the windows the caller
+    declared, with the reads being the recorded molecule at them. A layout no
+    molecule can satisfy must be refused and tagged, not quietly emitted as a
+    record with no reads.
+    """
+    layout = {"r1_length": 120, "r2_length": 90, "insert_size": 250}
+    pipeline = Pipeline("human_igh", (("paired_end", layout),))
+    outcome, record, refdata = _case(paired_end=layout)
+    result = battery.run(outcome, record, refdata, pipeline)
+    assert result.findings == (), result.report()
+    assert result.compared["paired_end"] == 2
+
+    moved = {**record, "r2_start": record["r2_start"] + 1}
+    assert any("windows are where the declared layout" in finding.identity
+               for finding in battery.run(outcome, moved, refdata, pipeline).findings)
+
+    impossible = {"r1_length": 120, "r2_length": 90, "insert_size": 900}
+    far = Pipeline("human_igh", (("paired_end", impossible),))
+    outcome, record, refdata = _case(paired_end=impossible)
+    assert record["r1_start"] is None, "the fixture no longer refuses the geometry"
+    assert battery.run(outcome, record, refdata, far).findings == ()
+    untagged = {**record, "read_layout": ""}
+    assert any("refused layout is still tagged" in finding.identity
+               for finding in battery.run(outcome, untagged, refdata, far).findings)
 
 
 def test_a_check_that_compared_nothing_says_so():
@@ -129,10 +161,14 @@ def test_an_identity_above_the_substitution_fraction_is_caught_even_under_indels
 @pytest.mark.parametrize("name,kwargs,skipped", [
     ("contaminate", {"prob": 1.0},
      {"junction", "expression", "assembly", "np_fields",
-      "observable_mutations", "p_tip"}),
+      "observable_mutations", "p_tip", "paired_end"}),
     ("polymerase_indels", {"count": 2},
-     {"np_fields", "observable_mutations", "identity_exact", "p_tip"}),
-    ("sequencing_errors", {"count": 2}, {"observable_mutations"}),
+     {"np_fields", "observable_mutations", "identity_exact", "p_tip",
+      "paired_end"}),
+    ("sequencing_errors", {"count": 2},
+     {"observable_mutations", "paired_end", "p_tip"}),
+    ("mutate", {"model": "s5f", "count": 5},
+     {"paired_end", "p_tip"}),
 ])
 def test_a_pass_that_voids_a_check_makes_the_battery_skip_it_with_a_reason(
         name, kwargs, skipped):

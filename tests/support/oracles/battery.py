@@ -126,6 +126,21 @@ def _may_overwrite_the_molecule(pipeline) -> bool:
     return pipeline.has("contaminate")
 
 
+def _rewrites_any_base(pipeline) -> bool:
+    """Any pass that can change a base after it was first written.
+
+    Hypermutation included, unlike `_writes_bases_other_than_hypermutation`:
+    the question here is not which pass gets the blame for a difference, it is
+    whether a relationship between two stretches of the molecule can have been
+    broken after the pass that established it. A P run is the reverse
+    complement of its segment's tip when the P pass writes it; one miscall in
+    either stretch breaks that, and the record is not wrong.
+    """
+    return any(pipeline.has(name) for name in
+               ("mutate", "pcr_amplify", "sequencing_errors",
+                "ambiguous_base_calls", "contaminate"))
+
+
 @dataclass(frozen=True)
 class Check:
     """One oracle call, with the conditions under which it may be believed."""
@@ -213,7 +228,14 @@ def _junction_check(record, simulation, refdata, pipeline):
         record, simulation, reconstruction.segments_by_position(simulation),
         v_anchor=v_allele.anchor, j_anchor=j_allele.anchor,
         v_sequence=alleles.sequence(v_allele),
-        j_sequence=alleles.sequence(j_allele))
+        j_sequence=alleles.sequence(j_allele),
+        # Off: whether a bundled allele's anchor codon is canonical is a claim
+        # about the reference cartridge, not about this record. Six TCRB
+        # alleles are not, the engine refuses to compute a junction for them
+        # and says so in productivity_reasons, and leaving this on would
+        # report six non-findings per TCRB campaign. The reference claim is
+        # tested in tests/biology/junction/test_anchor_reference_quality.py.
+        reference_residue=False)
     return tuple(_finding("junction", one) for one in found), 1
 
 
@@ -222,7 +244,14 @@ def _expression_check(record, simulation, refdata, pipeline):
         # No junction, no resolvable frame. The junction oracle owns that
         # contract; inventing an expectation here would be worse.
         return (), 0
-    found = expression.disagreements(record)
+    # An indel decouples two of this oracle's identities from the record: the
+    # junction window stops determining the global frame, and the documented
+    # four conditions stop being sufficient because the J tail frame joins
+    # them. The oracle weakens both rather than skipping the check, so
+    # stop_codon stays exact and `productive` stays checkable as an
+    # implication. See its docstring for the measurements.
+    found = expression.disagreements(
+        record, indel_free=not _changes_alignment_columns(pipeline))
     return tuple(_finding("expression", one) for one in found), 3
 
 
@@ -346,7 +375,12 @@ def _p_tip_check(record, simulation, refdata, pipeline):
     """
     length = record.get("p_v_3_length") or 0
     boundary = record.get("v_sequence_end")
-    sequence = record["sequence"]
+    # The germline-oriented strand, not the exported read: the coordinates are
+    # reported in germline orientation, so on a reverse-complemented record
+    # the exported `sequence` is the other strand and the comparison reads the
+    # wrong bases. Found by the sweep, which drew process_coding_ends with
+    # random_strand_orientation(prob=1.0) -- a pair no fixture had run.
+    sequence = junction.subject(record)
     if not length or boundary is None:
         return (), 0
     if boundary - length < 0 or boundary + length > len(sequence):
@@ -359,6 +393,69 @@ def _p_tip_check(record, simulation, refdata, pipeline):
                     "a P run is the reverse complement of the segment's "
                     "post-trim tip", record.get("sequence_id", "?"),
                     found, expected, detail="p_v_3_length"),), 1
+
+
+def _paired_end_check(record, simulation, refdata, pipeline):
+    """The read windows and their content against the layout the caller declared.
+
+    The only check here whose expectation comes from the pipeline rather than
+    from the record or the reference, which is why it lives behind a predicate
+    that the layout was declared as fixed integers: a drawn distribution means
+    the per-record value is the record's to report and there is nothing
+    external to compare it against.
+
+    A geometry no molecule can satisfy is checked too, in the other direction:
+    the engine tags read_layout and leaves the windows empty rather than
+    emitting a record indistinguishable from one that never asked for reads.
+    """
+    layout = pipeline.kwargs_for("paired_end")
+    r1, r2 = layout.get("r1_length"), layout.get("r2_length")
+    insert = layout.get("insert_size")
+    if not all(isinstance(value, int) for value in (r1, r2, insert)):
+        return (), 0
+    identifier = record.get("sequence_id", "?")
+    recorded = simulation.bases().decode()
+    findings = []
+    if record.get("r1_start") is None:
+        # The projection kernel refused the geometry. That is legitimate when
+        # the molecule is shorter than the declared insert, and a finding when
+        # it is not.
+        if insert <= len(recorded):
+            findings.append(Finding(
+                "battery", "a layout the molecule can satisfy produces reads",
+                identifier, None,
+                f"r1 0..{r1} and r2 {insert - r2}..{insert} in "
+                f"{len(recorded)} bases"))
+        elif record.get("read_layout") != "paired_end":
+            findings.append(Finding(
+                "battery", "a refused layout is still tagged as paired_end",
+                identifier, record.get("read_layout"), "paired_end",
+                detail=f"insert {insert} > molecule {len(recorded)}"))
+        return tuple(findings), 1
+    if (record["r1_start"], record["r1_end"]) != (0, r1):
+        findings.append(Finding(
+            "battery", "the read windows are where the declared layout puts them",
+            identifier, (record["r1_start"], record["r1_end"]), (0, r1),
+            detail="r1"))
+    if (record["r2_start"], record["r2_end"]) != (insert - r2, insert):
+        findings.append(Finding(
+            "battery", "the read windows are where the declared layout puts them",
+            identifier, (record["r2_start"], record["r2_end"]),
+            (insert - r2, insert), detail="r2"))
+    expected_r1 = recorded[0:r1].upper()
+    if (record["r1_sequence"] or "").upper() != expected_r1:
+        findings.append(Finding(
+            "battery", "each read is the recorded molecule at its window",
+            identifier, (record["r1_sequence"] or "")[:20], expected_r1[:20],
+            detail="r1"))
+    expected_r2 = reconstruction.reverse_complement(
+        recorded[insert - r2:insert]).upper()
+    if (record["r2_sequence"] or "").upper() != expected_r2:
+        findings.append(Finding(
+            "battery", "each read is the recorded molecule at its window",
+            identifier, (record["r2_sequence"] or "")[:20], expected_r2[:20],
+            detail="r2 (reverse complemented)"))
+    return tuple(findings), 2
 
 
 CHECKS = (
@@ -404,12 +501,35 @@ CHECKS = (
                          "identity_bound checks instead",
                          lambda pipeline: not _changes_alignment_columns(pipeline)),)),
     Check("identity_bound", "reconstruction", _identity_bound_check),
-    Check("p_tip", "reconstruction", _p_tip_check,
-          applies_when=(("an indel or an overwrite inside a P run breaks the "
-                         "palindrome without the record being wrong",
+    Check("paired_end", "battery", _paired_end_check,
+          applies_when=(("the pipeline declares no paired-end layout, so there "
+                         "are no windows to check",
+                         lambda pipeline: pipeline.has("paired_end")),
+                        ("a reverse-complemented read is reported against the "
+                         "other strand while the recorded pool is not, so the "
+                         "two sides would legitimately differ",
                          lambda pipeline:
-                         not _changes_alignment_columns(pipeline)
-                         and not _may_overwrite_the_molecule(pipeline)),)),
+                         not pipeline.has("random_strand_orientation")),
+                        ("an indel changes the molecule after the windows were "
+                         "drawn against it",
+                         lambda pipeline:
+                         not _changes_alignment_columns(pipeline)),
+                        ("a contaminated read's bases are overwritten",
+                         lambda pipeline:
+                         not _may_overwrite_the_molecule(pipeline)),)),
+    Check("p_tip", "reconstruction", _p_tip_check,
+          applies_when=(("an indel shifts the boundary the run is measured "
+                         "from",
+                         lambda pipeline:
+                         not _changes_alignment_columns(pipeline)),
+                        ("a P run is the reverse complement of its segment's "
+                         "tip when the P pass writes it; any later pass that "
+                         "rewrites a base -- hypermutation, a PCR "
+                         "misincorporation, a miscall, an N mask, an overwrite "
+                         "-- can break that relationship without the record "
+                         "being wrong. Found by the sweep, which drew "
+                         "process_coding_ends with sequencing_errors(count=10)",
+                         lambda pipeline: not _rewrites_any_base(pipeline)),)),
 )
 
 
