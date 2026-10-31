@@ -211,21 +211,32 @@ def test_a_typo_is_a_collection_error_in_a_real_module(tmp_path):
     assert "junction.n_additon" in result.stdout + result.stderr
 
 
-def _coverage_line(tmp_path, *extra_args):
-    """Run a module with two registrations and return its report line."""
+def _coverage_line(tmp_path, *extra_args, cover_every_field: bool = False):
+    """Run a module with two registrations and return its report line.
+
+    ``cover_every_field`` splits all four of the mechanism's fields between
+    the two registrations, so the row reaches ``verified`` rather than
+    ``partial``. That matters for the distributed-collection check: a partial
+    row is partial whatever its basis, so losing the basis across the xdist
+    boundary was invisible to a 2-of-4 fixture -- which is exactly what
+    happened. The report CI publishes read 0 verified where the same tree read
+    20 serially, and this guard passed throughout.
+    """
     import subprocess
     import sys
     from tests.support import paths
 
+    first = ("p_v_3_length", "p_d_5_length") if cover_every_field else ("p_v_3_length",)
+    second = ("p_d_3_length", "p_j_5_length") if cover_every_field else ("p_j_5_length",)
     module = tmp_path / "test_registered.py"
     module.write_text(
         "from tests.biology.catalog import verifies\n\n\n"
-        '@verifies("junction.p_nucleotide", claim="the 5\' V P length is recorded",\n'
-        '          fields=("p_v_3_length",), basis="provenance")\n'
+        f'@verifies("junction.p_nucleotide", claim="the first P lengths",\n'
+        f'          fields={first!r}, basis="provenance")\n'
         "def test_one():\n"
         "    assert True\n\n\n"
-        '@verifies("junction.p_nucleotide", claim="the 3\' J P length is recorded",\n'
-        '          fields=("p_j_5_length",), basis="provenance")\n'
+        f'@verifies("junction.p_nucleotide", claim="the second P lengths",\n'
+        f'          fields={second!r}, basis="provenance")\n'
         "def test_two():\n"
         "    assert True\n",
         encoding="utf-8")
@@ -247,9 +258,14 @@ def test_registrations_survive_distributed_collection(tmp_path):
     "unverified" the moment anyone annotated a test -- the inverted lie, by
     default, under the project's own command.
     """
-    serial = _coverage_line(tmp_path)
-    distributed = _coverage_line(tmp_path, "-n", "2")
+    serial = _coverage_line(tmp_path, cover_every_field=True)
+    distributed = _coverage_line(tmp_path, "-n", "2", cover_every_field=True)
     assert serial == distributed, f"serial {serial} != distributed {distributed}"
+    # Named explicitly: a status that cannot reach `verified` cannot show the
+    # basis going missing, and `partial` was what the old fixture produced.
+    assert "verified" in serial, (
+        f"the fixture no longer reaches verified, so this comparison cannot "
+        f"see a lost basis: {serial}")
 
 
 def test_two_registrations_on_one_mechanism_are_both_counted(tmp_path):

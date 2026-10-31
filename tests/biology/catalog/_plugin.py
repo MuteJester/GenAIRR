@@ -86,12 +86,23 @@ def _resolve() -> None:
                     strengths[field] = basis
 
 
-def _merge(registrations: dict, covered: dict) -> None:
+def _merge(registrations: dict, covered: dict, basis: dict | None = None) -> None:
     for mechanism_id, nodes in registrations.items():
         existing = _REGISTRATIONS.setdefault(mechanism_id, [])
         existing.extend(n for n in nodes if n not in existing)
     for mechanism_id, fields in covered.items():
         _COVERED.setdefault(mechanism_id, set()).update(fields)
+    # The basis has to cross the boundary with the rest of it. Without this
+    # the controller had registrations and covered fields but no basis at all,
+    # so every covered field fell to the conservative default and the report
+    # CI publishes read 0 verified, 25 consistent where the same tree read 20
+    # verified serially.
+    for mechanism_id, strengths in (basis or {}).items():
+        merged = _BASIS_BY_FIELD.setdefault(mechanism_id, {})
+        for field, value in strengths.items():
+            current = merged.get(field)
+            if current is None or _basis_rank(value) < _basis_rank(current):
+                merged[field] = value
 
 
 # ── crossing the xdist boundary ──────────────────────────────────────────────
@@ -113,11 +124,14 @@ def pytest_sessionfinish(session):
         return                                  # controller, or no xdist
     output["genairr_registrations"] = {k: list(v) for k, v in _REGISTRATIONS.items()}
     output["genairr_covered"] = {k: sorted(v) for k, v in _COVERED.items()}
+    output["genairr_basis"] = {k: dict(v) for k, v in _BASIS_BY_FIELD.items()}
 
 
 def pytest_testnodedown(node, error):
     output = getattr(node, "workeroutput", None) or {}
-    _merge(output.get("genairr_registrations", {}), output.get("genairr_covered", {}))
+    _merge(output.get("genairr_registrations", {}),
+           output.get("genairr_covered", {}),
+           output.get("genairr_basis", {}))
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
