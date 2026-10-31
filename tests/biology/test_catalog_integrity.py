@@ -458,6 +458,15 @@ def test_the_coverage_report_numbers_are_pinned():
     lineage_affinity is the 0.0 sentinel at the default selection strength.
     "unverified" fell from 7 to 3 and "no truth exported" rose from 3 to 5,
     which is the honest reading: those two were never waiting for a test.
+
+    germline.allele_choice then went from no coverage to verified on all
+    seven of its fields, which is the one that matters most: those calls are
+    what an allele caller is scored against. The check that was missing is
+    that the recorded bases come from the allele the call NAMES -- the
+    engine's own comparison recomputes the call from the same assignment and
+    agrees with itself either way, and the only external check on v_call
+    compared the named allele's LENGTH, which cannot separate 195 of the 198
+    IGH V alleles.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -466,11 +475,11 @@ def test_the_coverage_report_numbers_are_pinned():
               for r in rows for status in [r.status]}
     assert len(rows) == 31, f"the catalog has {len(rows)} mechanisms, not 31"
     assert counts == {
-        "verified": 13,
+        "verified": 14,
         "consistent": 6,
         "gap-limited": 2,
         "partial": 2,
-        "unverified": 3,
+        "unverified": 2,
         "no-truth-exported": 5,
     }, (
         f"the declared coverage distribution changed to {counts}. If that was "
