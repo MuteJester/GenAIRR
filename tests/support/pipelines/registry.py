@@ -82,6 +82,28 @@ class Pass:
     requires: tuple[tuple[str, Callable[[dict], bool]], ...] = ()
     #: Passes that may not appear beside this one, with the reason.
     excludes: dict[str, str] = field(default_factory=dict)
+    #: Fields of :data:`RECOMBINATION_FACTS` this pass may move, with the
+    #: reason. Empty means it is a library-prep pass: it may change bases and
+    #: what derives from them, and nothing about the rearrangement.
+    may_move: dict[str, str] = field(default_factory=dict)
+    #: The keyword that turns this pass off, if it has one, and whether
+    #: setting it to zero leaves every exported field identical to a run
+    #: without the pass at all. ``None`` means the pass has no off switch.
+    zero_setting: tuple[str, object] | None = None
+    #: Arguments that make this pass fire as hard as it can, where the drawn
+    #: strategies' minimal values would not. Declared per pass rather than
+    #: guessed from keyword names: a coding end emits a P nucleotide only on a
+    #: NEGATIVE outcome, which no amount of turning a `count` up will reach.
+    #:
+    #: May name keywords the drawn `parameters` deliberately leave out -- the
+    #: D coding ends are VDJ-only and so cannot be drawn for every locus,
+    #: while the isolation comparison that uses `loud` runs on one VDJ locus
+    #: and needs them to reach the D P-lengths.
+    loud: dict = field(default_factory=dict)
+    #: Set where the off switch is NOT equivalent to absence, with the
+    #: measurement. A pass that is configured off and still changes the record
+    #: breaks a seeded ablation, which is how anyone studies one pass.
+    zero_differs: str = ""
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -153,6 +175,25 @@ def _coding_end_distribution() -> st.SearchStrategy:
         min_size=1, max_size=4)
 
 
+#: What the recombination produced, as opposed to what the library did to it.
+#: A library-prep pass may change bases and everything derived from them; it
+#: may not change any of these, because they describe the rearrangement itself.
+#:
+#: Measured over every drawn pass: eight of them move none of these fields --
+#: mutate, pcr_amplify, sequencing_errors, ambiguous_base_calls,
+#: polymerase_indels, random_strand_orientation, contaminate and paired_end --
+#: which is a guarantee nothing stated before, and the one a benchmark relies
+#: on when it scores a caller's germline assignment on a corrupted read.
+RECOMBINATION_FACTS = frozenset({
+    "v_call", "d_call", "j_call",
+    "v_trim_5", "v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5", "j_trim_3",
+    "v_germline_start", "v_germline_end", "d_germline_start", "d_germline_end",
+    "j_germline_start", "j_germline_end",
+    "np1_length", "np2_length",
+    "p_v_3_length", "p_d_5_length", "p_d_3_length", "p_j_5_length",
+    "d_inverted",
+})
+
 #: Mechanisms every drawn pipeline exercises through ``recombine()`` itself,
 #: which is implicit and so has no ``Pass`` entry: a record cannot exist
 #: without an assembly, a junction, coordinates and a projection. Declared so
@@ -177,6 +218,7 @@ PASSES = (
         name="trim",
         stage="post_recombine",
         parameters={"v_3": _trim_distribution(), "j_5": _trim_distribution()},
+        loud={"v_3": [(4, 1.0)], "j_5": [(4, 1.0)]},
         mechanisms=("recombination.trimming",),
         excludes={"process_coding_ends":
                   "the DSL refuses both: a signed coding-end outcome already "
@@ -184,17 +226,37 @@ PASSES = (
                   "answers to one question"},
         notes="exonuclease chew-back at the coding ends, which is what moves "
               "the germline coordinates and can eat an anchor codon",
+        may_move={"v_trim_3": "the trim it samples", "j_trim_5": "the trim it samples",
+                  "v_germline_end": "a trimmed segment's germline span shortens",
+                  "j_germline_start": "a trimmed segment's germline span shortens"},
+        zero_setting=None,
     ),
     Pass(
         name="process_coding_ends",
         stage="recombination",
+        # No d_5 / d_3 here: the DSL refuses them on a VJ chain, and this
+        # pass runs on every locus. They appear in `loud` instead, which the
+        # isolation comparison uses on a VDJ locus only.
         parameters={"v_3": _coding_end_distribution(),
                     "j_5": _coding_end_distribution(),
                     "reference_ends_are_coding_ends": st.just(True)},
+        loud={"v_3": [(-2, 1.0)], "d_5": [(-2, 1.0)], "d_3": [(-2, 1.0)],
+              "j_5": [(-2, 1.0)], "reference_ends_are_coding_ends": True},
         mechanisms=("junction.p_nucleotide", "junction.coding_end_processing"),
         excludes={"trim": "see trim's own entry: mutually exclusive"},
         notes="a negative draw extends rather than trims, which is how a P "
               "nucleotide is reached at all",
+        may_move={"v_trim_3": "a signed coding-end outcome specifies reference loss",
+                  "j_trim_5": "as above", "d_trim_5": "as above", "d_trim_3": "as above",
+                  "v_germline_end": "the coding end moves the germline span",
+                  "j_germline_start": "as above", "d_germline_start": "as above",
+                  "d_germline_end": "as above",
+                  "p_v_3_length": "a negative outcome emits P nucleotides",
+                  "p_j_5_length": "as above", "p_d_5_length": "as above",
+                  "p_d_3_length": "as above",
+                  "np1_length": "a P addition occupies the junction the NP draw fills",
+                  "np2_length": "as above"},
+        zero_setting=None,
     ),
     Pass(
         name="invert_d",
@@ -204,6 +266,24 @@ PASSES = (
         requires=(("the locus has no D segment, so inverting one is a no-op "
                    "that would pass by having nothing to do",
                    lambda facts: facts["has_d"]),),
+        may_move={"d_inverted": "the orientation it samples",
+                  "np2_length": "see zero_differs: the pass re-draws it"},
+        zero_setting=("prob", 0.0),
+        zero_differs="`prob=0.0` is NOT equivalent to the pass being absent. "
+                     "The inversion coin flip is inlined into the "
+                     "V-NP1-D-NP2-J sequence immediately before assemble(D) "
+                     "-- see _lowering._extract_invert_d_prob -- so its draw "
+                     "falls between the NP1 and NP2 generations and the NP2 "
+                     "length is re-drawn whether or not anything inverts. "
+                     "Measured over 400 records on human_igh: np2_length "
+                     "agrees with a run without the pass on 21 of 400, with "
+                     "the same distribution (mean 7.77 against 8.00), so it "
+                     "is a re-draw and not a bias. receptor_revision at "
+                     "prob=0.0 agrees on 400 of 400, so this is not inherent "
+                     "to toggling a recombination-stage pass. A seeded "
+                     "ablation -- the same repertoire with and without "
+                     "inversion, which is how anyone studies one pass -- "
+                     "compares different rearrangements.",
     ),
     Pass(
         name="receptor_revision",
@@ -215,6 +295,9 @@ PASSES = (
                    "refuses it on a VJ locus, which the first run of "
                    "test_each_pass_runs_on_every_locus_it_claims found",
                    lambda facts: facts["has_d"]),),
+        may_move={"v_call": "the replacement it makes",
+                  "v_trim_3": "the new V is re-trimmed"},
+        zero_setting=("prob", 0.0),
     ),
     # ── mutation ────────────────────────────────────────────────────────────
     Pass(
@@ -226,6 +309,7 @@ PASSES = (
         requires=(("somatic hypermutation does not occur in TCR sequences and "
                    "the engine refuses to simulate it",
                    lambda facts: facts["b_cell"]),),
+        zero_setting=("count", 0),
     ),
     # ── corruption / library prep ───────────────────────────────────────────
     Pass(
@@ -233,18 +317,21 @@ PASSES = (
         stage="corruption",
         parameters={"count": _counts(0, 10)},
         mechanisms=("assay.pcr_error",),
+        zero_setting=("count", 0),
     ),
     Pass(
         name="sequencing_errors",
         stage="corruption",
         parameters={"count": _counts(0, 10)},
         mechanisms=("assay.quality_error",),
+        zero_setting=("count", 0),
     ),
     Pass(
         name="ambiguous_base_calls",
         stage="corruption",
         parameters={"count": _counts(0, 8)},
         mechanisms=("assay.ambiguous_calls",),
+        zero_setting=("count", 0),
     ),
     Pass(
         name="polymerase_indels",
@@ -268,24 +355,33 @@ PASSES = (
         mechanisms=("assay.polymerase_indels",),
         notes="the pass that breaks the one-column-one-base assumption every "
               "coordinate identity rests on",
+        zero_setting=("count", 0),
     ),
     Pass(
         name="end_loss_5prime",
         stage="corruption",
         parameters={"length": _counts(0, 20)},
         mechanisms=("assay.end_loss",),
+        may_move={"v_germline_start": "read loss at the 5' end shortens the "
+                                       "observed germline span, which is the "
+                                       "field's whole point"},
+        zero_setting=("length", 0),
     ),
     Pass(
         name="end_loss_3prime",
         stage="corruption",
         parameters={"length": _counts(0, 20)},
         mechanisms=("assay.end_loss",),
+        may_move={"j_germline_end": "read loss at the 3' end shortens the "
+                                     "observed germline span"},
+        zero_setting=("length", 0),
     ),
     Pass(
         name="random_strand_orientation",
         stage="corruption",
         parameters={"prob": _probabilities()},
         mechanisms=("assay.orientation",),
+        zero_setting=("prob", 0.0),
     ),
     Pass(
         name="contaminate",
@@ -295,6 +391,7 @@ PASSES = (
         notes="overwrites the molecule with uniform bases, so a contaminated "
               "record's germline claims are deliberately false and the "
               "battery must not read them as findings",
+        zero_setting=("prob", 0.0),
     ),
     # ── readout ─────────────────────────────────────────────────────────────
     Pass(
