@@ -194,6 +194,59 @@ def test_each_read_is_the_stretch_its_offsets_claim():
         "satisfied by a field echoing the configuration back")
 
 
+PAIRED_END_CONFIGS = (
+    ("fixed_insert", dict(r1_length=120, r2_length=120, insert_size=250)),
+    ("drawn_insert", dict(r1_length=120, r2_length=120, insert_size=(200, 320))),
+    ("asymmetric", dict(r1_length=150, r2_length=75, insert_size=(200, 300))),
+)
+
+
+@verifies("assay.paired_end",
+          claim="each read IS the stretch of the molecule its offsets name: R1 "
+                "the forward slice and R2 the reverse complement of its slice, "
+                "which is the orientation a paired-end consumer assembles "
+                "from. Read against the molecule rather than against its own "
+                "length, so a read whose content came from somewhere else is "
+                "caught",
+          fields=("r1_sequence", "r2_sequence", "r1_start", "r1_end",
+                  "r2_start", "r2_end"),
+          basis="reference")
+@pytest.mark.parametrize("label,layout", PAIRED_END_CONFIGS,
+                         ids=[name for name, _ in PAIRED_END_CONFIGS])
+def test_each_read_is_the_molecule_at_its_own_offsets(label, layout):
+    """What the existing span test could not see.
+
+    That one checks each read's offsets against its own length and the
+    molecule's bounds -- true of any read of the right size from anywhere,
+    including one assembled from the wrong fragment. The content was never
+    compared to the molecule at all.
+
+    R2's orientation is the half that discriminates: comparing it forward
+    rather than reverse-complemented matches on 0 of 40 records, so a build
+    that stopped reverse-complementing R2 would fail here and pass every
+    existing check.
+    """
+    exp = experiment_builder.recombined().paired_end(**layout)
+    checked = 0
+    for index, outcome in enumerate(exp.run(n=40, seed=7)):
+        record = outcome.airr_record(exp.refdata)
+        molecule = record["sequence"]
+        assert record["r1_sequence"].upper() == \
+            molecule[record["r1_start"]:record["r1_end"]].upper(), (
+            f"{label}: record {index} R1 is not the molecule at "
+            f"{record['r1_start']}..{record['r1_end']}")
+        assert record["r2_sequence"].upper() == reconstruction.reverse_complement(
+            molecule[record["r2_start"]:record["r2_end"]]).upper(), (
+            f"{label}: record {index} R2 is not the reverse complement of the "
+            f"molecule at {record['r2_start']}..{record['r2_end']}")
+        assert record["r2_sequence"].upper() != \
+            molecule[record["r2_start"]:record["r2_end"]].upper(), (
+            f"{label}: record {index} R2 reads the same forward and reverse, "
+            f"so the orientation half of this test establishes nothing")
+        checked += 1
+    assert checked == 40
+
+
 @verifies("assay.end_loss",
           claim="5' end loss is recorded in its own field, so sequence missing "
                 "because the read did not reach it is distinguishable from "
