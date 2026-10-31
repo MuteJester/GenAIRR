@@ -246,9 +246,11 @@ def _chain_disagreements(record, identifier, allele_lengths, segments):
     #
     # Tolerated up to the number of indels the record itself reports, which is
     # the most a boundary insertion can displace, so a read end that is wrong
-    # for any other reason still fires. Whether the engine should instead
-    # extend the span and emit the I is an open question for the owner; the
-    # behaviour is pinned exactly in
+    # for any other reason still fires. This is the engine's contract rather
+    # than a pending question: no per-segment counter claims such a base
+    # either, so the record is consistent about it, and moving the base into
+    # the J was tried and makes a single insertion incompatible with a
+    # productive constraint. See
     # tests/biology/recombination/test_boundary_insertions.py.
     tolerated = _count(record, "n_indels")
     if trailing != 0 and not 0 < trailing <= tolerated:

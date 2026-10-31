@@ -239,3 +239,71 @@ fn indel_pass_persistent_ir_preserves_input() {
     assert_eq!(sim.pool.len(), original_len);
     assert_eq!(sim.sequence.regions[0].end.index(), original_region_end);
 }
+
+/// An insertion landing outside every region is flagged as such, and the
+/// nucleotide stays where it is.
+///
+/// The flag is what keeps the per-segment indel counters from attributing the
+/// event to a segment whose alignment has no column for it: the base's own
+/// `segment` is stamped from its neighbour, so without the flag a trailing
+/// insertion put a 1 in `n_j_indels` against a J cigar of pure M. Measured on
+/// 2 of 200 IGH and 1 of 200 IGK records under one forced insertion.
+///
+/// The base is deliberately not moved into the region. Extending the region
+/// to cover it makes a single insertion incompatible with a productive
+/// constraint -- the only site a one-base insertion can occupy without
+/// shifting the coding frame is past the last region -- and
+/// `indel_pass_productive_filters_insertion_to_structurally_safe_site` is the
+/// test that says so.
+#[test]
+fn indel_pass_flags_an_insertion_that_lands_outside_every_region() {
+    let sim = indel_test_sim();
+    let region_end = sim.sequence.regions[0].end.index();
+    assert_eq!(region_end, 12, "the fixture's single region is [0..12)");
+
+    // Inside the region: no flag.
+    let inside = IndelPass::insertion_outside_regions(&sim, region_end - 1);
+    assert!(!inside, "a site inside the region is not outside every region");
+
+    // At the region's 3' boundary, which is where `after_insertion` leaves the
+    // range alone and no following region grows into it.
+    assert!(
+        IndelPass::insertion_outside_regions(&sim, region_end),
+        "a site at the last region's end belongs to no region"
+    );
+
+    let mut plan = PassPlan::new();
+    plan.push(Box::new(IndelPass::new(
+        fixed_count(1),
+        1.0,
+        Box::new(UniformBase),
+    )));
+    let outcome = PassRuntime::execute(&plan, indel_test_sim(), 0);
+    let final_sim = outcome.final_simulation();
+    let site = match outcome
+        .trace
+        .find("corrupt.indel.site[0]")
+        .unwrap()
+        .value
+    {
+        ChoiceValue::Int(s) => s as u32,
+        _ => unreachable!(),
+    };
+    let inserted = final_sim
+        .pool
+        .get(crate::ir::NucHandle::new(site))
+        .copied()
+        .expect("the inserted nucleotide is in the pool");
+    assert!(inserted.flags.contains(crate::ir::flag::INDEL_INSERTED));
+    let outside = site >= final_sim.sequence.regions[0].end.index();
+    assert_eq!(
+        inserted
+            .flags
+            .contains(crate::ir::flag::INDEL_OUTSIDE_REGIONS),
+        outside,
+        "the flag must agree with whether the base sits in a region: site \
+         {site}, region [{}..{})",
+        final_sim.sequence.regions[0].start.index(),
+        final_sim.sequence.regions[0].end.index()
+    );
+}

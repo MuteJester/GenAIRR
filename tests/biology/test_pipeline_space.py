@@ -94,10 +94,24 @@ def _fixed_arguments(one):
 
 
 def _check(pipeline, seed):
-    """Run a pipeline and battery every record. Returns the failure, or None."""
+    """Run a pipeline and battery every record. Returns the failure, or None.
+
+    An explicit refusal is a legal outcome, not a finding: a constrained
+    sampler that cannot satisfy its constraint says so rather than emitting
+    records that violate it, which is the behaviour anyone would want. Four
+    deletions under `productive_only()` is the case the campaign found --
+    deletions can only shorten the coding sequence, so the frame cannot
+    survive them. Every OTHER exception is still a failure, because a crash
+    is exactly what a campaign is for.
+    """
+    import GenAIRR as ga
+
     experiment = pipeline.build()
     try:
         outcomes = list(experiment.run(n=RECORDS, seed=seed))
+    except ga.StrictSamplingError as refusal:
+        event(f"refused:{type(refusal).__name__}")
+        return None
     except Exception as error:                      # noqa: BLE001 - reported
         return (f"the pipeline did not run: {type(error).__name__}: {error}")
     for index, outcome in enumerate(outcomes):

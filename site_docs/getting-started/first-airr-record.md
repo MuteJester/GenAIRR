@@ -178,6 +178,14 @@ and no call to be uncertain about. The columns are present because the AIRR
 schema has them — if you are scoring an aligner, compute these from its
 alignment, not from ours.
 
+`n_indels` counts every structural insertion or deletion the polymerase pass
+applied; `n_v_indels` / `n_d_indels` / `n_j_indels` count those a segment's
+own alignment shows. They can differ by design: an insertion landing past the
+J belongs to no segment, so it is counted in `n_indels`, in no per-segment
+counter, and in no cigar. The read then carries one base beyond
+`j_sequence_end`, which is why the segment spans do not always tile
+`sequence` exactly. Roughly 1% of insertion-bearing records.
+
 `n_mutations` is the biological SHM total; the per-segment fields
 partition it exactly (`n_v + n_d + n_j + n_np == n_mutations` by
 construction). PCR / quality / indel artefacts are reported on

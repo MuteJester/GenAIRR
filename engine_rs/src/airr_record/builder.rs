@@ -224,7 +224,21 @@ pub fn build_airr_record(
         }
         for ev in &record.simulation_events {
             let segment = match ev {
-                SimulationEvent::IndelInserted { segment, .. } => *segment,
+                // An insertion that landed outside every region counts toward
+                // n_indels only. Its `segment` is stamped from the base
+                // beside it, so attributing the event there put a 1 in
+                // n_j_indels against a J cigar with no column for it -- two
+                // exported views of one event disagreeing, found by the
+                // pipeline-space sweep on 2 of 200 IGH and 1 of 200 IGK
+                // records under one forced insertion. The base is left where
+                // it is on purpose: see flag::INDEL_OUTSIDE_REGIONS.
+                SimulationEvent::IndelInserted { segment, flags, .. } => {
+                    if flags.contains(crate::ir::flag::INDEL_OUTSIDE_REGIONS) {
+                        n_indels += 1;
+                        continue;
+                    }
+                    *segment
+                }
                 SimulationEvent::IndelDeleted { segment, .. } => *segment,
                 _ => continue,
             };

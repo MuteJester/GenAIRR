@@ -32,6 +32,19 @@ impl IndelPass {
     /// is inside a region, or exactly at the start of a following region,
     /// the inserted nucleotide belongs to that region. Outside all regions,
     /// fall back to the nearest nucleotide's segment.
+    /// Whether an insertion at `at` lands outside every region.
+    ///
+    /// The segment stamped on such a base comes from its neighbour, so it
+    /// names a segment that does not contain it; the flag is what keeps the
+    /// per-segment counters from attributing the event there. See
+    /// `flag::INDEL_OUTSIDE_REGIONS`.
+    pub(super) fn insertion_outside_regions(sim: &Simulation, at: u32) -> bool {
+        !sim.sequence
+            .regions
+            .iter()
+            .any(|region| region.start.index() <= at && at < region.end.index())
+    }
+
     pub(super) fn insertion_segment(sim: &Simulation, at: u32) -> Segment {
         for region in &sim.sequence.regions {
             let start = region.start.index();
@@ -118,7 +131,12 @@ impl IndelPass {
         match event {
             IndelEvent::Insertion { site, base } => {
                 let segment = Self::insertion_segment(tx.peek(), site);
-                let new_nuc = Nucleotide::synthetic(base, segment, flag::INDEL_INSERTED);
+                let flags = if Self::insertion_outside_regions(tx.peek(), site) {
+                    flag::INDEL_INSERTED.with(flag::INDEL_OUTSIDE_REGIONS)
+                } else {
+                    flag::INDEL_INSERTED
+                };
+                let new_nuc = Nucleotide::synthetic(base, segment, flags);
                 tx.insert_base(site, new_nuc)
             }
             IndelEvent::Deletion { site: Some(site) } => tx.delete_base(site).map(|_| ()),

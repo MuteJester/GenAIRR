@@ -676,19 +676,37 @@ def test_single_deletion_inside_v_increments_n_v_indels() -> None:
     )
 
 
-def test_single_insertion_inside_j_increments_n_j_indels() -> None:
-    """Audit §6.2 pin: an insertion attributed to the J segment
-    increments `n_j_indels`. Seed=0 on the baseline fixture with
-    insertion-only lands the inserted base in the J segment per
-    `insertion_segment`'s region-containment + fallback rules."""
+def test_single_insertion_past_the_j_counts_in_n_indels_only() -> None:
+    """Audit §6.2 boundary case: an insertion that lands past the last
+    region belongs to no segment.
+
+    Seed=0 on the baseline fixture puts the inserted base at the J's 3'
+    boundary, where `after_insertion` leaves every range alone and no
+    following region grows into it. The base's own `segment` is stamped from
+    its neighbour by `insertion_segment`'s fallback, so this used to
+    increment `n_j_indels` -- against a J cigar with no `I` in it, which is
+    two exported views of one event disagreeing.
+
+    The contract now: `n_indels` counts it, no per-segment counter does, and
+    the read carries one base past `j_sequence_end`. An insertion genuinely
+    inside the J still increments `n_j_indels` and shows an `I`; this fixture
+    is too short to place one there, and
+    tests/biology/recombination/test_boundary_insertions.py covers both
+    populations on the packaged loci.
+    """
     rec = _record(
         _baseline_experiment().polymerase_indels(count=1, insertion_prob=1.0),
         seed=0,
     )
     assert rec["n_indels"] == 1
-    assert rec["n_j_indels"] == 1
+    assert rec["n_j_indels"] == 0
     assert rec["n_v_indels"] == 0
     assert rec["n_d_indels"] == 0
+    assert rec["sequence_length"] - rec["j_sequence_end"] == 1, (
+        "the inserted base is not past the J after all, so this fixture no "
+        "longer exercises the boundary case")
+    assert "I" not in rec["j_cigar"] and "I" not in rec["v_cigar"], (
+        f"a cigar claims the insertion: v={rec['v_cigar']} j={rec['j_cigar']}")
 
 
 def test_single_indel_inside_np1_excluded_from_per_segment_counters() -> None:
