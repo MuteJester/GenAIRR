@@ -1,9 +1,8 @@
 {
   "revised": {
-    "Pass":
-      "declares what each pass may move of the rearrangement, with a reason per field; its off switch; whether that switch is equivalent to absence; and the arguments that make it fire hardest where the drawn minima would not.",
-    "PASSES":
-      "every pass declares its isolation facts. invert_d carries the one `zero_differs` measurement: prob=0.0 re-draws NP2, agreeing with a run without the pass on 21 of 400 records."
+    "Pass": "declares what each pass may move of the rearrangement, with a reason per field; its off switch; whether that switch is equivalent to absence; and the arguments that make it fire hardest where the drawn minima would not.",
+    "PASSES": "every pass declares its isolation facts. invert_d carries the one `zero_differs` measurement: prob=0.0 re-draws NP2, agreeing with a run without the pass on 21 of 400 records.",
+    "test_every_drawn_pipeline_builds_and_runs": "accepts an explicit StrictSamplingError as a legal outcome, the way the campaign already did. A constrained sampler that cannot satisfy its constraint says so rather than emitting records that violate it, and treating that as an invalid pipeline made this test pass or fail on the draw."
   },
   "replaced": {},
   "allow": {}

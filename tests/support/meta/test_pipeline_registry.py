@@ -152,8 +152,18 @@ def test_every_drawn_pipeline_builds_and_runs(pipeline):
     example to discard. The rendered pipeline is in the message because that is
     what makes such a finding fixable.
     """
+    import GenAIRR as ga
+
     try:
         records = pipeline.build().run_records(n=1, seed=7)
+    except ga.StrictSamplingError:
+        # An explicit refusal is a legal outcome, not an invalid pipeline: a
+        # constrained sampler that cannot satisfy its constraint says so
+        # rather than emitting records that violate it. Four deletions cannot
+        # leave a coding frame intact. The campaign treats it the same way;
+        # this test used to treat it as a failure, which made it pass or fail
+        # on the draw.
+        return
     except Exception as error:                      # noqa: BLE001 - reported
         raise AssertionError(
             f"a drawn pipeline did not run: {type(error).__name__}: {error}\n\n"
