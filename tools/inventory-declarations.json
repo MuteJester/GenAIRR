@@ -1,27 +1,10 @@
 {
   "revised": {
-    "test_the_coverage_report_numbers_are_pinned": "expression.productivity moves to consistent: it gained five fields that make all three of its flags reproducible from the record, and the three new predicate fields are themselves established only as consistent with the verdict they explain.",
-    "MECHANISMS": "expression.productivity owns the five predicate and span fields the engine now exports, and its summary names all five predicates instead of four.",
-    "test_segment_indels_account_for_everything_when_there_is_no_np_region": "a second place an indel legitimately belongs to no segment: an insertion past the last region, counted in n_indels and in no per-segment counter. The NP comparison the test was written for is unchanged and now has a floor so it cannot be swamped by the new case.",
-    "test_a_boundary_insertion_belongs_to_no_segment_in_the_provenance_either": "no longer gates on n_j_indels being set, because the fix is precisely that it is not: the gate is now the trailing base itself.",
-    "disagreements": "the expression oracle reads the exported coding span and the three exported predicates, so both identities the sweep had forced it to weaken under indels are exact again, and stop_codon is checked three-valued over ambiguity codes.",
-    "PASSES": "polymerase_indels draws a bounded exact_node_budget. Under a productive constraint an indel count can be unsatisfiable, and at the 20,000,000-node default the sampler's documented refusal takes six minutes, which a per-commit campaign cannot spend on one example.",
-    "_check": "an explicit StrictSamplingError is a legal outcome: a constrained sampler that cannot satisfy its constraint says so rather than emitting records that violate it. Every other exception is still a failure.",
-    "_expression_check": "no indel caveat: both identities the sweep had forced the expression oracle to weaken are exact now that the coding frame and the five predicates are in the record."
+    "Pass":
+      "declares what each pass may move of the rearrangement, with a reason per field; its off switch; whether that switch is equivalent to absence; and the arguments that make it fire hardest where the drawn minima would not.",
+    "PASSES":
+      "every pass declares its isolation facts. invert_d carries the one `zero_differs` measurement: prob=0.0 re-draws NP2, agreeing with a run without the pass on 21 of 400 records."
   },
-  "replaced": {
-    "test_the_coding_span_the_productivity_assessment_uses_is_not_exported": {
-      "by": "test_every_productivity_flag_is_reproducible_from_the_record",
-      "why": "its premise is now false: the coding span is exported, so the successor checks that translating it reproduces stop_codon exactly rather than recording that it could not be reproduced at all."
-    },
-    "test_an_insertion_inside_a_segment_is_reported_in_its_cigar": {
-      "by": "test_an_insertion_is_counted_per_segment_only_where_its_alignment_shows_it",
-      "why": "the contract it pinned was the defect -- an insertion past the J counted in n_j_indels against a cigar with no column for it. The successor asserts both populations and that the counter and the cigar agree in each."
-    },
-    "test_single_insertion_inside_j_increments_n_j_indels": {
-      "by": "test_single_insertion_past_the_j_counts_in_n_indels_only",
-      "why": "its seed lands the insertion past the J, not inside it -- the docstring said it relied on insertion_segment's fallback, which is the attribution that changed. The inside-J population is covered on the packaged loci by test_boundary_insertions.py."
-    }
-  },
+  "replaced": {},
   "allow": {}
 }
