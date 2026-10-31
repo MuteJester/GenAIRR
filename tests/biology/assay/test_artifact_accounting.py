@@ -194,6 +194,114 @@ def test_each_read_is_the_stretch_its_offsets_claim():
         "satisfied by a field echoing the configuration back")
 
 
+@verifies("assay.ambiguous_calls",
+          claim="the pass writes N and only N, at positions that carried a "
+                "base before it ran, and changes nothing else: against the "
+                "same seed without the pass the molecule is the same length "
+                "and every differing position is an N. No N appears without "
+                "the pass at all, so every one in the sequence came from it",
+          fields=("sequence",),
+          basis="cross-run")
+def test_ambiguous_calls_write_n_and_change_nothing_else():
+    """The existing test counts Ns and checks none was called a mutation,
+    which an N written anywhere -- or a molecule mangled alongside -- would
+    also satisfy.
+
+    This diffs against the same seed without the pass, so the expected value
+    comes from a second run rather than from the record. Measured: 40 of 40
+    records identical in length, every differing position an N, and 0 of 40
+    plain records containing an N anywhere.
+
+    The count requested is an upper bound rather than an equality -- 5 or 6 of
+    6 here -- because a draw can land on a position already masked, the same
+    repeat-hit shape the mutation and error counters have.
+    """
+    requested = 6
+    plain = experiment_builder.recombined()
+    masked = experiment_builder.recombined().ambiguous_base_calls(count=requested)
+    before = [outcome.airr_record(plain.refdata)["sequence"]
+              for outcome in plain.run(n=40, seed=5)]
+    after = [outcome.airr_record(masked.refdata)["sequence"]
+             for outcome in masked.run(n=40, seed=5)]
+    total_masked = 0
+    for index, (clean, ambiguous) in enumerate(zip(before, after)):
+        assert "N" not in clean.upper(), (
+            f"record {index} carries an N with no ambiguous-call pass "
+            f"configured, so the Ns below are not all this pass's work")
+        assert len(clean) == len(ambiguous), (
+            f"record {index}: masking changed the molecule's length from "
+            f"{len(clean)} to {len(ambiguous)}")
+        changed = [position for position in range(len(clean))
+                   if clean[position].upper() != ambiguous[position].upper()]
+        assert changed, f"record {index}: the pass masked nothing"
+        for position in changed:
+            assert ambiguous[position].upper() == "N", (
+                f"record {index} position {position} changed to "
+                f"{ambiguous[position]!r}, not to N")
+        masked_count = ambiguous.upper().count("N")
+        assert masked_count == len(changed), (
+            f"record {index} carries {masked_count} Ns but only "
+            f"{len(changed)} positions changed")
+        assert masked_count <= requested, (
+            f"record {index} masked {masked_count} positions for "
+            f"{requested} requested")
+        total_masked += masked_count
+    assert total_masked < requested * 40, (
+        "every draw masked a fresh position, so this fixture cannot tell a "
+        "requested count from a realised one")
+
+
+@verifies("assay.contamination",
+          claim="is_contaminant says whether the READ is this rearrangement. "
+                "On a flagged record 70 to 80 per cent of the templated "
+                "positions differ from the germline the record names, because "
+                "the molecule is background DNA; on an unflagged one exactly "
+                "none do. So the flag names a real substitution of the "
+                "molecule rather than being set",
+          fields=("is_contaminant",),
+          basis="provenance")
+def test_a_contaminant_read_is_not_the_rearrangement_it_names():
+    """The existing test reads the boolean and checks that it varies, which
+    its own claim admitted establishes nothing about which read carries it.
+
+    The separation is wide enough to assert per record rather than
+    distributionally: measured over 80 records at prob=0.5, the flagged ones
+    run 0.698 to 0.804 and the unflagged are all exactly 0.000. The threshold
+    below sits in the empty space between.
+
+    Note what this does NOT use: the recorded germline provenance survives
+    contamination untouched, so comparing it to the reference allele still
+    agrees and reports nothing. What moves is the observed base.
+    """
+    exp = experiment_builder.recombined().contaminate(prob=0.5)
+    flagged = unflagged = 0
+    for index, outcome in enumerate(exp.run(n=80, seed=5)):
+        record = outcome.airr_record(exp.refdata)
+        simulation = outcome.final_simulation()
+        bases, germline = simulation.bases(), simulation.germline_bases()
+        templated = [position for position in range(len(bases))
+                     if simulation.germline_position(position) is not None]
+        assert templated, f"record {index} has no templated base to compare"
+        divergence = sum(
+            1 for position in templated
+            if chr(bases[position]).upper() != chr(germline[position]).upper()
+        ) / len(templated)
+        if record["is_contaminant"]:
+            flagged += 1
+            assert divergence > 0.5, (
+                f"record {index} is flagged as a contaminant but only "
+                f"{divergence:.1%} of its templated bases differ from the "
+                f"germline it names, so it is that rearrangement after all")
+        else:
+            unflagged += 1
+            assert divergence == 0, (
+                f"record {index} is not flagged yet {divergence:.1%} of its "
+                f"templated bases differ from its own germline")
+    assert flagged and unflagged, (
+        f"the run produced {flagged} flagged and {unflagged} unflagged "
+        f"records; both are needed for the comparison to mean anything")
+
+
 PAIRED_END_CONFIGS = (
     ("fixed_insert", dict(r1_length=120, r2_length=120, insert_size=250)),
     ("drawn_insert", dict(r1_length=120, r2_length=120, insert_size=(200, 320))),
@@ -209,7 +317,7 @@ PAIRED_END_CONFIGS = (
                 "length, so a read whose content came from somewhere else is "
                 "caught",
           fields=("r1_sequence", "r2_sequence", "r1_start", "r1_end",
-                  "r2_start", "r2_end"),
+                  "r2_start", "r2_end", "insert_size"),
           basis="reference")
 @pytest.mark.parametrize("label,layout", PAIRED_END_CONFIGS,
                          ids=[name for name, _ in PAIRED_END_CONFIGS])
@@ -245,6 +353,35 @@ def test_each_read_is_the_molecule_at_its_own_offsets(label, layout):
             f"so the orientation half of this test establishes nothing")
         checked += 1
     assert checked == 40
+    _insert_sizes_follow_the_declared_layout(exp, layout)
+
+
+def _insert_sizes_follow_the_declared_layout(exp, layout):
+    """``insert_size`` against the fragment length the caller declared.
+
+    The expected values come from the configuration rather than from the
+    record, which is what makes this more than an echo -- and an echo is
+    exactly what this field was once filed as. A declared range must be
+    respected on every record and both of its endpoints must be reachable; a
+    declared constant must stay constant.
+    """
+    declared = layout["insert_size"]
+    sizes = [outcome.airr_record(exp.refdata)["insert_size"]
+             for outcome in exp.run(n=200, seed=7)]
+    assert sizes, "no record carried an insert size"
+    if isinstance(declared, tuple):
+        low, high = declared
+        outside = [size for size in sizes if not low <= size <= high]
+        assert not outside, (
+            f"{len(outside)} insert sizes fall outside the declared "
+            f"{low}..{high}: {sorted(set(outside))[:5]}")
+        assert min(sizes) == low and max(sizes) == high, (
+            f"the declared range {low}..{high} was never reached: observed "
+            f"{min(sizes)}..{max(sizes)}, so the bound is untested")
+    else:
+        assert set(sizes) == {declared}, (
+            f"a declared constant insert size of {declared} varied: "
+            f"{sorted(set(sizes))[:5]}")
 
 
 @verifies("assay.end_loss",
