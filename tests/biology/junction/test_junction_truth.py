@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from tests.biology.catalog import verifies
+from tests.support import alleles
 from tests.support.builders import experiment as experiment_builder
 from tests.support.oracles import junction as junction_oracle
 from tests.support.oracles import reconstruction
@@ -18,18 +19,6 @@ from tests.support.oracles import reconstruction
 pytestmark = pytest.mark.behavior
 
 LOCI = ("human_igh", "human_igk")
-
-
-def _allele_by_name(refdata, segment, name):
-    size, getter = {
-        "V": (refdata.v_pool_size(), refdata.v_allele),
-        "J": (refdata.j_pool_size(), refdata.j_allele),
-    }[segment]
-    for index in range(size):
-        allele = getter(index)
-        if allele.name == name:
-            return allele
-    return None
 
 
 def _check(exp, *, n, seed):
@@ -45,16 +34,14 @@ def _check(exp, *, n, seed):
         record = outcome.airr_record(exp.refdata)
         records.append(record)
         simulation = outcome.final_simulation()
-        v_allele = _allele_by_name(exp.refdata, "V", record["v_call"])
-        j_allele = _allele_by_name(exp.refdata, "J", record["j_call"])
-        assert v_allele is not None and j_allele is not None, (
-            f"{record['v_call']} / {record['j_call']} name no allele in the "
-            "bound reference, so the record cannot be checked against it")
+        v_allele = alleles.by_name(exp.refdata, "V", record["v_call"])
+        j_allele = alleles.by_name(exp.refdata, "J", record["j_call"])
         found.extend(junction_oracle.disagreements(
             record, simulation,
             reconstruction.segments_by_position(simulation),
             v_anchor=v_allele.anchor, j_anchor=j_allele.anchor,
-            v_sequence=bytes(v_allele.seq()), j_sequence=bytes(j_allele.seq())))
+            v_sequence=alleles.sequence(v_allele),
+            j_sequence=alleles.sequence(j_allele)))
         checked += 1
     return tuple(found), checked, records
 
@@ -149,8 +136,8 @@ def test_the_junction_is_the_window_the_reference_anchors_fix(locus):
     for index, outcome in enumerate(exp.run(n=40, seed=5)):
         record = outcome.airr_record(exp.refdata)
         simulation = outcome.final_simulation()
-        v_allele = _allele_by_name(exp.refdata, "V", record["v_call"])
-        j_allele = _allele_by_name(exp.refdata, "J", record["j_call"])
+        v_allele = alleles.by_name(exp.refdata, "V", record["v_call"])
+        j_allele = alleles.by_name(exp.refdata, "J", record["j_call"])
         segment_of = reconstruction.segments_by_position(simulation)
         v_codon = junction_oracle.anchor_codon_positions(
             simulation, segment_of, "V", v_allele.anchor)

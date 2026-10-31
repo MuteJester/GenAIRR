@@ -36,3 +36,28 @@ the third is enforced as far as it can be, and the limit is stated below.
 Oracles are deliberately slow and obvious. They are the thing that has to be
 right, so clarity beats cleverness.
 """
+
+
+def reporting_modules() -> dict[str, "object"]:
+    """``name -> module`` for every oracle here that reports disagreements.
+
+    Derived by scanning for a result type rather than listed, so a new oracle
+    is subject to the rules above the moment it is written. Lives in the
+    package rather than in the meta test that first needed it, because the
+    circularity probes need the same scan and a test module may not import
+    another test module.
+    """
+    import importlib
+
+    from tests.support import paths
+
+    found = {}
+    root = paths.tests_root() / "support" / "oracles"
+    for module in sorted(root.glob("*.py")):
+        if module.name == "__init__.py":
+            continue
+        source = module.read_text(encoding="utf-8")
+        if "class Disagreement" not in source and "class Mismatch" not in source:
+            continue
+        found[module.stem] = importlib.import_module(f"{__name__}.{module.stem}")
+    return found

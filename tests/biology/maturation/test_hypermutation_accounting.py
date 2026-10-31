@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from tests.biology.catalog import verifies
+from tests.support import alleles
 from tests.support.builders import experiment as experiment_builder
 from tests.support.oracles import provenance, reconstruction
 
@@ -348,11 +349,10 @@ def _reported_region_counters(record):
 
 
 def _v_subregions(refdata, v_call):
-    for index in range(refdata.v_pool_size()):
-        allele = refdata.v_allele(index)
-        if allele.name == v_call:
-            return allele.subregions
-    raise AssertionError(f"{v_call} names no allele in the bound reference")
+    """The V allele's IMGT table. Thin wrapper over tests.support.alleles so
+    the lookup lives in one place; kept as a local name because the bodies
+    that claim the per-subregion fields read it."""
+    return alleles.v_subregions(refdata, v_call)
 
 
 @verifies("maturation.hypermutation",

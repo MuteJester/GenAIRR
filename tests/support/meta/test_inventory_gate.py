@@ -156,6 +156,45 @@ def test_a_replacement_is_accepted_only_once_it_exists_and_is_collected(tmp_path
     assert used["replaced"] == {"test_three"}
 
 
+def test_a_helper_declared_replaced_must_name_something_that_exists(tmp_path):
+    """The member half of `replaced`, which the test half does not cover.
+
+    A private helper whose job moves into tests/support disappears under its
+    old name, and `dead-code` -- "removed because nothing referenced it" --
+    is the wrong word for it. Declaring the successor is the right word, and
+    it is checked: the name has to be defined somewhere in the tree.
+    """
+    tests = _write_suite(tmp_path)
+    baseline = gate.capture(str(tests))
+    (tests / "test_beta.py").write_text(textwrap.dedent('''
+        LIMIT = 7
+
+        def under_limit(value):
+            assert value < LIMIT
+            return value
+
+        def test_three():
+            assert under_limit(4) == 4
+    ''').lstrip(), encoding="utf-8")
+    current = gate.capture(str(tests))
+
+    assert any("_helper" in v for v in gate.check(baseline, current))
+    nowhere = gate.check(baseline, current, replaced={"_helper": "no_such_helper"})
+    assert any("defined nowhere in the current tree" in v for v in nowhere), nowhere
+    used: dict = {}
+    # The caller changed too -- it calls the new name -- so the clean run also
+    # names that body. What this asserts is that the vanished helper is
+    # accounted for, and that the caller's own change still costs its own
+    # declaration rather than riding along.
+    remaining = gate.check(baseline, current, replaced={"_helper": "under_limit"},
+                           used=used)
+    assert not any("_helper" in v for v in remaining), remaining
+    assert any("test_three" in v for v in remaining), remaining
+    assert used["replaced"] == {"_helper"}
+    assert gate.check(baseline, current, replaced={"_helper": "under_limit"},
+                      revised={"test_three"}) == []
+
+
 def test_a_declaration_with_no_reason_is_refused(tmp_path):
     """The reason is not machine-checkable, which is exactly why it is
     mandatory: it is what a reviewer reads, and a file of bare names is how an

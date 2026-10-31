@@ -644,12 +644,23 @@ def check(baseline: dict, current: dict, allow=frozenset(), revised=frozenset(),
         cur_members = current.get("members", {})
         gone = sorted(set(base_members) - set(cur_members))
         moved = {k.split("::", 1)[-1] for k in cur_members}
+        cur_member_names = {k.split("::", 1)[-1] for k in cur_members}
         vanished = []
         for key in gone:
             bare = key.split("::", 1)[-1]
             if bare in moved:
                 continue
             if bare in replaced:
+                # A helper may be declared replaced by another member -- the
+                # usual case is a private copy in a test module whose job moved
+                # into tests/support under a different name. Checked, not
+                # trusted: the successor has to exist somewhere in the tree.
+                successor = replaced[bare]
+                if successor not in cur_member_names and successor not in cur_fns:
+                    violations.append(
+                        f"{bare} is declared replaced by {successor}, which is "
+                        "defined nowhere in the current tree")
+                    continue
                 if used is not None:
                     used.setdefault("replaced", set()).add(bare)
                 continue

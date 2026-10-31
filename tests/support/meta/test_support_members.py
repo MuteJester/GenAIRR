@@ -138,20 +138,14 @@ import re  # noqa: E402
 
 
 def _reporting_oracles():
-    """Oracle modules that report disagreements, so the rule applies to them."""
-    import importlib
+    """Oracle modules that report disagreements, so the rule applies to them.
 
-    root = TESTS_ROOT / "support" / "oracles"
-    found = {}
-    for module in sorted(root.glob("*.py")):
-        if module.name == "__init__.py":
-            continue
-        source = module.read_text(encoding="utf-8")
-        if "class Disagreement" not in source and "class Mismatch" not in source:
-            continue
-        found[module.stem] = importlib.import_module(
-            f"tests.support.oracles.{module.stem}")
-    return found
+    The scan itself lives in the oracles package: the circularity probes need
+    the same list, and a test module may not import another test module.
+    """
+    from tests.support import oracles
+
+    return oracles.reporting_modules()
 
 
 def test_every_reporting_oracle_declares_what_its_identities_do_under_a_both_sides_probe():

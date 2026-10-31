@@ -19,12 +19,19 @@
     "test_the_junction_string_is_the_molecule_between_its_bounds": "narrowed to junction_aa, the field whose expected value comes from the codon table; junction and junction_length are now established against the reference anchors by their own test.",
     "test_the_alignment_strings_reduce_to_the_read_and_the_reference": "narrowed to germline_alignment; sequence_alignment and the D mask are now compared against the recorded molecule and the provenance D span by their own test.",
     "test_germline_coordinates_bound_the_span_the_trims_account_for": "the sequence_length assertion moved into its own test registered as consistent, which is what that comparison is; the coordinate assertions are unchanged.",
-    "test_the_coverage_report_numbers_are_pinned": "pinned per mechanism instead of as four counts, and recombination.assembly moved to consistent with the headline falling from 20 to 19."
+    "test_the_coverage_report_numbers_are_pinned": "pinned per mechanism instead of as four counts, and recombination.assembly moved to consistent with the headline falling from 20 to 19.",
+    "_check": "resolves each allele through tests.support.alleles instead of a private copy of the walk, and lets that helper raise on an unresolvable call rather than asserting afterwards.",
+    "_v_subregions": "now a one-line wrapper over tests.support.alleles.v_subregions; kept as a local name because the bodies that claim the per-subregion fields read it.",
+    "_reporting_oracles": "the scan moved into tests.support.oracles.reporting_modules so the circularity probes can use it without importing a test module."
   },
   "replaced": {
     "test_recorded_fields_are_owned_by_the_mechanism_claimed": {
       "by": "test_credited_fields_are_owned_by_the_mechanism_claimed",
       "why": "the guard moved from the hand-written table to the derivation that replaced it; the old name read as if a recorded list were still being checked."
+    },
+    "_allele_by_name": {
+      "by": "by_name",
+      "why": "the private allele walk in the junction tests moved into tests/support/alleles.py as by_name, which raises instead of returning None; three modules had grown their own copy and a fourth would have had to import one of theirs."
     }
   },
   "allow": {}
