@@ -25,13 +25,22 @@ the third is enforced as far as it can be, and the limit is stated below.
   the claims were already committed.
 
   Each reporting oracle therefore declares a module-level ``CIRCULARITY``
-  mapping: what was perturbed, and what the oracle said. **Its limit:** the
-  keys are the author's own names for the identities and nothing checks that
-  they cover every identity the module can emit. What the meta test enforces
-  is that the mapping exists, that every note carries a measurement, and that
-  a module which reports disagreements has one at all. The judgement that the
-  list is complete is still the author's, which is exactly the judgement that
-  was wrong twice -- so a reviewer should check it rather than trust it.
+  mapping: what was perturbed, and what the oracle said. Coverage is enforced
+  rather than trusted -- every module also declares ``IDENTITIES``, the
+  mapping must cover exactly those keys, and four of the five validate the
+  identity at construction so a report cannot name one nobody declared. The
+  fifth, ``reconstruction``, has no identity-carrying result type and
+  attributes every public function instead. The old limit here read "nothing
+  checks that they cover every identity the module can emit", and under it two
+  modules were found emitting identities absent from their mapping and a third
+  declaring none at all.
+
+  **The limit that remains:** a note is prose, and prose does not re-measure
+  itself. tests/biology/test_oracle_circularity.py executes the probes for the
+  identities with no sensitivity coverage otherwise and pins the rest as
+  prose-only with what each would take, so the unexecuted count can only go
+  down. Executing the first five corrected one note whose numbers came from a
+  different fixture than its own sentence claimed.
 
 Oracles are deliberately slow and obvious. They are the thing that has to be
 right, so clarity beats cleverness.
