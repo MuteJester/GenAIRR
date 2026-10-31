@@ -1,0 +1,24 @@
+{
+  "revised": {
+    "test_every_reporting_oracle_declares_what_its_identities_do_under_a_both_sides_probe": "IDENTITIES is now mandatory for every reporting oracle, so the test asserts it instead of describing the exemption.",
+    "test_registrations_survive_distributed_collection": "extended to carry the per-field verification basis across the xdist boundary, which the controller was dropping.",
+    "_merge": "merges the basis mapping the workers now ship alongside registrations and covered fields.",
+    "pytest_sessionfinish": "ships the basis mapping to the controller.",
+    "pytest_testnodedown": "passes the shipped basis mapping into _merge.",
+    "RustSource": "no longer carries a hand-written field list; the credit is derived from the file.",
+    "rust_covered_fields": "derives the credit by intersecting what each file mentions with the mechanism's own fields.",
+    "RUST_SOURCES": "the hand-transcribed per-source field lists were deleted, 17 of 51 of which named a field absent from the file crediting it.",
+    "CIRCULARITY": "two unprobed comparisons in the reconstruction oracle were probed and recorded.",
+    "Disagreement": "the coordinates oracle now refuses an identity absent from its IDENTITIES.",
+    "disagreements": "the projection oracle's orientation detail moved out of the identity string, which made it raise on a flipped record.",
+    "_projection_case": "gained the flipped-record case that exposed the crash.",
+    "_coverage_line": "can now cover every field of a mechanism, so the registration row reaches `verified` in the test."
+  },
+  "replaced": {
+    "test_recorded_fields_are_owned_by_the_mechanism_claimed": {
+      "by": "test_credited_fields_are_owned_by_the_mechanism_claimed",
+      "why": "the guard moved from the hand-written table to the derivation that replaced it; the old name read as if a recorded list were still being checked."
+    }
+  },
+  "allow": {}
+}
