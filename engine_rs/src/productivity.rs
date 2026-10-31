@@ -536,6 +536,18 @@ pub struct ProductivityAssessment {
     pub stop_codon: Option<bool>,
     pub junction: Option<(usize, usize)>,
     pub frame: Option<CodingSpan>,
+    /// The fifth predicate of [`Self::productive`]: whether the J tail joins
+    /// the constant region in frame. Carried out of the assessment because a
+    /// consumer cannot derive it -- it is germline-phase arithmetic over the
+    /// J's reference end and its last germline position, and nothing in the
+    /// projected record comes close. Without it, a record that satisfies the
+    /// four documented conditions and is reported unproductive looks like a
+    /// defect rather than a fifth condition.
+    pub j_tail_in_frame: Option<bool>,
+    /// The two anchor predicates, carried out for the same reason as the tail:
+    /// their tri-state depends on provenance a reader does not have.
+    pub v_anchor_accepted: Option<bool>,
+    pub j_anchor_accepted: Option<bool>,
     pub reasons: Vec<&'static str>,
 }
 
@@ -604,6 +616,9 @@ pub fn assess(view: &impl SequenceView, refdata: &RefDataConfig) -> Productivity
         stop_codon,
         junction,
         frame,
+        j_tail_in_frame: tail,
+        v_anchor_accepted: v.accepted,
+        j_anchor_accepted: j.accepted,
         reasons,
     }
 }

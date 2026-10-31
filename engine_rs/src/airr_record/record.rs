@@ -118,6 +118,35 @@ pub struct AirrRecord {
     pub productive: Option<bool>,
     pub vj_in_frame: Option<bool>,
     pub stop_codon: Option<bool>,
+    /// First base of the reading frame the productivity assessment used, in
+    /// `sequence` coordinates, and one past the last base it assessed.
+    ///
+    /// Exported so the flags above are reproducible. `stop_codon` is "a stop
+    /// in the coding span", and without the span a consumer can only guess at
+    /// it; `vj_in_frame` is `(junction_end - junction_start) % 3 == 0 &&
+    /// junction_start % 3 == coding_frame_start % 3`, and the second clause --
+    /// the one an indel breaks -- needs the frame's phase, which is
+    /// `coding_frame_start % 3`. Null together whenever the span could not be
+    /// resolved, which is the condition that puts `coding_phase_unresolved`
+    /// in [`Self::productivity_reasons`].
+    pub coding_frame_start: Option<i64>,
+    pub coding_frame_end: Option<i64>,
+    /// Whether the J tail joins the constant region in frame: the fifth
+    /// predicate of [`Self::productive`], beside the two anchors,
+    /// `vj_in_frame` and the absence of a stop codon. A record can satisfy
+    /// the other four and be unproductive for this alone -- measured on 5 of
+    /// 200 IGH records carrying one polymerase indel -- which is why it is a
+    /// field and not only a string in the reasons.
+    pub j_tail_in_frame: Option<bool>,
+    /// Whether each conserved anchor was accepted: the first two predicates of
+    /// [`Self::productive`]. Tri-state for the same reason the others are --
+    /// an ambiguous base in the codon makes it unresolved rather than
+    /// rejected, and an insertion inside the codon disrupts its provenance
+    /// without changing the base a reader sees. Reading the molecule cannot
+    /// reproduce either case, which is why these are fields: with them, all
+    /// five predicates of `productive` are in the record.
+    pub v_anchor_accepted: Option<bool>,
+    pub j_anchor_accepted: Option<bool>,
     /// Named prediction policy and evidence scope; never a claim of expression
     /// or receptor function.
     pub productivity_policy: String,

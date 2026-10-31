@@ -144,6 +144,14 @@ _DEFAULT_COLUMN_ORDER = [
     "productive",
     "vj_in_frame",
     "stop_codon",
+    # The reading frame the assessment used, and its fifth predicate. Exported
+    # so `stop_codon`, `vj_in_frame` and `productive` are reproducible from the
+    # record instead of taken on trust -- see the fields' documentation.
+    "coding_frame_start",
+    "coding_frame_end",
+    "j_tail_in_frame",
+    "v_anchor_accepted",
+    "j_anchor_accepted",
     "productivity_policy",
     "productivity_scope",
     "productivity_reasons",
@@ -276,7 +284,9 @@ class _ResultExport:
         if any(isinstance(r.get("duplex_repair"), dict) for r in records):
             # Nullable extension scalars remain unknown rather than becoming
             # zero/False; integral coordinates must not become float64.
-            booleans = {"productive", "vj_in_frame", "stop_codon", "rev_comp", "d_inverted",
+            booleans = {"productive", "vj_in_frame", "stop_codon", "j_tail_in_frame",
+                        "v_anchor_accepted", "j_anchor_accepted",
+                        "rev_comp", "d_inverted",
                         "is_contaminant", "receptor_revision_applied"}
             floats = {"mutation_rate", "v_identity", "d_identity", "j_identity"}
             integers = {
@@ -284,7 +294,8 @@ class _ResultExport:
                 if name.startswith("n_") or name.endswith(("_start", "_end", "_length"))
                 or "_trim_" in name
             } | {"sequence_length", "insert_size", "p_v_3_length", "p_d_5_length",
-                 "p_d_3_length", "p_j_5_length", "lineage_mutations_from_parent"}
+                 "p_d_3_length", "p_j_5_length", "lineage_mutations_from_parent",
+                 "coding_frame_start", "coding_frame_end"}
             for dtype, columns in (("boolean", booleans), ("Float64", floats), ("Int64", integers)):
                 for column in columns.intersection(frame.columns):
                     frame[column] = pd.array(frame[column], dtype=dtype)

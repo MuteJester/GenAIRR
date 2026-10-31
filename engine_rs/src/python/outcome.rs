@@ -422,6 +422,11 @@ pub(crate) fn airr_record_to_pydict<'py>(
     set_opt_bool(&dict, "productive", rec.productive)?;
     set_opt_bool(&dict, "vj_in_frame", rec.vj_in_frame)?;
     set_opt_bool(&dict, "stop_codon", rec.stop_codon)?;
+    set_opt_i64(&dict, "coding_frame_start", rec.coding_frame_start)?;
+    set_opt_i64(&dict, "coding_frame_end", rec.coding_frame_end)?;
+    set_opt_bool(&dict, "j_tail_in_frame", rec.j_tail_in_frame)?;
+    set_opt_bool(&dict, "v_anchor_accepted", rec.v_anchor_accepted)?;
+    set_opt_bool(&dict, "j_anchor_accepted", rec.j_anchor_accepted)?;
     dict.set_item("productivity_policy", &rec.productivity_policy)?;
     dict.set_item("productivity_scope", &rec.productivity_scope)?;
     dict.set_item("productivity_reasons", &rec.productivity_reasons)?;

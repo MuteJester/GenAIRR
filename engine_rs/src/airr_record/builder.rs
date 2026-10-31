@@ -66,6 +66,11 @@ pub fn build_airr_record(
     rec.productive = assessment.productive;
     rec.vj_in_frame = assessment.vj_in_frame;
     rec.stop_codon = assessment.stop_codon;
+    rec.coding_frame_start = assessment.frame.map(|f| f.start as i64);
+    rec.coding_frame_end = assessment.frame.map(|f| f.end as i64);
+    rec.j_tail_in_frame = assessment.j_tail_in_frame;
+    rec.v_anchor_accepted = assessment.v_anchor_accepted;
+    rec.j_anchor_accepted = assessment.j_anchor_accepted;
     rec.coding_end_processing = super::coding_end::project(sim, refdata);
     rec.sequence_id = sequence_id.to_string();
     rec.rev_comp = false;

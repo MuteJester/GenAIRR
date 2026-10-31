@@ -199,10 +199,22 @@ MECHANISMS = (
     Mechanism(
         id="expression.productivity",
         stage="expression",
-        summary="Whether the rearrangement can produce a receptor: reading "
-                "frame across the junction, absence of a stop codon in the "
-                "coding region, and intact conserved anchors.",
-        truth_fields=("productive", "stop_codon", "vj_in_frame", "productivity_policy",
+        summary="Whether the rearrangement can produce a receptor: both "
+                "conserved anchors accepted, reading frame across the "
+                "junction, absence of a stop codon in the coding region, and "
+                "the J tail joining the constant region in frame. Five "
+                "predicates under three-valued logic, each of them exported.",
+        truth_fields=("productive", "stop_codon", "vj_in_frame",
+                      # The five predicates and the span they are assessed
+                      # over. Exported so a consumer can reproduce the three
+                      # flags above rather than taking them on trust, which
+                      # the pipeline-space sweep found they could not: the
+                      # coding span was missing, so was the frame's phase, and
+                      # so were three of the five predicates.
+                      "coding_frame_start", "coding_frame_end",
+                      "j_tail_in_frame", "v_anchor_accepted",
+                      "j_anchor_accepted",
+                      "productivity_policy",
                       "productivity_reasons", "productivity_scope"),
         notes="An assessment the engine makes over a finished sequence rather "
               "than a scheduled pass, so it owns no pass.",

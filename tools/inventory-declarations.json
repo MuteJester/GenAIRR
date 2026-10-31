@@ -9,7 +9,9 @@
     "test_the_junction_is_the_window_the_reference_anchors_fix": "gates on the reference resolving both anchors rather than on the record reporting a junction, so a wrongly-null junction cannot hide in the skip.",
     "CIRCULARITY": "coordinates records the boundary-insertion tolerance and expression records the two limits the sweep found under indels, each with its measurement.",
     "_chain_disagreements": "the read-end identity tolerates a trailing run no longer than the recorded n_indels: an insertion at the last segment's 3' boundary is placed outside every region, measured on 2 of 200 IGH and 1 of 200 IGK records. The behaviour is pinned in test_boundary_insertions.py and is an open question for the owner.",
-    "disagreements": "the junction oracle can turn off the reference-residue identity (a cartridge claim, not a record claim) and the expression oracle can turn off the two identities an indel invalidates, weakening the productive conjunction to the implication that still holds rather than skipping it. Both limits were found by the pipeline-space sweep and are measured in the oracles' circularity notes."
+    "disagreements": "the junction oracle can turn off the reference-residue identity (a cartridge claim, not a record claim) and the expression oracle can turn off the two identities an indel invalidates, weakening the productive conjunction to the implication that still holds rather than skipping it. Both limits were found by the pipeline-space sweep and are measured in the oracles' circularity notes.",
+    "test_the_coverage_report_numbers_are_pinned": "expression.productivity moves to consistent: it gained five fields that make all three of its flags reproducible from the record, and the three new predicate fields are themselves established only as consistent with the verdict they explain.",
+    "MECHANISMS": "expression.productivity owns the five predicate and span fields the engine now exports, and its summary names all five predicates instead of four."
   },
   "replaced": {},
   "allow": {}
