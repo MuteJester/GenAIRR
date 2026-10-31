@@ -86,14 +86,59 @@ rec["stop_codon"]       # False
 `junction_aa` is its in-frame translation. The productivity
 flags decompose as:
 
-- `vj_in_frame` - `junction_length % 3 == 0`.
-- `stop_codon` - any stop in the translated coding span, from the V's
-  first in-frame position through the end of the J. **Not** limited to
-  the junction: a record whose `junction_aa` translates cleanly can
-  still carry `stop_codon: True`, with `coding_stop` in
-  `productivity_reasons`. Measured on 46 of 299 hypermutated records.
-- `productive` - full triad: in-frame ∧ no junction stop ∧ V Cys
-  preserved ∧ J W-or-F preserved.
+- `vj_in_frame` - the junction is a whole number of codons **and** begins
+  on a codon boundary of the reading frame:
+
+  ```python
+  (rec["junction_end"] - rec["junction_start"]) % 3 == 0 \
+      and rec["junction_start"] % 3 == rec["coding_frame_start"] % 3
+  ```
+
+  The second clause is why this is not simply `junction_length % 3 == 0`.
+  Without an indel the two agree on every record; with one they disagree
+  on about a quarter, because an indel upstream of the junction shifts the
+  frame while leaving the window a whole number of codons. Measured on
+  human_igk: 200 of 200 agreement without indels, 54 of 200 disagreement
+  with one, always with the flag reporting out-of-frame.
+- `stop_codon` - any stop in the translated coding span, which is
+  `sequence[coding_frame_start:coding_frame_end]`. **Not** limited to the
+  junction: a record whose `junction_aa` translates cleanly can still
+  carry `stop_codon: True`, with `coding_stop` in `productivity_reasons`.
+  Measured on 46 of 299 hypermutated records. Three-valued over ambiguous
+  bases: a codon containing an `N` is a stop if every base it could be
+  makes one, not a stop if none does, and `None` otherwise - so
+  `ambiguous_base_calls()` can leave this null with
+  `coding_stop_unresolved` in the reasons.
+- `productive` - the conjunction of **five** predicates, each of them
+  exported, under three-valued logic: `False` if any is false, `True` if
+  all are true, `None` otherwise.
+
+  | predicate | field |
+  |---|---|
+  | the V anchor was accepted | `v_anchor_accepted` |
+  | the J anchor was accepted | `j_anchor_accepted` |
+  | the junction is in frame | `vj_in_frame` |
+  | no stop in the coding span | `stop_codon` is `False` |
+  | the J tail joins the constant region in frame | `j_tail_in_frame` |
+
+  The last one is easy to miss and is why a record can satisfy everything
+  the other four ask for and still be unproductive, with
+  `j_tail_out_of_frame` as the only reason - 5 of 200 IGH records carrying
+  one polymerase indel. A frame-shifted J tail cannot splice to a constant
+  region, so the rearrangement does not express whatever the junction
+  looks like.
+
+  The two anchor predicates are tri-state for reasons a reader cannot see
+  from the bases: an ambiguous base inside an anchor codon leaves it
+  *unresolved* rather than rejected, and an insertion inside the codon
+  disrupts its provenance without changing the base. That is why they are
+  fields rather than something to recompute.
+
+**Every one of these three flags is reproducible from the record.** If you
+are scoring a tool against GenAIRR and it disagrees with one of them, you
+can recompute ours from the fields above and see which of you is wrong -
+which is the point of exporting the frame and the predicates rather than
+only the verdict.
 
 When `productive_only()` is in the pipeline, every record carries
 `productive: True` by construction.
@@ -101,6 +146,11 @@ When `productive_only()` is in the pipeline, every record carries
 ## Identity, mutation, and error counters
 
 ```python
+rec["coding_frame_start"] # 0    (first base of the reading frame)
+rec["coding_frame_end"]   # 316  (one past the last base assessed)
+rec["j_tail_in_frame"]    # True (the fifth predicate of `productive`)
+rec["v_anchor_accepted"]  # True (the first two)
+rec["j_anchor_accepted"]  # True
 rec["v_identity"]        # 1.0  (matches / total over V's CIGAR M/D)
 rec["d_identity"]        # 1.0
 rec["j_identity"]        # 1.0
@@ -127,6 +177,14 @@ GenAIRR assembles from a known allele, so there is no hypothesis to score
 and no call to be uncertain about. The columns are present because the AIRR
 schema has them — if you are scoring an aligner, compute these from its
 alignment, not from ours.
+
+`n_indels` counts every structural insertion or deletion the polymerase pass
+applied; `n_v_indels` / `n_d_indels` / `n_j_indels` count those a segment's
+own alignment shows. They can differ by design: an insertion landing past the
+J belongs to no segment, so it is counted in `n_indels`, in no per-segment
+counter, and in no cigar. The read then carries one base beyond
+`j_sequence_end`, which is why the segment spans do not always tile
+`sequence` exactly. Roughly 1% of insertion-bearing records.
 
 `n_mutations` is the biological SHM total; the per-segment fields
 partition it exactly (`n_v + n_d + n_j + n_np == n_mutations` by

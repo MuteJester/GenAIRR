@@ -67,6 +67,65 @@ def subject(record) -> str:
     return record["sequence"]
 
 
+
+#: IUPAC ambiguity, as the set of bases each code stands for. The genetic
+#: code's three stops are TAA, TAG and TGA; everything here follows from
+#: those two facts and nothing is read from the engine.
+IUPAC = {"A": "A", "C": "C", "G": "G", "T": "T", "U": "T",
+         "R": "AG", "Y": "CT", "S": "CG", "W": "AT", "K": "GT", "M": "AC",
+         "B": "CGT", "D": "AGT", "H": "ACT", "V": "ACG", "N": "ACGT"}
+STOPS = frozenset({"TAA", "TAG", "TGA"})
+
+
+def codon_stop(codon: str) -> bool | None:
+    """Whether a codon is a stop: ``None`` where the ambiguity decides it.
+
+    Three-valued over ambiguity codes, which is what the engine does and what
+    an honest answer requires: ``CTN`` cannot be a stop whatever the N turns
+    out to be, ``TAN`` is a stop for two realizations of four, and a codon
+    whose every realization is a stop is one. Reporting "unknown" for any
+    codon containing an N -- the first version of this -- disagreed with the
+    engine on 70 of 150 records and was simply less careful than it.
+    """
+    options = [IUPAC.get(base.upper()) for base in codon]
+    if len(codon) != 3 or any(option is None for option in options):
+        return None
+    realizations = [first + second + third
+                    for first in options[0]
+                    for second in options[1]
+                    for third in options[2]]
+    stops = sum(1 for one in realizations if one in STOPS)
+    if stops == 0:
+        return False
+    return True if stops == len(realizations) else None
+
+
+def coding_stop_state(record, *, native_phase: int = 0) -> bool | None:
+    """``stop_codon`` as the record's own coding span gives it.
+
+    Reads ``coding_frame_start`` / ``coding_frame_end`` -- the span the
+    assessment used -- rather than reconstructing one. Before those fields
+    existed this could only be approximated, and the approximation disagreed
+    with the engine on records whose N fell outside the span it actually
+    assessed.
+    """
+    start, end = record.get("coding_frame_start"), record.get("coding_frame_end")
+    if start is None or end is None:
+        return None
+    body = subject(record)
+    end = min(end, len(body))
+    if end < start + 3:
+        return None
+    unknown = False
+    for position in range(start, end - 2, 3):
+        state = codon_stop(body[position:position + 3])
+        if state is True:
+            return True
+        if state is None:
+            unknown = True
+    return None if unknown else False
+
+
 def coding_translation(record, *, native_phase: int = 0) -> str:
     """The coding span translated with this package's own codon table.
 
@@ -93,8 +152,7 @@ def anchors_intact(record) -> tuple[bool, bool]:
             translate(body[end - 3:end]) in ("W", "F"))
 
 
-def disagreements(record, *, native_phase: int = 0,
-                  indel_free: bool = True) -> tuple[Disagreement, ...]:
+def disagreements(record, *, native_phase: int = 0) -> tuple[Disagreement, ...]:
     """Every identity above that does not hold for this record.
 
     A record whose anchor was trimmed away has no junction to reason from and
@@ -133,8 +191,16 @@ def disagreements(record, *, native_phase: int = 0,
     out: list[Disagreement] = []
     sequence_id = record.get("sequence_id", "?")
 
+    # Both clauses now. `vj_in_frame` is the junction being a whole number of
+    # codons AND beginning on a codon boundary of the coding frame, and the
+    # second is what an indel breaks. Before `coding_frame_start` was exported
+    # this oracle could only check the first, which is why it reported 54 of
+    # 200 indel-bearing records wrongly and had to be turned off for them.
+    phase = record.get("coding_frame_start")
     in_frame = record["junction_length"] % 3 == 0
-    if indel_free and bool(record["vj_in_frame"]) != in_frame:
+    if phase is not None:
+        in_frame = in_frame and record["junction_start"] % 3 == phase % 3
+    if bool(record["vj_in_frame"]) != in_frame:
         out.append(Disagreement(
             sequence_id,
             "vj_in_frame == the junction length being a whole number of codons",
@@ -142,53 +208,56 @@ def disagreements(record, *, native_phase: int = 0,
             detail=f"junction_length={record['junction_length']}"))
 
     translation = coding_translation(record, native_phase=native_phase)
-    has_stop = "*" in translation
-    # An ambiguous codon in this oracle's reconstruction of the coding span
-    # stops both remaining identities from being derivable, and the reason is
-    # not that the engine is imprecise -- it is that the engine's coding span
-    # is not exported and is not this one. Measured with
-    # ambiguous_base_calls(count=2) over 300 records per locus, counting only
-    # records where THIS span translates with an X and no definite stop: the
-    # engine reports stop_codon null on 32 of 325 (IGH) and 61 of 273 (IGK),
-    # and resolves it to False on the rest -- 45 IGH and 71 IGK of those being
-    # productive=True. So the N falls inside the engine's span on some and
-    # outside it on others, and nothing in the record says which.
-    #
-    # Returning early rather than guessing. The three-valued contract the
-    # engine implements here (null when a codon could be a stop, False when
-    # something else decides it) is real and worth testing, and it cannot be
-    # tested from the exported record until the coding span joins it. That is
-    # recorded as a finding rather than papered over with an identity this
-    # oracle cannot support.
-    if "X" in translation and not has_stop:
+    # From the record's own coding span where it has one, which is exact; the
+    # reconstructed span is the fallback for a record that predates the field.
+    state = coding_stop_state(record, native_phase=native_phase)
+    has_stop = state is True if record.get("coding_frame_start") is not None \
+        else "*" in translation
+    if record.get("coding_frame_start") is not None:
+        if record["stop_codon"] is not state:
+            out.append(Disagreement(
+                sequence_id, "stop_codon == a stop in the translated coding span",
+                record["stop_codon"], state,
+                detail=f"the record's own coding span "
+                       f"{record['coding_frame_start']}..{record['coding_frame_end']}, "
+                       "three-valued over ambiguity"))
+    elif "X" in translation and not has_stop:
+        # No exported span and an ambiguous codon in the reconstruction: the
+        # two spans are not the same and the difference is only visible here,
+        # so there is nothing this can honestly assert.
         return tuple(out)
-    if bool(record["stop_codon"]) != has_stop:
+    elif bool(record["stop_codon"]) != has_stop:
         out.append(Disagreement(
             sequence_id, "stop_codon == a stop in the translated coding span",
             record["stop_codon"], has_stop,
             detail="coding span, not the junction"))
 
     v_intact, j_intact = anchors_intact(record)
-    frame = in_frame if indel_free else bool(record["vj_in_frame"])
-    expected = frame and not has_stop and v_intact and j_intact
-    detail = (f"in_frame={in_frame} stop={has_stop} "
-              f"v_anchor_C={v_intact} j_anchor_WF={j_intact}")
-    if indel_free:
-        if bool(record["productive"]) != expected:
-            out.append(Disagreement(
-                sequence_id,
-                "productive == in frame, no stop, and both anchors intact",
-                record["productive"], expected, detail=detail))
-    elif record["productive"] and not expected:
-        # The implication, which survives an indel: a record the engine calls
-        # productive must satisfy all four. The converse does not -- the J
-        # tail frame is a fifth condition the record does not export.
+    # The five predicates the engine conjoins, three of which are now in the
+    # record because provenance decides their tri-state and a reader cannot:
+    # an ambiguous base in an anchor codon makes it unresolved rather than
+    # rejected, an insertion inside the codon disrupts it without changing the
+    # base, and the J tail's frame is germline-phase arithmetic. Measured
+    # exactly on 2040 records across three loci and six pass stacks.
+    predicates = [record.get("v_anchor_accepted"), record.get("j_anchor_accepted"),
+                  in_frame, None if state is None else not state,
+                  record.get("j_tail_in_frame")]
+    if record.get("coding_frame_start") is None or None in predicates[:2]:
+        # An older record, or one whose anchors the engine did not assess:
+        # fall back to the molecule-read conjunction, which is what this
+        # oracle could do before the predicates were exported.
+        expected = (in_frame and not has_stop and v_intact and j_intact)
+    elif False in predicates:
+        expected = False
+    else:
+        expected = True if all(one is True for one in predicates) else None
+    if record["productive"] is not expected and bool(record["productive"]) != expected:
         out.append(Disagreement(
             sequence_id,
             "productive == in frame, no stop, and both anchors intact",
             record["productive"], expected,
-            detail=f"{detail} (implication only: an indel adds the J tail "
-                   "frame, which this cannot derive)"))
+            detail=f"v_anchor={predicates[0]} j_anchor={predicates[1]} "
+                   f"in_frame={in_frame} stop={state} tail={predicates[4]}"))
     return tuple(out)
 
 

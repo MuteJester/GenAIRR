@@ -66,6 +66,11 @@ pub fn build_airr_record(
     rec.productive = assessment.productive;
     rec.vj_in_frame = assessment.vj_in_frame;
     rec.stop_codon = assessment.stop_codon;
+    rec.coding_frame_start = assessment.frame.map(|f| f.start as i64);
+    rec.coding_frame_end = assessment.frame.map(|f| f.end as i64);
+    rec.j_tail_in_frame = assessment.j_tail_in_frame;
+    rec.v_anchor_accepted = assessment.v_anchor_accepted;
+    rec.j_anchor_accepted = assessment.j_anchor_accepted;
     rec.coding_end_processing = super::coding_end::project(sim, refdata);
     rec.sequence_id = sequence_id.to_string();
     rec.rev_comp = false;
@@ -219,7 +224,21 @@ pub fn build_airr_record(
         }
         for ev in &record.simulation_events {
             let segment = match ev {
-                SimulationEvent::IndelInserted { segment, .. } => *segment,
+                // An insertion that landed outside every region counts toward
+                // n_indels only. Its `segment` is stamped from the base
+                // beside it, so attributing the event there put a 1 in
+                // n_j_indels against a J cigar with no column for it -- two
+                // exported views of one event disagreeing, found by the
+                // pipeline-space sweep on 2 of 200 IGH and 1 of 200 IGK
+                // records under one forced insertion. The base is left where
+                // it is on purpose: see flag::INDEL_OUTSIDE_REGIONS.
+                SimulationEvent::IndelInserted { segment, flags, .. } => {
+                    if flags.contains(crate::ir::flag::INDEL_OUTSIDE_REGIONS) {
+                        n_indels += 1;
+                        continue;
+                    }
+                    *segment
+                }
                 SimulationEvent::IndelDeleted { segment, .. } => *segment,
                 _ => continue,
             };

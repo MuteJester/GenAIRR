@@ -95,6 +95,25 @@ pub mod flag {
     /// Nucleotide was inserted by a downstream indel pass — has no
     /// germline-allele provenance.
     pub const INDEL_INSERTED: NucFlags = NucFlags::from_bits(1 << 4);
+    /// An indel-inserted nucleotide that landed outside every region, which
+    /// happens at the last region's 3' boundary: `after_insertion` leaves a
+    /// range alone once the site is at or past its end, and there is no
+    /// following region to grow into it.
+    ///
+    /// Recorded because the base's `segment` is stamped from its neighbour
+    /// (`IndelPass::insertion_segment`) and so names a segment that does not
+    /// contain it. Without this flag the per-segment indel counters
+    /// attributed the event to that segment while its alignment carried no
+    /// column for it -- `n_j_indels` of 1 against a J cigar of pure M, on 2
+    /// of 200 IGH and 1 of 200 IGK records under one forced insertion.
+    ///
+    /// The base is deliberately left where it is. Extending the region to
+    /// cover it was tried and makes a single insertion incompatible with a
+    /// productive constraint: the only site a one-base insertion can occupy
+    /// without shifting the coding frame is past the last region, so
+    /// `productive_only()` with `polymerase_indels(count=1)` produced zero
+    /// insertions on 60 of 60 records.
+    pub const INDEL_OUTSIDE_REGIONS: NucFlags = NucFlags::from_bits(1 << 5);
 }
 
 /// Position in the source allele, or `NONE` for synthetic bases

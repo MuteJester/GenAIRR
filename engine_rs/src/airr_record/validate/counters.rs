@@ -156,7 +156,19 @@ pub(super) fn check_counters(
         }
         for ev in &er.simulation_events {
             let segment = match ev {
-                SimulationEvent::IndelInserted { segment, .. } => *segment,
+                // An insertion flagged as landing outside every region counts
+                // toward the total only. Its `segment` names the base beside
+                // it, not a region containing it, and no segment's alignment
+                // has a column for it -- so attributing it per segment would
+                // put the counter at odds with the cigar. The projection
+                // applies the same rule; see `flag::INDEL_OUTSIDE_REGIONS`.
+                SimulationEvent::IndelInserted { segment, flags, .. } => {
+                    if flags.contains(crate::ir::flag::INDEL_OUTSIDE_REGIONS) {
+                        total += 1;
+                        continue;
+                    }
+                    *segment
+                }
                 SimulationEvent::IndelDeleted { segment, .. } => *segment,
                 _ => continue,
             };

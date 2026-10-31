@@ -250,7 +250,21 @@ PASSES = (
         name="polymerase_indels",
         stage="corruption",
         parameters={"count": _counts(0, 4),
-                    "insertion_prob": _probabilities()},
+                    "insertion_prob": _probabilities(),
+                    # Bounded deliberately. Under a productive constraint an
+                    # indel count can be unsatisfiable -- four deletions
+                    # cannot leave the coding frame intact -- and the
+                    # constrained sampler is documented to search until its
+                    # budget is spent and then raise StrictSamplingError. At
+                    # the 20,000,000-node default that search takes six
+                    # minutes, which a campaign cannot spend per example.
+                    #
+                    # The limitation this buys: a pipeline the campaign
+                    # records as refused might succeed for a user on the
+                    # default budget. The budget bounds how long the sampler
+                    # looks, not what it finds, so a pipeline that produces
+                    # records here produces the same records there.
+                    "exact_node_budget": st.just(200_000)},
         mechanisms=("assay.polymerase_indels",),
         notes="the pass that breaks the one-column-one-base assumption every "
               "coordinate identity rests on",

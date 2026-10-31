@@ -542,8 +542,27 @@ def test_the_coverage_report_numbers_are_pinned():
     read cannot tell them apart and duplex_repair is the only record that a
     base was cut and resynthesised.
 
-    So the surface is now: 21 verified, 5 at a declared gapped ceiling, 4 with
-    no exported truth at all, and 1 consistent. `unverified` is empty.
+    expression.productivity then moved to `consistent`, and it moved there by
+    gaining fields rather than losing coverage. The pipeline-space sweep found
+    that none of its three flags could be reproduced from the record: the
+    coding span `stop_codon` is assessed over was not exported, `vj_in_frame`
+    needs the frame's phase as well as the junction length, and `productive`
+    is a five-predicate conjunction of which three predicates were not in the
+    record. All five are exported now and all three flags reproduce exactly on
+    2040 records across three loci and six pass stacks -- which is what a
+    benchmarking oracle needs, since a consumer whose tool disagrees with a
+    flag can now recompute ours and see which of the two is wrong.
+
+    The three new predicate fields are themselves established only as being
+    consistent with the verdict they explain. The anchor tri-state and the J
+    tail's frame are germline-phase arithmetic over provenance, and nothing
+    derives either independently, so a wrong predicate that kept the
+    conjunction right would satisfy the test. That is a real gap, it is why
+    the row reads `consistent`, and the number going down for a change that
+    made the record strictly more useful is the column working.
+
+    So the surface is now: 20 verified, 5 at a declared gapped ceiling, 4 with
+    no exported truth at all, and 2 consistent. `unverified` is empty.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -566,7 +585,7 @@ def test_the_coverage_report_numbers_are_pinned():
         "junction.coding_end_processing": "verified",
         "junction.n_addition":            "gap-limited",
         "junction.p_nucleotide":          "verified",
-        "expression.productivity":        "verified",
+        "expression.productivity":        "consistent",
         "expression.receptor_revision":   "verified",
         "maturation.class_switching":     "no-truth-exported",
         "maturation.hypermutation":       "verified",
@@ -602,8 +621,8 @@ def test_the_coverage_report_numbers_are_pinned():
         "field moved without anyone noticing.")
     counts = {name: sum(1 for value in status.values() if value == name)
               for name in sorted(set(status.values()))}
-    assert counts == {"consistent": 1, "gap-limited": 5, "no-truth-exported": 4,
-                      "verified": 21}, counts
+    assert counts == {"consistent": 2, "gap-limited": 5, "no-truth-exported": 4,
+                      "verified": 20}, counts
 
 
 def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():

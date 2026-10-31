@@ -2,24 +2,31 @@
 
 An insertion inside the J shows up the way a consumer expects: the J's read
 span covers it and the J cigar carries an `I`. An insertion at the J's 3'
-boundary does not. The base is placed outside every region -- the provenance
-and the record agree that it belongs to no segment -- so:
+boundary lands outside every region -- there is no following region for it to
+join -- and the contract for that case is:
 
-- the segment spans stop tiling the read: V, NP1, D, NP2 and J together end
-  one base before `sequence_length`;
-- `n_j_indels` reports 1 while the J cigar reports none, so the per-segment
-  indel counter and the per-segment alignment disagree about where that base
-  is.
+- `n_indels` counts it, because the molecule did change;
+- no per-segment counter does, because no segment's alignment has a column
+  for it. `n_j_indels` is zero and the J cigar carries no `I`, which agree;
+- the segment spans therefore do not tile the read: V, NP1, D, NP2 and J
+  together end one base before `sequence_length`. That is the honest
+  consequence of a base that belongs to no segment, and it is visible rather
+  than hidden in a counter.
 
 Measured under `polymerase_indels(count=1, insertion_prob=1.0)`: on IGH, 26 of
 200 records put the insertion inside the J and report it in the cigar, and 2 of
-200 put it at the boundary and do not; on IGK, 13 and 1.
+200 put it at the boundary; on IGK, 13 and 1.
 
-**This module records the behaviour; it does not endorse it.** Whether the
-engine should extend the J span and emit the `I`, or attribute the base to no
-segment and leave `n_j_indels` at zero, is a question for the owner. What is
-not in question is that the two exported views currently disagree, and a
-consumer reconstructing a molecule from segment spans silently loses the base.
+**Why the base is not simply moved into the J.** That was tried. Extending the
+region to cover it makes a single insertion incompatible with a productive
+constraint: the only site a one-base insertion can occupy without shifting the
+coding frame is past the last region, so `productive_only()` with
+`polymerase_indels(count=1)` produced zero insertions on 60 of 60 records --
+silently, since the pass has nowhere admissible to go. The engine's own
+constraint test says as much in its comment: "Only post-pool insertion
+survives the full productive bundle". A base inserted past the J is outside
+the rearrangement, and the fix belonged in the attribution rather than the
+placement.
 
 Found by the pipeline-space sweep, which drew
 `polymerase_indels(insertion_prob=1.0)` with `productive_only()` -- a
@@ -47,32 +54,42 @@ def _insertion_records(locus):
 
 @pytest.mark.parametrize("locus,inside,boundary", [("human_igh", 20, 1),
                                                    ("human_igk", 10, 1)])
-def test_an_insertion_inside_a_segment_is_reported_in_its_cigar(
+def test_an_insertion_is_counted_per_segment_only_where_its_alignment_shows_it(
         locus, inside, boundary):
-    """The two populations, counted, so a change in the split is visible.
+    """The contract, in both populations.
+
+    An insertion inside the J: counted in `n_j_indels`, an `I` in the J cigar,
+    the span covering it. One at the boundary: counted in `n_indels` only,
+    no `I`, and one base past the J's span. The two views agree in both
+    cases, which is what this module exists to hold -- before the fix the
+    boundary case reported `n_j_indels` of 1 against a cigar of pure M.
 
     The floors are below the measured counts (26 and 2 on IGH, 13 and 1 on
     IGK) because the point is the existence of both populations, not the exact
-    draw. A run where the boundary population vanished would mean the engine
-    changed where it places such an insertion -- which is the change this
-    module exists to notice.
+    draw.
     """
     with_cigar = at_boundary = 0
     for _outcome, record in _insertion_records(locus):
-        if not record.get("n_j_indels"):
-            continue
         trailing = record["sequence_length"] - record["j_sequence_end"]
-        if "I" in (record["j_cigar"] or ""):
+        has_i = "I" in (record["j_cigar"] or "")
+        if has_i:
             with_cigar += 1
+            assert record["n_j_indels"] == 1, (
+                f"{locus}: the J cigar carries an I and n_j_indels is "
+                f"{record['n_j_indels']}")
             assert trailing == 0, (
                 f"{locus}: an insertion reported in the J cigar also left "
                 f"{trailing} base(s) outside the J span")
-        else:
+        elif trailing:
             at_boundary += 1
-            assert trailing == 1, (
-                f"{locus}: an insertion attributed to the J appears in "
-                f"neither its cigar nor outside its span: trailing={trailing}, "
-                f"cigar={record['j_cigar']}")
+            assert trailing == 1, f"{locus}: {trailing} bases past the J span"
+            assert record["n_j_indels"] == 0, (
+                f"{locus}: a base outside every region is attributed to the "
+                f"J (n_j_indels={record['n_j_indels']}) while its cigar "
+                f"{record['j_cigar']} has no column for it")
+            assert record["n_indels"] >= 1, (
+                f"{locus}: the molecule gained a base and n_indels is "
+                f"{record['n_indels']}")
     assert with_cigar >= inside, (
         f"{locus}: only {with_cigar} insertions landed inside the J")
     assert at_boundary >= boundary, (
@@ -89,7 +106,7 @@ def test_a_boundary_insertion_belongs_to_no_segment_in_the_provenance_either():
     """
     for outcome, record in _insertion_records("human_igh"):
         trailing = record["sequence_length"] - record["j_sequence_end"]
-        if not record.get("n_j_indels") or trailing != 1:
+        if trailing != 1:
             continue
         simulation = outcome.final_simulation()
         segments = reconstruction.segments_by_position(simulation)

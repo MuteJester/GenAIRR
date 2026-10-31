@@ -19,6 +19,13 @@ so a consumer scoring an aligner's `vj_in_frame` against ours on an
 indel-bearing repertoire would count 27% false errors and have no way to know
 why.
 
+That gap is closed: `coding_frame_start` is exported, and with it the second
+clause of `vj_in_frame` -- the junction beginning on a codon boundary of the
+frame -- is something a consumer can compute. This module keeps the
+measurement, because the naive formula every tool uses is still wrong under
+indels and a reader should be able to find that stated;
+test_productivity_is_reproducible.py is where the exported form is checked.
+
 Found by the pipeline-space sweep: `polymerase_indels(count=1,
 insertion_prob=0.0)` on human_igk, which no fixture in this suite had run
 against the productivity flags.
@@ -193,52 +200,3 @@ def test_the_documented_conditions_for_productive_are_not_the_whole_rule(
             f"{locus}: a record satisfying all four documented conditions is "
             f"unproductive for an undocumented reason: "
             f"{record['productivity_reasons']}")
-
-
-def test_the_coding_span_the_productivity_assessment_uses_is_not_exported():
-    """A finding about what the record does NOT carry.
-
-    `stop_codon` is "is there a stop in the coding span", and the coding span
-    the engine uses is not an exported field. The closest a consumer can do is
-    reconstruct it -- v_sequence_start advanced to the reading frame, through
-    to j_sequence_end -- which is what this suite's oracle does, and the two
-    spans are not the same.
-
-    An ambiguous base is what makes the difference visible, because the engine
-    reports a null where a codon could be a stop. Measured with
-    ambiguous_base_calls(count=2) over 300 records per locus, restricted to
-    records whose reconstructed span contains an N and no definite stop: the
-    engine reports stop_codon null on 32 of 325 IGH and 61 of 273 IGK records
-    and resolves it to False on the rest -- so the N is inside its span on
-    some and outside on others, and nothing in the record says which.
-
-    The consequence is narrow but real: a benchmark cannot reproduce
-    `stop_codon` from the exported fields, and anything scoring an aligner's
-    stop-codon call against ours inherits that gap. Pinned here so the gap is
-    stated rather than rediscovered.
-    """
-    from tests.support.oracles import expression as expression_oracle
-
-    resolved = unresolved = 0
-    for locus in ("human_igh", "human_igk"):
-        experiment = (experiment_builder.recombined(locus=locus)
-                      .ambiguous_base_calls(count=2))
-        for outcome in experiment.run(n=300, seed=3):
-            record = outcome.airr_record(experiment.refdata)
-            if record["junction_length"] is None:
-                continue
-            translation = expression_oracle.coding_translation(record)
-            if "X" not in translation or "*" in translation:
-                continue
-            if record["stop_codon"] is None:
-                unresolved += 1
-            else:
-                resolved += 1
-    assert unresolved >= 20, (
-        f"only {unresolved} records reported an unresolved stop codon; the "
-        "three-valued path is no longer being reached")
-    assert resolved >= 20, (
-        f"only {resolved} records resolved a stop codon despite an ambiguous "
-        "codon in the reconstructed span. If this reached zero, the engine's "
-        "span and the reconstructed one would agree after all, and this "
-        "oracle could check the three-valued contract directly")

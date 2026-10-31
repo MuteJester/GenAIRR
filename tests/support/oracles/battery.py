@@ -244,14 +244,13 @@ def _expression_check(record, simulation, refdata, pipeline):
         # No junction, no resolvable frame. The junction oracle owns that
         # contract; inventing an expectation here would be worse.
         return (), 0
-    # An indel decouples two of this oracle's identities from the record: the
-    # junction window stops determining the global frame, and the documented
-    # four conditions stop being sufficient because the J tail frame joins
-    # them. The oracle weakens both rather than skipping the check, so
-    # stop_codon stays exact and `productive` stays checkable as an
-    # implication. See its docstring for the measurements.
-    found = expression.disagreements(
-        record, indel_free=not _changes_alignment_columns(pipeline))
+    # No indel caveat any more. The two identities an indel used to decouple
+    # from the record -- the frame's phase clause and the fifth predicate of
+    # the conjunction -- are both in the record now, so this is exact on every
+    # stack. That is the sweep's findings closing: it reported 54 of 200
+    # indel-bearing records on the frame identity and the oracle had to be
+    # weakened for them; now neither weakening is needed.
+    found = expression.disagreements(record)
     return tuple(_finding("expression", one) for one in found), 3
 
 

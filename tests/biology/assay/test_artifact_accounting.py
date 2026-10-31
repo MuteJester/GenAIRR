@@ -693,25 +693,48 @@ def test_the_indel_count_is_the_length_the_molecule_changed_by(label, insertion_
           fields=("n_v_indels", "n_d_indels", "n_j_indels"),
           basis="provenance")
 def test_segment_indels_account_for_everything_when_there_is_no_np_region():
-    """Identifies the cause of the shortfall rather than tolerating it.
+    """Identifies the causes of the shortfall rather than tolerating it.
 
     Comparing the two configurations is what distinguishes "the per-segment
-    attribution loses indels" from "NP regions have no counter of their own".
-    It is the second, which is a documented gap and not a defect.
+    attribution loses indels" from the two places an indel legitimately
+    belongs to no segment: an NP region, which has no counter of its own, and
+    a site past the last region, where an insertion lands outside every
+    segment and no alignment has a column for it.
+
+    Both are documented gaps rather than defects, and the second one is the
+    narrower: it is reachable only at the molecule's 3' end, on about 1% of
+    insertion-bearing records. See
+    tests/biology/recombination/test_boundary_insertions.py for why the base
+    is left there instead of being drawn into the J.
     """
     without_np = experiment_builder.recombined(
         np1_lengths=[(0, 1.0)], np2_lengths=[(0, 1.0)]
     ).polymerase_indels(count=(1, 3), insertion_prob=0.5)
-    exact = 0
+    exact = outside = 0
     for index, outcome in enumerate(without_np.run(n=200, seed=5)):
         record = outcome.airr_record(without_np.refdata)
         per_segment = (record["n_v_indels"] + record["n_d_indels"]
                        + record["n_j_indels"])
+        trailing = record["sequence_length"] - record["j_sequence_end"]
+        if trailing:
+            # An insertion past the J: counted in n_indels, in no per-segment
+            # counter, and in no cigar -- the three agreeing is the contract.
+            outside += 1
+            assert per_segment == record["n_indels"] - trailing, (
+                f"record {index}: {per_segment} attributed of "
+                f"{record['n_indels']} with {trailing} base(s) past the J")
+            assert "I" not in (record["j_cigar"] or ""), (
+                f"record {index}: the J cigar claims an insertion the J's "
+                "span does not cover")
+            continue
         assert per_segment == record["n_indels"], (
             f"record {index}: {per_segment} attributed of "
             f"{record['n_indels']} with no NP region to lose one to")
         exact += 1
-    assert exact == 200
+    assert exact + outside == 200
+    assert exact > 150, (
+        f"only {exact} of 200 records attributed every indel to a segment, "
+        "which is too few for the comparison below to be about NP regions")
 
     with_np = experiment_builder.recombined().polymerase_indels(
         count=(1, 3), insertion_prob=0.5)
