@@ -150,3 +150,46 @@ def test_an_unresolvable_frame_is_null_rather_than_false():
             f"the record does not say why the frame is unresolved: {sorted(reasons)}")
         checked += 1
     assert checked == 40
+
+
+@verifies("expression.receptor_revision",
+          claim="the flag marks a revision that actually happened and "
+                "original_v_call is the allele that would have been used "
+                "without it. Against the same seed at prob=0.0: the flag is "
+                "set on 40 of 40 revised records and none of the unrevised, "
+                "v_call differs on 40 of 40, and original_v_call equals the "
+                "unrevised run's v_call on 40 of 40",
+          fields=("receptor_revision_applied", "original_v_call"),
+          basis="cross-run")
+def test_the_revision_flag_marks_a_real_replacement():
+    """The existing test asserts `original_v_call` is truthy, which a field
+    echoing the current call would satisfy.
+
+    The expected value here comes from a second run rather than from the
+    record: the same seed with the revision switched off produces the
+    rearrangement that would have been, so `original_v_call` can be checked
+    against the allele actually used rather than merely against being
+    non-empty. Switching the pass off does not disturb the draws before it,
+    which is what makes the pairing valid.
+    """
+    unrevised = experiment_builder.recombined().receptor_revision(prob=0.0)
+    revised = experiment_builder.recombined().receptor_revision(prob=1.0)
+    before = [outcome.airr_record(unrevised.refdata)
+              for outcome in unrevised.run(n=40, seed=5)]
+    after = [outcome.airr_record(revised.refdata)
+             for outcome in revised.run(n=40, seed=5)]
+    assert len(before) == len(after) == 40
+    for index, (plain, applied) in enumerate(zip(before, after)):
+        assert not plain["receptor_revision_applied"], (
+            f"record {index} is flagged as revised with the pass switched off")
+        assert not plain["original_v_call"], (
+            f"record {index} carries a superseded call with nothing superseded")
+        assert applied["receptor_revision_applied"], (
+            f"record {index} ran the revision at prob=1.0 and is not flagged")
+        assert applied["original_v_call"] == plain["v_call"], (
+            f"record {index}: original_v_call is "
+            f"{applied['original_v_call']!r} where the unrevised run used "
+            f"{plain['v_call']!r}")
+        assert applied["v_call"] != plain["v_call"], (
+            f"record {index}: the revision is flagged but v_call is unchanged, "
+            f"so nothing was replaced")

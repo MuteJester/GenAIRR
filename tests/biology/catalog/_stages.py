@@ -334,6 +334,15 @@ MECHANISMS = (
                 "every downstream coordinate and must stay reconcilable with "
                 "the generating allele.",
         truth_fields=("n_indels", "n_v_indels", "n_d_indels", "n_j_indels"),
+        truth_gap=("The three per-segment counters do not partition n_indels. "
+                   "They cover V, D and J, and an indel landing in an NP "
+                   "region belongs to none of them: there is no n_np_indels "
+                   "to match n_np_mutations. Measured on 18 of 200 records "
+                   "with a deficit of exactly one, and 0 of 200 once the NP "
+                   "lengths are forced to zero, which is what identifies the "
+                   "cause. A consumer summing the three and expecting "
+                   "n_indels is wrong on about 9 per cent of records at the "
+                   "default NP lengths."),
         engine_passes=("IndelPass",),
     ),
     Mechanism(

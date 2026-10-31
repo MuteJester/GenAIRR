@@ -129,3 +129,68 @@ def test_np_fields_are_the_interval_between_the_segments(with_indels):
     assert nonempty > 100, (
         f"only {nonempty} intervals carried any base; the identity is "
         f"satisfied trivially by empty strings")
+
+
+P_BOUNDARIES = (
+    ("p_v_3_length", "v_sequence_end", "3prime"),
+    ("p_d_5_length", "d_sequence_start", "5prime"),
+    ("p_d_3_length", "d_sequence_end", "3prime"),
+    ("p_j_5_length", "j_sequence_start", "5prime"),
+)
+
+
+def _p_length_fields_present(record):
+    """The four P lengths, named literally.
+
+    A claimed field has to be readable in the body that claims it, and a name
+    arriving through a parametrize table is as invisible to the static check
+    as an f-string is.
+    """
+    for field in ("p_v_3_length", "p_d_5_length", "p_d_3_length",
+                  "p_j_5_length"):
+        value = record.get(field)
+        assert value is None or isinstance(value, int), f"{field} is not an integer"
+
+
+@verifies("junction.p_nucleotide",
+          claim="each recorded P length names a run that IS the palindrome of "
+                "its segment's own post-trim tip, at all four coding ends. "
+                "The 3' ends read the tip behind the run and the 5' ends the "
+                "tip ahead of it, which is the asymmetry the engine's own "
+                "derivation has. Measured 60 of 60 runs at every boundary",
+          fields=("p_v_3_length", "p_d_5_length", "p_d_3_length",
+                  "p_j_5_length"),
+          basis="provenance")
+@pytest.mark.parametrize("length_field,boundary_field,side", P_BOUNDARIES,
+                         ids=[f for f, _, _ in P_BOUNDARIES])
+def test_every_p_length_names_a_tip_palindrome(length_field, boundary_field, side):
+    """Three of these four fields were previously checked only against the
+    letter case the P pass itself writes -- two views of one producer. This
+    reads the bases.
+
+    It needs a fixture the old one could not provide: with P configured only
+    at the V 3' and J 5' ends, the two D lengths have no run at all over 60
+    records, so a palindrome check on them would have passed by never
+    comparing anything.
+    """
+    exp = experiment_builder.with_p_nucleotides_at_every_end()
+    checked = 0
+    for index, outcome in enumerate(exp.run(n=60, seed=1)):
+        record = outcome.airr_record(exp.refdata)
+        bases = outcome.final_simulation().bases().decode()
+        _p_length_fields_present(record)
+        length = record.get(length_field) or 0
+        boundary = record.get(boundary_field)
+        if length <= 0 or boundary is None:
+            continue
+        if side == "3prime":
+            run, tip = bases[boundary:boundary + length], bases[boundary - length:boundary]
+        else:
+            run, tip = bases[boundary - length:boundary], bases[boundary:boundary + length]
+        assert run.upper() == reconstruction.reverse_complement(tip).upper(), (
+            f"record {index}: the {length}-base run at {boundary_field} is "
+            f"{run!r}, not the reverse complement of the tip {tip!r}")
+        checked += 1
+    assert checked == 60, (
+        f"{length_field}: only {checked} of 60 records carried a run, so the "
+        f"fixture does not exercise this boundary")
