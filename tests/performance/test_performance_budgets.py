@@ -139,12 +139,16 @@ def test_w2_vdj_recombine_only_budget() -> None:
 def test_w3_vdj_productive_full_stack_budget() -> None:
     """W3: VDJ + SHM + PCR + sequencing + productive_only.
     The contract-narrowing workload — most expensive per-pass.
-    Measured 0.860 ms/rec on 2026-10-29 -- 3.7× the recorded 0.235 ms/rec,
-    which leaves 2.3× headroom against the 2.0s budget rather than the 8.5×
-    recorded here. See the note at the end of this module: this is one of the
-    two budgets that use productive_only(), and the only two that have
-    drifted. The budget value is deliberately unchanged, because the drift is
-    the finding.
+    Measured 0.759 ms/rec on 2026-11-01, down from 0.839 on the same box when
+    the N-length feasibility walk was quadratic. Still 3.2× the recorded
+    0.235 ms/rec, so the drift this docstring has recorded since 2026-10-29 is
+    only partly accounted for. The budget value is deliberately unchanged,
+    because the drift is the finding.
+
+    **This budget barely sees the cost it is named for.** Its refdata is one
+    allele per segment with a narrow N-length support, and the quadratic walk
+    that cost packaged TCRB 2.7× showed up here as 10%. A constrained budget
+    on a packaged reference is what covers that, and it is W9 below.
 
     Regressions in NP-base admit mask, S5F per-site filtering,
     or indel DP retry budget would land here first."""
@@ -315,6 +319,53 @@ def test_w8_airr_projection_is_negligible_vs_simulation() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────
+# W9: the constraint cost on a packaged reference
+# ──────────────────────────────────────────────────────────────────
+
+
+def test_w9_productive_only_on_a_packaged_reference() -> None:
+    """W9: `productive_only()` on packaged human_tcrb, as a ratio.
+
+    Every budget above builds its own refdata: one allele per segment, a
+    narrow N-length support. That keeps them fast and stable and it also
+    made them blind. A quadratic walk in the N-length feasibility solver
+    cost packaged TCRB 3.1x on this very harness, and W3 -- the budget
+    named for the contract-narrowing workload -- moved 10%.
+
+    **Why a ratio and not just a wall.** The wall here is 0.36s for 300
+    records on the development box, and the quadratic version was 1.13s. A
+    limit loose enough not to flake on a slow CI runner is above 1.13s, so
+    it would have reported "pass" for both. The ratio against the same
+    locus unconstrained on the same box cancels the machine: it was 26x
+    before the fix and 7-10x after, which is a gap no runner variance
+    closes. That is the guard. The wall is kept beside it as a sanity
+    bound, which is all it can honestly be.
+
+    TCRB rather than IGH because it is where the cost showed: IGH sat at
+    5-8x throughout. Measured 2026-11-01 on a box at load 10-12, so these
+    are upper bounds and the ratio is the claim.
+    """
+    locus = "human_tcrb"
+    plain = _measure(ga.Experiment.on(locus).recombine(), n=1200, label="W9-plain")
+    constrained = _measure(
+        ga.Experiment.on(locus).recombine().productive_only(), n=300, label="W9"
+    )
+    assert constrained < 1.5, (
+        f"W9 (productive_only on packaged {locus}) took {constrained*1000:.0f}ms "
+        f"for 300 records, budget 1500ms."
+    )
+    ratio = (constrained / 300) / (plain / 1200)
+    assert ratio < 18.0, (
+        f"W9: productive_only() on packaged {locus} costs {ratio:.1f}x the "
+        f"unconstrained run ({constrained/0.3:.2f} vs {plain/1.2:.2f} ms/rec), "
+        f"over the 18x limit. Measured 7-10x on 2026-11-01; 26x is what the "
+        f"quadratic N-length feasibility walk cost. Profile with "
+        f"py-spy --native on a build made per engine_rs/Cargo.toml's recipe -- "
+        f"the installed .so is stripped."
+    )
+
+
+# ──────────────────────────────────────────────────────────────────
 # What the recorded baselines turned out to say
 # ──────────────────────────────────────────────────────────────────
 #
@@ -367,6 +418,29 @@ def test_w8_airr_projection_is_negligible_vs_simulation() -> None:
 #
 # W6's limit is raised so CI stops failing on runner variance. W3's is not:
 # it still passes, and leaving it at 2.3x headroom keeps the drift visible
-# where raising it would hide it. Investigating the cause belongs in its own
-# branch -- it is engine performance work, and the regression predates the
-# restructure that found it.
+# where raising it would hide it.
+#
+# ── 2026-11-01: part of the cause found, and the blind spot closed ──
+#
+# The note above handed the investigation to its own branch. One finding came
+# back: `np_exists` in the solver that commit added ran its N-length automaton
+# once per candidate length, where the automaton for length L is a strict
+# prefix of the one for L+1. With the 51-value support every packaged locus
+# declares, that was 1275 position-steps per call instead of 50.
+#
+# Fixing it bought 2.7x on packaged human_tcrb and 1.2x on human_tcrd. It
+# bought W3 10%, which is the point worth keeping: **these budgets could not
+# see it.** Every fixture above builds its own refdata with one allele per
+# segment and a narrow N-length support, so the term that was quadratic
+# barely appeared. The budgets did not fail to announce a 2.7x cost because
+# their limits were loose -- they never measured it.
+#
+# W9 above is the answer: packaged refdata, and a ratio against the same
+# locus unconstrained rather than a wall, because a wall loose enough for CI
+# sat above the quadratic version too. It reports 26x before the fix and
+# 7-10x after. It is also the first budget here that would have caught this
+# class at all.
+#
+# W3's remaining gap to its May baseline (3.2x, down from 3.7x) is still not
+# fully accounted for, and the May numbers remain what they were: a
+# measurement of an engine that did not do this work.

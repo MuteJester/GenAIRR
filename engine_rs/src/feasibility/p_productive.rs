@@ -301,80 +301,159 @@ impl Solver<'_> {
             domain.lengths.values.clone()
         };
         let bases = domain.bases;
-        for length in lengths {
-            let mut initial_carry = carry;
-            let mut previous = 4usize;
-            let mut consumed = 0;
-            if let Some((active, index, _)) = query.np_slot {
-                if active == segment {
-                    let Some(start) = query.sim.pool.len().checked_sub(index as usize) else {
+        let check_stops = self.spec.check_stops;
+        // The bases already committed in this slot. Invariant across the
+        // candidate lengths -- nothing in it reads `length` -- so it is
+        // computed once rather than per length.
+        let mut initial_carry = carry;
+        let mut previous = 4usize;
+        let mut consumed = 0;
+        if let Some((active, index, _)) = query.np_slot {
+            if active == segment {
+                let Some(start) = query.sim.pool.len().checked_sub(index as usize) else {
+                    return false;
+                };
+                for offset in 0..=index {
+                    let base = if offset == index {
+                        match query.candidate {
+                            Some(ChoiceValue::Base(b)) => *b,
+                            _ => return false,
+                        }
+                    } else {
+                        query.sim.pool.as_slice()[start + offset as usize].base
+                    };
+                    let Some(state) = push(initial_carry, base, check_stops) else {
                         return false;
                     };
-                    for offset in 0..=index {
-                        let base = if offset == index {
-                            match query.candidate {
-                                Some(ChoiceValue::Base(b)) => *b,
-                                _ => return false,
-                            }
-                        } else {
-                            query.sim.pool.as_slice()[start + offset as usize].base
-                        };
-                        let Some(state) = push(initial_carry, base, self.spec.check_stops) else {
-                            return false;
-                        };
-                        initial_carry = state;
-                        previous = base_index(base);
+                    initial_carry = state;
+                    previous = base_index(base);
+                }
+                consumed = index + 1;
+            }
+        }
+        // ONE walk over the positions, not one per candidate length.
+        //
+        // The state set after position `p` does not depend on the total
+        // length: the mask at each position is a function of the position and
+        // of the previous base's index, both of which the state carries. So
+        // the automaton for length L is a strict prefix of the one for L+1,
+        // and walking each length from its start recomputed that prefix. With
+        // the 51-value support (0..=50) every packaged locus declares, that is
+        // 1275 position-steps per call where 50 suffice.
+        //
+        // A length is answered where the walk reaches it instead: at each
+        // position the support admits, the carries reachable there are tested.
+        // The function returns `bool`, so answering the lengths in position
+        // order rather than domain order cannot change what it returns.
+        // Sorted in place and walked with a cursor rather than indexed through
+        // a membership array: `lengths` is already owned here, and the array
+        // was one more allocation per call on top of the two this function
+        // already makes -- measurable on the loci where a single candidate
+        // length is the common case.
+        let mut lengths = lengths;
+        lengths.sort_unstable();
+        let Some(&max_length) = lengths.last() else {
+            return false;
+        };
+        if consumed > max_length {
+            return false;
+        }
+        let mut cursor = lengths.partition_point(|&length| length < consumed);
+        // Canonical N additions reach only a small fraction of the
+        // IUPAC automaton. Keep sparse active states instead of scanning
+        // all 1,205 carry/previous-base combinations per nucleotide.
+        let mut states = vec![initial_carry as usize * 5 + previous];
+        let mut next = Vec::with_capacity(16);
+        let mut seen = [false; 1205];
+        // Carries already passed to `exists` in this call. The answer is a
+        // disjunction over (length, carry) pairs, so a carry that failed at one
+        // admitted length fails at every other one -- testing it again only
+        // repeats a memo lookup. Walking ascending rather than in domain order
+        // meant answering every shorter length on the way, which is what this
+        // takes back: each carry is tested at most once per call.
+        let mut tested = [0u64; 4];
+        // The zero-walk case, which the old code reached through an empty
+        // `for position in consumed..length` range.
+        if lengths[cursor] == consumed {
+            cursor += 1;
+            if self.any_new_carry_reaches(&states, next_stage, &mut tested) {
+                return true;
+            }
+        }
+        for position in consumed..max_length {
+            next.clear();
+            for &index in &states {
+                let prior = index % 5;
+                let mask = if position == 0 || prior == 4 {
+                    bases.first
+                } else {
+                    bases.transitions[prior]
+                };
+                for bit in 0..4 {
+                    if mask & (1 << bit) == 0 {
+                        continue;
                     }
-                    consumed = index + 1;
-                }
-            }
-            if consumed > length {
-                continue;
-            }
-            // Canonical N additions reach only a small fraction of the
-            // IUPAC automaton. Keep sparse active states instead of scanning
-            // all 1,205 carry/previous-base combinations per nucleotide.
-            let mut states = vec![initial_carry as usize * 5 + previous];
-            let mut next = Vec::with_capacity(16);
-            let mut seen = [false; 1205];
-            for position in consumed..length {
-                next.clear();
-                for &index in &states {
-                    let prior = index % 5;
-                    let mask = if position == 0 || prior == 4 {
-                        bases.first
-                    } else {
-                        bases.transitions[prior]
-                    };
-                    for bit in 0..4 {
-                        if mask & (1 << bit) == 0 {
-                            continue;
-                        }
-                        if let Some(state) =
-                            push((index / 5) as u8, b"ACGT"[bit], self.spec.check_stops)
-                        {
-                            let target = state as usize * 5 + bit;
-                            if !seen[target] {
-                                seen[target] = true;
-                                next.push(target);
-                            }
+                    if let Some(state) = push((index / 5) as u8, b"ACGT"[bit], check_stops) {
+                        let target = state as usize * 5 + bit;
+                        if !seen[target] {
+                            seen[target] = true;
+                            next.push(target);
                         }
                     }
                 }
-                for &index in &next {
-                    seen[index] = false;
-                }
-                std::mem::swap(&mut states, &mut next);
-                if states.is_empty() {
-                    break;
-                }
             }
-            let mut carries = [false; 241];
-            for state in states {
-                carries[state / 5] = true;
+            for &index in &next {
+                seen[index] = false;
             }
-            for (state, &present) in carries.iter().enumerate() {
-                if present && self.exists(next_stage, state as u8) {
+            std::mem::swap(&mut states, &mut next);
+            // Terminal: states can only arise from this prefix, so none here
+            // means none for every longer length either.
+            if states.is_empty() {
+                break;
+            }
+            let walked = position + 1;
+            while cursor < lengths.len() && lengths[cursor] < walked {
+                cursor += 1;
+            }
+            if cursor < lengths.len()
+                && lengths[cursor] == walked
+                && self.any_new_carry_reaches(&states, next_stage, &mut tested)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether any carry reachable in `states` and not yet tried completes
+    /// from `next_stage`. Records what it tried in `tested`.
+    ///
+    /// `states` are packed `carry * 5 + previous_base`; the previous base is
+    /// spent once the N region ends, so the distinct carries are what matters
+    /// and several states collapse onto one.
+    ///
+    /// A four-word bitset over the 241 carries rather than a 241-byte array
+    /// scanned end to end: the active states are sparse -- a handful out of
+    /// 1205 -- so a scan visiting every carry slot cost more than the carries
+    /// it found. It also makes "which of these are new" one mask.
+    fn any_new_carry_reaches(
+        &mut self,
+        states: &[usize],
+        next_stage: usize,
+        tested: &mut [u64; 4],
+    ) -> bool {
+        let mut carries = [0u64; 4];
+        for &state in states {
+            let carry = state / 5;
+            carries[carry / 64] |= 1 << (carry % 64);
+        }
+        for (word, bits) in carries.into_iter().enumerate() {
+            let mut fresh = bits & !tested[word];
+            tested[word] |= bits;
+            while fresh != 0 {
+                let bit = fresh.trailing_zeros() as usize;
+                fresh &= fresh - 1;
+                if self.exists(next_stage, (word * 64 + bit) as u8) {
                     return true;
                 }
             }
