@@ -1,21 +1,7 @@
 {
   "revised": {
-    "PASSES": "every pass declares its isolation facts. invert_d carries the one `zero_differs` measurement: prob=0.0 re-draws NP2, agreeing with a run without the pass on 21 of 400 records.",
-    "test_every_drawn_pipeline_builds_and_runs": "accepts an explicit StrictSamplingError as a legal outcome, the way the campaign already did. A constrained sampler that cannot satisfy its constraint says so rather than emitting records that violate it, and treating that as an invalid pipeline made this test pass or fail on the draw.",
-    "test_a_pass_configured_off_is_the_same_as_no_pass": "narrowed to what the single-pass form can establish, and renamed in the docstring as such. It used to claim a pass configured off is indistinguishable from its absence, full stop; the engine has one RNG stream and no split(), so the comparison only held because nothing drew after the pass under test. The two-pass form added beside it carries the wider claim. Not a weakened assertion: the same equality, with the premise corrected and a second test asserting the half that fails.",
-    "_check": "runs the engine's own postcondition validator over each record before the battery. Strictly added: every oracle that ran before still runs, and a record now has to satisfy the engine's re-derivation of its own fields as well. The drawn stacks are the only place the validator's checks meet pass combinations nobody chose by hand, and until now nothing in tests/biology drove it at all.",
-    "test_the_documentation_states_all_five_predicates": "strictly widened from one document to two. The same four-condition 'full triad' misstatement was in audit-docs/airr_record_validator.md, the validator's own check catalogue, cited from validate.rs -- so the one place a developer looks to find out what the validator checks was wrong about it. Every assertion the test made still runs, against both documents; it would have failed on five of the seven field names before this change.",
     "test_w3_vdj_productive_full_stack_budget": "docstring only; the budget is still `< 2.0` and nothing about what it measures changed. Records the re-measured 0.759 ms/rec (from 0.839 on the same box before the N-length feasibility walk was made linear) and says plainly that this fixture barely sees the cost it is named for: one allele per segment and a narrow N-length support turned a 2.7x packaged cost into a 10% move here. Points at W9, which measures it on packaged refdata as a ratio."
   },
-  "replaced": {
-    "test_pin_scaffold_python_airr_projection_emits_np1_length_np2_length": {
-      "by": "test_pin_scaffold_airr_projection_emits_np1_length_np2_length",
-      "why": "same claim, pinned where the projection lives. It read src/GenAIRR/_airr_record.py for the two quoted keys and found them only inside _legacy_outcome_to_airr_record, a dead re-implementation nothing called, so it was green on code whose removal could not affect the field names it protected. Now pinned on the Rust record struct and the export's column order."
-    },
-    "test_pin_scaffold_python_projection_hard_zeros_v_trim_5_with_comment": {
-      "by": "test_pin_scaffold_no_pass_trims_the_v_five_prime_end",
-      "why": "the same engine boundary, asserted instead of grepped. It required an explanatory comment to exist inside the dead legacy builder. The successor asserts the boundary itself, both ways: trim() offers no v_5 keyword, so the field is zero by construction, and recombine() reports zero on 180 records across three loci."
-    }
-  },
+  "replaced": {},
   "allow": {}
 }
