@@ -51,6 +51,56 @@ pub(super) fn check_junction(
             }),
         }
     }
+    // The three remaining predicates of `productive` and the span the stop
+    // codon is assessed over. Checked against the oracle's own derivation
+    // rather than against the assessment: these five were exported so a
+    // consumer could reproduce the verdict, and until they were compared here
+    // a wrong one reached that consumer behind a green validator.
+    for (field, reported, recomputed) in [
+        (
+            "j_tail_in_frame",
+            record.j_tail_in_frame,
+            expected.j_tail_in_frame,
+        ),
+        (
+            "v_anchor_accepted",
+            record.v_anchor_accepted,
+            expected.v_anchor_accepted,
+        ),
+        (
+            "j_anchor_accepted",
+            record.j_anchor_accepted,
+            expected.j_anchor_accepted,
+        ),
+    ] {
+        if reported != recomputed {
+            issues.push(RecordValidationIssue::ProductivityAssessmentMismatch {
+                field: field.into(),
+                reported: format!("{reported:?}"),
+                expected: format!("{recomputed:?}"),
+            });
+        }
+    }
+    for (field, reported, recomputed) in [
+        (
+            "coding_frame_start",
+            record.coding_frame_start,
+            expected.span.map(|(start, _)| start as i64),
+        ),
+        (
+            "coding_frame_end",
+            record.coding_frame_end,
+            expected.span.map(|(_, end)| end as i64),
+        ),
+    ] {
+        if reported != recomputed {
+            issues.push(RecordValidationIssue::ProductivityAssessmentMismatch {
+                field: field.into(),
+                reported: format!("{reported:?}"),
+                expected: format!("{recomputed:?}"),
+            });
+        }
+    }
     for (field, reported, recomputed) in [
         (
             "productivity_policy",

@@ -732,6 +732,50 @@ mod tests {
     }
 
     #[test]
+    fn the_validator_reports_a_corrupted_predicate_field() {
+        // Each of the five values `productive` is a conjunction of is
+        // exported, documented in `site_docs`, and checked by nothing. The
+        // validator's own oracle derives all five independently of `assess` --
+        // both anchor tri-states, the J tail's frame and the coding span are
+        // all computed in `validate/productivity_oracle.rs::derive` -- it just
+        // never carried them out of `Oracle`. So a wrong value reached a
+        // consumer with a green validator behind it, which is the one thing a
+        // postcondition validator exists to prevent.
+        //
+        // This fixture is the clean productive one: every predicate resolves
+        // true, so flipping any single field is a real disagreement rather
+        // than a null compared against a null.
+        let (cfg, sim) = fixture(b"AAACCCTGT", b"TTTGGG");
+        let out = outcome(sim);
+        let clean = build_airr_record(&out, &cfg, "corrupt");
+        assert_eq!(clean.productive, Some(true), "fixture is not productive");
+        assert!(
+            validate_airr_record(&clean, &out, &cfg).is_empty(),
+            "fixture does not validate clean, so a corruption proves nothing"
+        );
+        let corruptions: [(&str, fn(&mut crate::airr_record::AirrRecord)); 5] = [
+            ("coding_frame_start", |r| {
+                r.coding_frame_start = r.coding_frame_start.map(|x| x + 1)
+            }),
+            ("coding_frame_end", |r| {
+                r.coding_frame_end = r.coding_frame_end.map(|x| x - 1)
+            }),
+            ("j_tail_in_frame", |r| r.j_tail_in_frame = Some(false)),
+            ("v_anchor_accepted", |r| r.v_anchor_accepted = Some(false)),
+            ("j_anchor_accepted", |r| r.j_anchor_accepted = Some(false)),
+        ];
+        for (field, corrupt) in corruptions {
+            let mut rec = clean.clone();
+            corrupt(&mut rec);
+            assert!(
+                !validate_airr_record(&rec, &out, &cfg).is_empty(),
+                "{field}: the validator accepted a record carrying a value it \
+                 re-derives independently"
+            );
+        }
+    }
+
+    #[test]
     fn the_shared_field_list_agrees_with_the_typed_projection() {
         // The two projections of one assessment have to put the same numbers
         // under the same names. The exhaustive destructures in

@@ -116,6 +116,19 @@ def _check(pipeline, seed):
         return (f"the pipeline did not run: {type(error).__name__}: {error}")
     for index, outcome in enumerate(outcomes):
         record = outcome.airr_record(experiment.refdata)
+        # The engine's own postcondition validator, before this suite's
+        # oracles. It re-derives every field from the IR and reports any
+        # divergence, and it is deliberately NOT a battery check: the battery's
+        # oracles may not import GenAIRR, because an oracle that asks the
+        # engine what it did cannot contradict it. This is the engine checking
+        # itself, which is a different claim and a useful one -- the drawn
+        # stacks are the only place its checks meet pass combinations nobody
+        # chose by hand.
+        issues = outcome.validate_record(experiment.refdata)
+        if issues:
+            return (f"record {index} of {RECORDS}: the engine's own validator "
+                    f"rejected the record it built:\n  "
+                    + "\n  ".join(str(issue) for issue in issues))
         result = battery.run(outcome, record, experiment.refdata, pipeline)
         if result.findings:
             return f"record {index} of {RECORDS}:\n{result.report()}"
