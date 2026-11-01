@@ -89,15 +89,36 @@ choice so it tests the projection, not an alternative.
 
 Checks:
 - `junction` content matches the recomputed pool slice.
-- `junction_length` matches `len(junction)`.
-- `vj_in_frame` matches `length % 3 == 0`.
-- `stop_codon` matches `junction_has_stop(junction)` (only when in-
-  frame; vacuously False otherwise).
-- `productive` matches the full triad: in-frame ∧ no junction stop
-  ∧ V anchor amino acid preserved ∧ J anchor amino acid preserved.
+- `junction_length` matches `len(junction)`, and `junction_start` /
+  `junction_end` match the recomputed window.
+- `vj_in_frame` matches the junction being a whole number of codons
+  AND beginning on a codon boundary of the coding frame. The second
+  clause is the one an indel breaks, and omitting it was wrong on 54
+  of 200 indel-bearing records.
+- `stop_codon` matches a stop anywhere in the **coding span**, not
+  only in the junction, assessed three-valued over IUPAC ambiguity
+  codes: a stop if every realization of the codon is one, not a stop
+  if none is, unknown otherwise.
+- `productive` is a conjunction of **five** predicates under
+  three-valued logic — V anchor accepted, J anchor accepted,
+  `vj_in_frame`, no coding stop, and the J tail joining the constant
+  region in frame. False if any is false, True if all are true, null
+  otherwise. It is not a triad: a record can satisfy the four
+  conditions this document used to list and still be unproductive on
+  the J tail alone, measured on 5 of 200 IGH records carrying one
+  polymerase indel.
+- The remaining five values the verdict is built from are checked
+  individually, against the oracle's own derivation rather than
+  against the record: `coding_frame_start`, `coding_frame_end`,
+  `j_tail_in_frame`, `v_anchor_accepted`, `j_anchor_accepted`. The
+  span in particular is re-derived, because `stop_codon` means "a
+  stop in the coding span" — taking the span from the record would
+  check the stop against the claim under test.
 - On `productive=False`, the validator's enum payload records WHICH
-  predicate fired (`OutOfFrame` / `JunctionStopCodon` /
-  `VAnchorAaChanged` / `JAnchorAaChanged`).
+  predicate fired (`OutOfFrame` / `CodingStopCodon` /
+  `VAnchorAaChanged` / `InFrameAndAnchorsPreserved`).
+- The duplex record is held to the same eight productivity fields by
+  `validate_duplex_productivity`, against the same oracle.
 
 ### C4: Allele-call oracle
 

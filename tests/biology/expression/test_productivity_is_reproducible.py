@@ -249,23 +249,42 @@ def test_the_documentation_states_all_five_predicates():
     Pinned on the content rather than the prose: each of the five predicates'
     field names has to appear on the page, and the phrase that made the old
     text a complete specification must not.
+
+    Two documents, because the misstatement was in two. The user-facing page
+    is one; `audit-docs/airr_record_validator.md` is the validator's own check
+    catalogue, cited from `validate.rs`'s module docstring, and it carried the
+    same four-condition "full triad" -- which made it wrong about the thing it
+    documents in the one place a developer goes to find out what the validator
+    checks.
+
+    This greps a document, which is the pattern two estimator pins were
+    removed for. The difference is what the string stands for: those used a
+    comment in source as a proxy for behaviour, and the behaviour outlived the
+    comment. Here the text IS the claim -- a specification is wrong exactly
+    when it says the wrong thing -- so there is nothing behind it to check
+    instead.
     """
     from tests.support import paths
 
-    page = (paths.repo_root() / "site_docs" / "getting-started"
-            / "first-airr-record.md").read_text(encoding="utf-8")
-    for field in ("v_anchor_accepted", "j_anchor_accepted", "vj_in_frame",
-                  "stop_codon", "j_tail_in_frame", "coding_frame_start",
-                  "coding_frame_end"):
-        assert field in page, (
-            f"{field} is a predicate of `productive` or the span it is "
-            "assessed over, and the field reference does not mention it")
-    assert "j_tail_out_of_frame" in page, (
+    pages = {
+        name: (paths.repo_root() / name).read_text(encoding="utf-8")
+        for name in ("site_docs/getting-started/first-airr-record.md",
+                     "audit-docs/airr_record_validator.md")
+    }
+    for name, page in pages.items():
+        for field in ("v_anchor_accepted", "j_anchor_accepted", "vj_in_frame",
+                      "stop_codon", "j_tail_in_frame", "coding_frame_start",
+                      "coding_frame_end"):
+            assert field in page, (
+                f"{name}: {field} is a predicate of `productive` or the span "
+                "it is assessed over, and the document does not mention it")
+        assert "full triad" not in page, (
+            f"{name} still calls the conditions a 'full triad', which reads as "
+            "a complete specification of a conjunction that has five terms")
+    assert "j_tail_out_of_frame" in pages[
+        "site_docs/getting-started/first-airr-record.md"], (
         "the reason a record can satisfy the four documented conditions and "
         "still be unproductive is not in the documentation")
-    assert "full triad" not in page, (
-        "the page still calls the conditions a 'full triad', which reads as a "
-        "complete specification of a conjunction that has five terms")
 
 
 def test_a_duplex_record_carries_the_same_five_predicates():
