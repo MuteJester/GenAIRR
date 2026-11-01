@@ -94,16 +94,32 @@ def test_pin_scaffold_airr_record_carries_np1_and_np2_sequence_fields() -> None:
         )
 
 
-def test_pin_scaffold_python_airr_projection_emits_np1_length_np2_length() -> None:
-    """The Python AIRR projection at `_airr_record.py`
-    populates both length fields from region span. Pinned
-    at source — the estimator inherits the same field
-    names."""
-    src = (
-        _REPO_ROOT / "src" / "GenAIRR" / "_airr_record.py"
+def test_pin_scaffold_airr_projection_emits_np1_length_np2_length() -> None:
+    """The AIRR projection populates both length fields. Pinned at
+    source — the estimator inherits the same field names.
+
+    Pinned against the Rust record and the export's column order,
+    which is where the projection actually lives. This read
+    `src/GenAIRR/_airr_record.py` for the two quoted keys, and found
+    them only inside `_legacy_outcome_to_airr_record` — a dead
+    re-implementation nothing called. The live
+    `outcome_to_airr_record` delegates to the kernel in one line, so
+    the pin was passing on code whose removal could not affect the
+    field names it claimed to protect.
+    """
+    record = (
+        _REPO_ROOT / "engine_rs" / "src" / "airr_record" / "record.rs"
     ).read_text(encoding="utf-8")
-    assert '"np1_length"' in src
-    assert '"np2_length"' in src
+    export = (
+        _REPO_ROOT / "src" / "GenAIRR" / "_result_export.py"
+    ).read_text(encoding="utf-8")
+    for field in ("np1_length", "np2_length"):
+        assert f"pub {field}: i64" in record, (
+            f"AirrRecord.{field} missing — NP length surface regressed"
+        )
+        assert f'"{field}"' in export, (
+            f"{field} missing from the export's canonical column order"
+        )
 
 
 def test_pin_scaffold_result_column_order_includes_np_length_fields() -> None:
