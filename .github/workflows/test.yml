@@ -3,8 +3,12 @@ name: Tests
 on:
   push:
     branches: [master]
+  # Deliberately unfiltered. A branch filter here makes a pull request based
+  # on another branch report "no checks reported" -- not pending, not failing,
+  # silent -- which is how #45 merged into a branch that had already left
+  # master's history. `push` keeps its filter to avoid a duplicate run per
+  # branch push; a push is not a request for review.
   pull_request:
-    branches: [master]
 
 jobs:
   # ── Python test matrix ─────────────────────────────────────────

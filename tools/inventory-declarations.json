@@ -1,7 +1,5 @@
 {
-  "revised": {
-    "test_w3_vdj_productive_full_stack_budget": "docstring only; the budget is still `< 2.0` and nothing about what it measures changed. Records the re-measured 0.759 ms/rec (from 0.839 on the same box before the N-length feasibility walk was made linear) and says plainly that this fixture barely sees the cost it is named for: one allele per segment and a narrow N-length support turned a 2.7x packaged cost into a 10% move here. Points at W9, which measures it on packaged refdata as a ratio."
-  },
+  "revised": {},
   "replaced": {},
   "allow": {}
 }
