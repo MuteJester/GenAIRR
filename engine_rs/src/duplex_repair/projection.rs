@@ -811,24 +811,17 @@ pub(super) fn render_projection(
         );
     }
     // Repair is not SHM, PCR damage or a later polymerase indel.
-    for field in [
-        "n_mutations",
-        "n_observable_mutations",
-        "n_pcr_errors",
-        "n_quality_errors",
-        "n_indels",
-        "n_v_indels",
-        "n_d_indels",
-        "n_j_indels",
-        "n_v_mutations",
-        "n_d_mutations",
-        "n_j_mutations",
-        "n_np_mutations",
-        "end_loss_5_length",
-        "end_loss_3_length",
-    ] {
-        record.insert(field.into(), json!(0));
+    // `0` is the truth here, not a default: a repaired molecule carries no
+    // SHM, no PCR damage and no later polymerase indel, so every counter is
+    // genuinely zero. The names come from the shared vocabulary so that a
+    // counter added to the record cannot be left out of this record shape --
+    // the third hand-written copy of this list is what let the twelve
+    // V-subregion counters go missing from duplex records entirely.
+    for field in crate::airr_record::LEDGER_COUNTER_FIELDS {
+        record.insert((*field).into(), json!(0));
     }
+    record.insert("n_mutations".into(), json!(0));
+    record.insert("n_observable_mutations".into(), json!(0));
     record.insert("mutation_rate".into(), json!(0.0));
     let mut roles = Map::new();
     for column in &product.columns {
