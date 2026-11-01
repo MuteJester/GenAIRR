@@ -61,6 +61,8 @@ from tests.support import paths
 pytestmark = pytest.mark.pin
 
 
+from tests.support.builders import experiment as experiment_builder
+
 _REPO_ROOT = paths.repo_root()
 _AUDIT_DOC = _REPO_ROOT / "audit-docs" / "trim_distribution_estimation_design.md"
 
@@ -103,19 +105,37 @@ def test_pin_scaffold_engine_separates_recombination_trims_from_end_loss() -> No
     assert after.validate_records(experiment.refdata).ok
 
 
-def test_pin_scaffold_python_projection_hard_zeros_v_trim_5_with_comment() -> None:
-    """The legacy Python AIRR projection at
-    `_airr_record.py:585` carries the explanatory comment
-    "current Experiment.recombine doesn't trim V_5" — the
-    documented engine boundary."""
-    src = (
-        _REPO_ROOT / "src" / "GenAIRR" / "_airr_record.py"
-    ).read_text(encoding="utf-8")
-    assert "v_trim_5 = 0" in src
-    assert "Experiment.recombine doesn't trim V_5" in src, (
-        "documentation comment for the v_trim_5 hard-zero is missing — "
-        "the audit's boundary explanation is no longer self-documenting"
+def test_pin_scaffold_no_pass_trims_the_v_five_prime_end() -> None:
+    """The engine boundary the estimator rests on: `v_trim_5` is zero.
+
+    Pinned on the behaviour and on the DSL surface. It used to be
+    pinned on an explanatory comment inside
+    `_legacy_outcome_to_airr_record` — a dead re-implementation
+    nothing called — so it asserted that a sentence existed in code
+    that could not run, and deleting that code broke it while the
+    boundary itself was untouched.
+
+    The boundary is structural rather than distributional: `trim()`
+    offers `v_3`, `d_5`, `d_3` and `j_5` and no `v_5`, so no pass can
+    remove bases from the V's 5' end and the field is zero on every
+    record by construction. Asserted both ways, because a behavioural
+    check alone would pass just as well if the keyword existed and
+    nobody drew it.
+    """
+    assert "v_5" not in inspect.signature(ga.Experiment.trim).parameters, (
+        "trim() now offers v_5, so v_trim_5 is no longer zero by "
+        "construction and the estimator's boundary assumption needs "
+        "revisiting"
     )
+    for locus in ("human_igh", "human_igk", "human_tcrb"):
+        experiment = experiment_builder.recombined(locus=locus)
+        reported = {
+            outcome.airr_record(experiment.refdata)["v_trim_5"]
+            for outcome in experiment.run(n=60, seed=0)
+        }
+        assert reported == {0}, (
+            f"{locus}: recombine() reported v_trim_5 of {sorted(reported)}"
+        )
 
 
 # ──────────────────────────────────────────────────────────────────

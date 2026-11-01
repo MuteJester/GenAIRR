@@ -302,16 +302,24 @@ pub fn project_duplex_simulation(
         }
         record.insert(field.into(), v);
     };
+    // One list for both projections of the assessment, owned by the
+    // productivity module. Spelling the fields out here is what left a duplex
+    // record reporting `productive` without the five values the verdict is a
+    // conjunction of -- absent, and absent from `availability` too, so nothing
+    // even reported them as unresolved.
+    for (field, v) in crate::productivity::record_fields(&assessment) {
+        // `productivity_reasons` is never null, so it needs no unresolved
+        // reason; every other field here is nullable.
+        let reason = if field == "productivity_reasons" {
+            ""
+        } else {
+            "productivity_evidence_unresolved"
+        };
+        put(field, v, reason);
+    }
+    // Sequence-dependent, so not part of the shared list: these read the
+    // observed query bases in this projector's own coordinate space.
     for (field, v) in [
-        ("productive", json!(assessment.productive)),
-        ("vj_in_frame", json!(assessment.vj_in_frame)),
-        ("stop_codon", json!(assessment.stop_codon)),
-        ("junction_start", json!(assessment.junction.map(|x| x.0))),
-        ("junction_end", json!(assessment.junction.map(|x| x.1))),
-        (
-            "junction_length",
-            json!(assessment.junction.map(|(a, b)| b - a)),
-        ),
         (
             "junction",
             json!(assessment
@@ -337,7 +345,6 @@ pub fn project_duplex_simulation(
     ] {
         put(field, v, "productivity_evidence_unresolved");
     }
-    put("productivity_reasons", json!(assessment.reasons), "");
     for (i, s) in segments.into_iter().enumerate() {
         let source = &founder_analysis.paths[i];
         put(

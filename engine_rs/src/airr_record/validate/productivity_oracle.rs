@@ -8,6 +8,17 @@ pub(super) struct Oracle {
     pub frame: Option<bool>,
     pub stop: Option<bool>,
     pub junction: Option<(usize, usize)>,
+    /// The coding span and the three remaining predicates of
+    /// [`Self::productive`]. `derive` has always computed all four -- the span
+    /// bounds the stop search, and the verdict is a conjunction over the two
+    /// anchor tri-states and the J tail -- but they used to stay inside the
+    /// function, so the record's copies of them were compared against nothing.
+    /// Carried out so the validator checks every value the verdict is built
+    /// from, not only the verdict.
+    pub span: Option<(usize, usize)>,
+    pub j_tail_in_frame: Option<bool>,
+    pub v_anchor_accepted: Option<bool>,
+    pub j_anchor_accepted: Option<bool>,
     pub reasons: Vec<&'static str>,
 }
 
@@ -238,11 +249,19 @@ pub(super) fn derive(sim: &Simulation, refdata: &RefDataConfig) -> Oracle {
                     % 3,
             )
         });
-    let mut stop = None;
-    if let (Some(phase), Some(vr)) = (phase, vr) {
+    // The span the stop codon is assessed over, derived here rather than read
+    // from the record: `stop_codon` means "a stop in the coding span", so a
+    // validator that trusted the record's span would be checking the stop
+    // against the claim it is supposed to be testing.
+    let span = phase.zip(vr).map(|(phase, vr)| {
         let begin = vr.start.index() as usize;
-        let start = begin + (phase + 3 - begin % 3) % 3;
-        let end = jr.unwrap_or(vr).end.index() as usize;
+        (
+            begin + (phase + 3 - begin % 3) % 3,
+            jr.unwrap_or(vr).end.index() as usize,
+        )
+    });
+    let mut stop = None;
+    if let Some((start, end)) = span {
         let mut unknown = false;
         let mut seen = false;
         for p in (start..end.min(pool.len()).saturating_sub(2)).step_by(3) {
@@ -337,6 +356,10 @@ pub(super) fn derive(sim: &Simulation, refdata: &RefDataConfig) -> Oracle {
         frame,
         stop,
         junction,
+        span,
+        j_tail_in_frame: tail,
+        v_anchor_accepted: v.accepted,
+        j_anchor_accepted: j.accepted,
         reasons,
     }
 }

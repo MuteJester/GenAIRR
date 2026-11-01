@@ -62,15 +62,33 @@ pub fn build_airr_record(
     let assessment = crate::productivity::assess(sim, refdata);
     rec.productivity_policy = crate::productivity::POLICY.into();
     rec.productivity_scope = crate::productivity::SCOPE.into();
-    rec.productivity_reasons = assessment.reasons.iter().map(|r| (*r).into()).collect();
-    rec.productive = assessment.productive;
-    rec.vj_in_frame = assessment.vj_in_frame;
-    rec.stop_codon = assessment.stop_codon;
-    rec.coding_frame_start = assessment.frame.map(|f| f.start as i64);
-    rec.coding_frame_end = assessment.frame.map(|f| f.end as i64);
-    rec.j_tail_in_frame = assessment.j_tail_in_frame;
-    rec.v_anchor_accepted = assessment.v_anchor_accepted;
-    rec.j_anchor_accepted = assessment.j_anchor_accepted;
+    // Destructured exhaustively on purpose, not read field by field: a
+    // predicate added to the verdict stops compiling here until this
+    // projection names it. `productivity::record_fields` gives the duplex
+    // projector the same guarantee, and spelling the fields out separately in
+    // the two places is how the five predicates of `productive` reached this
+    // record and never the duplex one. `junction` is consumed further down,
+    // where the reference anchors are already in hand.
+    let crate::productivity::ProductivityAssessment {
+        productive,
+        vj_in_frame,
+        stop_codon,
+        junction: _,
+        frame,
+        j_tail_in_frame,
+        v_anchor_accepted,
+        j_anchor_accepted,
+        reasons,
+    } = &assessment;
+    rec.productivity_reasons = reasons.iter().map(|r| (*r).into()).collect();
+    rec.productive = *productive;
+    rec.vj_in_frame = *vj_in_frame;
+    rec.stop_codon = *stop_codon;
+    rec.coding_frame_start = frame.map(|f| f.start as i64);
+    rec.coding_frame_end = frame.map(|f| f.end as i64);
+    rec.j_tail_in_frame = *j_tail_in_frame;
+    rec.v_anchor_accepted = *v_anchor_accepted;
+    rec.j_anchor_accepted = *j_anchor_accepted;
     rec.coding_end_processing = super::coding_end::project(sim, refdata);
     rec.sequence_id = sequence_id.to_string();
     rec.rev_comp = false;

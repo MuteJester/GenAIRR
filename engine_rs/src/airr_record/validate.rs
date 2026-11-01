@@ -43,6 +43,13 @@ pub(crate) fn validate_duplex_productivity(
         ("productive", json!(expected.productive)),
         ("vj_in_frame", json!(expected.frame)),
         ("stop_codon", json!(expected.stop)),
+        // The duplex record carries every value the verdict is a conjunction
+        // of, same as the legacy one, so the validator holds it to all five.
+        ("coding_frame_start", json!(expected.span.map(|(s, _)| s))),
+        ("coding_frame_end", json!(expected.span.map(|(_, e)| e))),
+        ("j_tail_in_frame", json!(expected.j_tail_in_frame)),
+        ("v_anchor_accepted", json!(expected.v_anchor_accepted)),
+        ("j_anchor_accepted", json!(expected.j_anchor_accepted)),
         ("junction", json!(junction)),
         ("junction_aa", json!(aa)),
         ("junction_start", json!(expected.junction.map(|(a, _)| a))),

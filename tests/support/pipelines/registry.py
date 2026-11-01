@@ -278,12 +278,18 @@ PASSES = (
                      "Measured over 400 records on human_igh: np2_length "
                      "agrees with a run without the pass on 21 of 400, with "
                      "the same distribution (mean 7.77 against 8.00), so it "
-                     "is a re-draw and not a bias. receptor_revision at "
-                     "prob=0.0 agrees on 400 of 400, so this is not inherent "
-                     "to toggling a recombination-stage pass. A seeded "
-                     "ablation -- the same repertoire with and without "
-                     "inversion, which is how anyone studies one pass -- "
-                     "compares different rearrangements.",
+                     "is a re-draw and not a bias. What makes invert_d "
+                     "distinctive is only that it fails the SINGLE-PASS "
+                     "comparison: the flip is consumed upstream of a draw "
+                     "recombine() itself makes. It is NOT the only pass whose "
+                     "presence shifts a later draw -- rng.rs holds one u64 "
+                     "stream and no split(), so every pass does, and "
+                     "receptor_revision(prob=0.0) agreeing on 400 of 400 "
+                     "only means nothing drew after it. Measured with a "
+                     "mutate behind either pass: rearrangement identical 200 "
+                     "of 200, final sequence identical 0 of 200. A seeded "
+                     "ablation is therefore valid about the rearrangement "
+                     "and not about the molecule.",
     ),
     Pass(
         name="receptor_revision",
