@@ -623,6 +623,53 @@ pub fn assess(view: &impl SequenceView, refdata: &RefDataConfig) -> Productivity
     }
 }
 
+/// Every record field the assessment decides, as the record spells it.
+///
+/// One list, in one place. The projection of an assessment onto record fields
+/// used to be written twice by hand -- once in the legacy record builder and
+/// once in the duplex projector -- and the five fields that make `productive`
+/// reproducible reached the legacy record and never the duplex one, so a
+/// duplex record exported a verdict no consumer could recompute.
+///
+/// The binding below destructures the assessment exhaustively on purpose: a
+/// predicate added to the verdict stops compiling here until it is named,
+/// which is a stronger guarantee than a list that can silently fall behind.
+/// `build_airr_record` destructures it the same way for the same reason.
+///
+/// Sequence-dependent fields (`junction`, `junction_aa`, `sequence_aa`) are
+/// NOT here. They need the molecule's bases, and each projector reads those
+/// in its own coordinate space.
+pub fn record_fields(
+    assessment: &ProductivityAssessment,
+) -> Vec<(&'static str, serde_json::Value)> {
+    use serde_json::json;
+    let ProductivityAssessment {
+        productive,
+        vj_in_frame,
+        stop_codon,
+        junction,
+        frame,
+        j_tail_in_frame,
+        v_anchor_accepted,
+        j_anchor_accepted,
+        reasons,
+    } = assessment;
+    vec![
+        ("productive", json!(productive)),
+        ("vj_in_frame", json!(vj_in_frame)),
+        ("stop_codon", json!(stop_codon)),
+        ("coding_frame_start", json!(frame.map(|f| f.start))),
+        ("coding_frame_end", json!(frame.map(|f| f.end))),
+        ("j_tail_in_frame", json!(j_tail_in_frame)),
+        ("v_anchor_accepted", json!(v_anchor_accepted)),
+        ("j_anchor_accepted", json!(j_anchor_accepted)),
+        ("junction_start", json!(junction.map(|x| x.0))),
+        ("junction_end", json!(junction.map(|x| x.1))),
+        ("junction_length", json!(junction.map(|(a, b)| b - a))),
+        ("productivity_reasons", json!(reasons)),
+    ]
+}
+
 #[cfg(test)]
 mod duplex_tests;
 
@@ -682,6 +729,46 @@ mod tests {
         let rec = build_airr_record(&out, cfg, "assessment");
         assert_eq!((rec.productive, rec.stop_codon), expected);
         assert!(validate_airr_record(&rec, &out, cfg).is_empty());
+    }
+
+    #[test]
+    fn the_shared_field_list_agrees_with_the_typed_projection() {
+        // The two projections of one assessment have to put the same numbers
+        // under the same names. The exhaustive destructures in
+        // `record_fields` and in `build_airr_record` stop a NEW predicate from
+        // reaching one and missing the other; this stops the two from
+        // disagreeing about a field they both already carry -- a coordinate
+        // base, a units slip, an `Option` collapsed to a default.
+        let (cfg, sim) = fixture(b"GGGTGTTGTGCGAGA", b"TTTGGGCCCAAA");
+        let rec = build_airr_record(&outcome(sim.clone()), &cfg, "shared");
+        let fields: std::collections::HashMap<_, _> =
+            record_fields(&assess(&sim, &cfg)).into_iter().collect();
+        let typed = [
+            ("productive", serde_json::json!(rec.productive)),
+            ("vj_in_frame", serde_json::json!(rec.vj_in_frame)),
+            ("stop_codon", serde_json::json!(rec.stop_codon)),
+            ("coding_frame_start", serde_json::json!(rec.coding_frame_start)),
+            ("coding_frame_end", serde_json::json!(rec.coding_frame_end)),
+            ("j_tail_in_frame", serde_json::json!(rec.j_tail_in_frame)),
+            ("v_anchor_accepted", serde_json::json!(rec.v_anchor_accepted)),
+            ("j_anchor_accepted", serde_json::json!(rec.j_anchor_accepted)),
+            ("junction_start", serde_json::json!(rec.junction_start)),
+            ("junction_end", serde_json::json!(rec.junction_end)),
+            ("junction_length", serde_json::json!(rec.junction_length)),
+            ("productivity_reasons", serde_json::json!(rec.productivity_reasons)),
+        ];
+        assert_eq!(
+            fields.len(),
+            typed.len(),
+            "the shared list and the typed projection cover different fields"
+        );
+        for (field, expected) in typed {
+            assert_eq!(
+                fields.get(field),
+                Some(&expected),
+                "{field}: the shared list and the typed record disagree"
+            );
+        }
     }
 
     #[test]

@@ -266,3 +266,39 @@ def test_the_documentation_states_all_five_predicates():
     assert "full triad" not in page, (
         "the page still calls the conditions a 'full triad', which reads as a "
         "complete specification of a conjunction that has five terms")
+
+
+def test_a_duplex_record_carries_the_same_five_predicates():
+    """The same claim, on the other projection of the same assessment.
+
+    A duplex record is built by a different projector from the same
+    `productivity::assess` call, and the projection of the assessment onto
+    record fields was written twice by hand. The five fields `productive`
+    needs to be reproducible reached only the legacy record, so a duplex
+    record exported a `productive` verdict that no consumer could recompute
+    -- while `site_docs` documents the five-predicate contract for all of
+    them.
+
+    They are not reported as unresolved either: the duplex `availability`
+    map, which exists to say why a nullable field is null, has no key for
+    them. The fields are simply absent, which is the one outcome a consumer
+    has no way to handle.
+    """
+    from tests.support.cases import duplex as duplex_case
+
+    import GenAIRR as ga
+
+    reference = duplex_case.references()
+    model = duplex_case.model(reference, rows=[duplex_case.history()])
+    experiment = ga.Experiment.on(reference).recombine(duplex_repair=model)
+    record = experiment.run(n=1, seed=0)[0].airr_record(reference)
+
+    for field in ("coding_frame_start", "coding_frame_end", "j_tail_in_frame",
+                  "v_anchor_accepted", "j_anchor_accepted"):
+        assert field in record, (
+            f"a duplex record reports productive={record['productive']!r} "
+            f"and omits {field}, which is one of the five values the verdict "
+            "is a conjunction of")
+    assert _productive(record) == record["productive"], (
+        f"the duplex record's five predicates give {_productive(record)!r} "
+        f"where it reports productive={record['productive']!r}")
