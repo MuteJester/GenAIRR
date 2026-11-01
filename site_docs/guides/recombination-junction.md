@@ -307,7 +307,12 @@ The versioned policy is `canonical_observed_vdj_v1`, with scope
 produces `False`; otherwise unresolved required evidence produces `None`.
 Ambiguous codons are evaluated over their possible canonical resolutions:
 `NNN` can hide a stop, `GCN` cannot, and `TAR` is definitely stop.
-`productivity_reasons` gives stable diagnostic codes.
+`productivity_reasons` gives stable diagnostic codes. Codes about a conserved
+anchor name the segment they are about — `v_reference_anchor_unresolved`,
+`j_anchor_residue_rejected` — so a record carrying one says which anchor to
+look at rather than only that an anchor failed. Codes about the reading frame
+or the coding span (`coding_phase_unresolved`, `coding_stop`,
+`j_tail_out_of_frame`) describe the molecule as a whole and carry no prefix.
 
 Invalid reference annotations never supply a guessed coding frame. Independent
 phase evidence can support a stop assessment even when a landmark is unknown.

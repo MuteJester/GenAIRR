@@ -4,7 +4,7 @@ use super::bindings::DuplexReferenceBindings;
 use super::*;
 use crate::codon::translate_codon;
 use crate::ir::Segment;
-use crate::productivity::Reason;
+use crate::productivity::{AnchorReason, AnchorSite, Reason};
 use crate::refdata::RefDataConfig;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -224,7 +224,7 @@ struct Landmark {
     codon_start: Option<usize>,
     codon_end: Option<usize>,
     accepted: Option<bool>,
-    reason: Reason,
+    reason: AnchorReason,
 }
 
 /// The query span of whatever survives of the codon at reference `anchor..anchor + 3`, or `None`
@@ -266,10 +266,10 @@ fn landmark(
         reason,
     };
     if !source.landmark_ready {
-        return unknown(Reason::ReferenceAnchorUnresolved);
+        return unknown(AnchorReason::ReferenceAnchorUnresolved);
     }
     let Some(anchor) = source.anchor else {
-        return unknown(Reason::ReferenceAnchorUnresolved);
+        return unknown(AnchorReason::ReferenceAnchorUnresolved);
     };
     let (codon_start, codon_end) = codon_span(path, anchor).unzip();
     let mut positions = Vec::new();
@@ -284,11 +284,11 @@ fn landmark(
                 codon_start,
                 codon_end,
                 accepted: Some(false),
-                reason: Reason::AnchorRemoved,
+                reason: AnchorReason::Removed,
             };
         }
         if matches.len() != 1 {
-            return unknown(Reason::AnchorPlacementAmbiguous);
+            return unknown(AnchorReason::PlacementAmbiguous);
         }
         let q = matches[0].query_position;
         if path
@@ -296,7 +296,7 @@ fn landmark(
             .iter()
             .any(|b| b.query_position == q && b.reference_position != g)
         {
-            return unknown(Reason::AnchorPlacementAmbiguous);
+            return unknown(AnchorReason::PlacementAmbiguous);
         }
         positions.push(q);
     }
@@ -305,7 +305,7 @@ fn landmark(
             codon_start,
             codon_end,
             accepted: Some(false),
-            reason: Reason::AnchorProvenanceDisrupted,
+            reason: AnchorReason::ProvenanceDisrupted,
         };
     }
     let q = positions[0];
@@ -318,9 +318,9 @@ fn landmark(
         codon_end,
         accepted,
         reason: match accepted {
-            Some(true) => Reason::AnchorAccepted,
-            Some(false) => Reason::AnchorResidueRejected,
-            None => Reason::AnchorAmbiguous,
+            Some(true) => AnchorReason::Accepted,
+            Some(false) => AnchorReason::ResidueRejected,
+            None => AnchorReason::Ambiguous,
         },
     }
 }
@@ -384,10 +384,10 @@ fn assess(
     };
     let mut reasons = Vec::new();
     if v.accepted != Some(true) {
-        reasons.push(v.reason);
+        reasons.push(Reason::Anchor(AnchorSite::V, v.reason));
     }
     if j.accepted != Some(true) {
-        reasons.push(j.reason);
+        reasons.push(Reason::Anchor(AnchorSite::J, j.reason));
     }
     if frame.is_none() {
         reasons.push(Reason::CodingPhaseUnresolved);
@@ -441,7 +441,7 @@ fn assess(
     );
     record.insert(
         "productivity_reasons".into(),
-        json!(reasons.iter().map(|r| r.as_str()).collect::<Vec<_>>()),
+        json!(reasons.iter().map(|r| r.to_field()).collect::<Vec<_>>()),
     );
     set(
         record,

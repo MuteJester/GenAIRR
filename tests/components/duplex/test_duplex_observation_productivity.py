@@ -170,7 +170,7 @@ def test_clipping_through_part_of_a_restored_anchor_is_unknown_without_losing_fo
     rec = p["record"]
     assert rec["sequence"] == "GTCCCTTTAAA"
     assert rec["productive"] is None and rec["junction"] is None and rec["junction_aa"] is None
-    assert "anchor_not_observed" in rec["productivity_reasons"]
+    assert "v_anchor_not_observed" in rec["productivity_reasons"]
     assert rec["v_trim_5"] == 0 and rec["v_germline_start"] == 4
     assert rec["duplex_repair"]["product"] == repair.run()
 
@@ -206,7 +206,7 @@ def test_verified_noncanonical_restoration_retains_junction_without_inventing_ph
     assert rec["vj_in_frame"] is None and rec["stop_codon"] is None
     assert rec["junction"] == "GGGCCCTTT" and rec["junction_aa"] == "GPF"
     assert (rec["junction_start"], rec["junction_end"]) == (3, 12)
-    assert "anchor_residue_rejected" in rec["productivity_reasons"]
+    assert "v_anchor_residue_rejected" in rec["productivity_reasons"]
     assert "coding_phase_unresolved" in rec["productivity_reasons"]
     assert rec["productivity_policy"] == "duplex_observed_vdj_v1"
 

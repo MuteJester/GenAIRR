@@ -51,10 +51,11 @@ def _experiment(cfg):
 
 @verifies("expression.productivity",
           claim="productivity_reasons names which assessment actually failed, "
-                "not merely that one did: a rejected anchor residue reports "
-                "anchor_residue_rejected and specifically not "
-                "reference_anchor_unresolved, so a consumer can tell a "
-                "noncanonical landmark from an unresolvable one",
+                "and on which segment, not merely that one did: a rejected "
+                "anchor residue reports <segment>_anchor_residue_rejected "
+                "and specifically not <segment>_reference_anchor_unresolved, "
+                "so a consumer can tell a noncanonical landmark from an "
+                "unresolvable one, and a V problem from a J one",
           fields=("productive", "vj_in_frame", "stop_codon", "productivity_reasons"),
           basis="reference")
 @pytest.mark.parametrize("segment", ["V", "J"])
@@ -68,8 +69,9 @@ def test_verified_noncanonical_landmark_has_defined_junction_and_rejected_produc
     assert rec["junction_start"] == 6
     assert rec["junction_end"] == 12
     assert rec["junction"] == rec["sequence"][6:12]
-    assert "anchor_residue_rejected" in rec["productivity_reasons"]
-    assert "reference_anchor_unresolved" not in rec["productivity_reasons"]
+    assert f"{segment.lower()}_anchor_residue_rejected" in rec["productivity_reasons"]
+    assert (f"{segment.lower()}_reference_anchor_unresolved"
+            not in rec["productivity_reasons"])
     assert result.validate_records(cfg).ok
 
     rec["productive"] = True
@@ -90,7 +92,7 @@ def test_verified_noncanonical_v_coordinate_does_not_supply_implicit_coding_phas
     assert rec["junction_start"] == 6 and rec["junction_end"] == 12
     assert rec["vj_in_frame"] is None and rec["stop_codon"] is None
     assert "coding_phase_unresolved" in rec["productivity_reasons"]
-    assert "anchor_residue_rejected" in rec["productivity_reasons"]
+    assert "v_anchor_residue_rejected" in rec["productivity_reasons"]
     assert result.validate_records(cfg).ok
 
 
@@ -115,7 +117,7 @@ def test_unverified_noncanonical_reference_does_not_identify_a_landmark(status):
     assert rec["junction_start"] is None and rec["junction_end"] is None
     assert rec["junction"] == ""
     assert rec["vj_in_frame"] is None and rec["stop_codon"] is None
-    assert "reference_anchor_unresolved" in rec["productivity_reasons"]
+    assert "v_reference_anchor_unresolved" in rec["productivity_reasons"]
     assert result.validate_records(cfg).ok
 
 

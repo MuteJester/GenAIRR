@@ -496,7 +496,7 @@ def check_junction(record, mapped: dict, alleles: dict) -> str:
     j_codon = [q for q in (mapped["J"].get(j.anchor + k) for k in range(3)) if q is not None]
     if not (v_codon and j_codon):
         assert (record["junction"], record["junction_start"]) == ("", None), record["sequence_id"]
-        assert "anchor_removed" in record["productivity_reasons"]
+        assert "v_anchor_removed" in record["productivity_reasons"]
         return "undefined"
     assert (record["junction_start"], record["junction_end"]) == (v_codon[0], j_codon[-1] + 1), record["sequence_id"]
     intact = all(len(c) == 3 and c[2] - c[0] == 2 for c in (v_codon, j_codon))

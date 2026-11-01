@@ -125,7 +125,8 @@ def test_the_productivity_flags_are_each_derivable_from_the_molecule(label, make
                 "vj_in_frame as null rather than false -- the frame could not "
                 "be resolved, which is not the same as being out of frame -- "
                 "with the junction fields empty and productive false, and the "
-                "reasons naming anchor_removed and vj_frame_unresolved",
+                "reasons naming v_anchor_removed -- which anchor, not just "
+                "that one failed -- and vj_frame_unresolved",
           fields=("vj_in_frame", "productivity_reasons"),
           # The expected values come from the fixture's configuration -- a V 3'
           # trim deep enough to remove the anchor codon on every record -- not
@@ -155,7 +156,7 @@ def test_an_unresolvable_frame_is_null_rather_than_false():
             f"than null, which a consumer reads as out-of-frame")
         assert record["productive"] is False
         reasons = set(record["productivity_reasons"] or ())
-        assert {"anchor_removed", "vj_frame_unresolved"} <= reasons, (
+        assert {"v_anchor_removed", "vj_frame_unresolved"} <= reasons, (
             f"the record does not say why the frame is unresolved: {sorted(reasons)}")
         checked += 1
     assert checked == 40

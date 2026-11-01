@@ -176,7 +176,7 @@ fn restored_anchor_uses_certificates_and_keeps_legacy_policy_unchanged() {
     assert_eq!(assess(&legacy, &cfg).productive, Some(false));
     assert!(assess(&legacy, &cfg)
         .reasons
-        .contains(&Reason::AnchorProvenanceDisrupted));
+        .contains(&Reason::Anchor(AnchorSite::V, AnchorReason::ProvenanceDisrupted)));
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn known_rejected_restored_residue_remains_false_without_an_invented_phase() {
     assert_eq!(a.productive, Some(false));
     assert_eq!(a.vj_in_frame, None);
     assert_eq!(a.stop_codon, None);
-    assert!(a.reasons.contains(&Reason::AnchorResidueRejected));
+    assert!(a.reasons.contains(&Reason::Anchor(AnchorSite::V, AnchorReason::ResidueRejected)));
     assert!(a.reasons.contains(&Reason::CodingPhaseUnresolved));
     let corrected = sim
         .with_base_changed(NucHandle::new(3), b'T')
@@ -288,7 +288,7 @@ fn observing_only_part_of_the_restored_anchor_yields_unknown() {
     let a = assess(&clipped, &cfg);
     assert_eq!(a.productive, None);
     assert_eq!(a.junction, None);
-    assert!(a.reasons.contains(&Reason::AnchorNotObserved));
+    assert!(a.reasons.contains(&Reason::Anchor(AnchorSite::V, AnchorReason::NotObserved)));
 }
 
 #[test]

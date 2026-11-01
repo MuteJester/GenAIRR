@@ -127,7 +127,7 @@ def test_verified_noncanonical_landmark_is_locatable_without_phase():
     assert rec["junction_start"] == 6 and rec["junction_end"] == 15
     assert rec["junction_aa"] == "GPF"
     assert rec["vj_in_frame"] is None and rec["stop_codon"] is None
-    assert "anchor_residue_rejected" in rec["productivity_reasons"]
+    assert "v_anchor_residue_rejected" in rec["productivity_reasons"]
 
 
 def test_identical_sequence_cannot_restore_a_removed_anchor_by_motif_matching():
@@ -144,7 +144,7 @@ def test_identical_sequence_cannot_restore_a_removed_anchor_by_motif_matching():
     assert natural["productive"] is True and rec["productive"] is False
     assert rec["v_trim_3"] == 3 and rec["v_cigar"] == "3M"
     assert rec["np1"] == "TGT" and rec["np1_length"] == 3
-    assert rec["junction"] is None and "anchor_removed" in rec["productivity_reasons"]
+    assert rec["junction"] is None and "v_anchor_removed" in rec["productivity_reasons"]
     assert rec["duplex_repair"]["counts"]["physical"]["untemplated_additions"] == 3
 
 

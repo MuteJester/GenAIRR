@@ -37,7 +37,7 @@ def test_reference_admission_override_does_not_change_productivity_policy(origin
     assert rec["junction"] == rec["junction_aa"] == ""
     assert rec["productivity_policy"] == "canonical_observed_vdj_v1"
     assert rec["productivity_scope"] == "observed_coding_span"
-    assert "reference_anchor_unresolved" in rec["productivity_reasons"]
+    assert "v_reference_anchor_unresolved" in rec["productivity_reasons"]
     assert result.validate_records(cfg).ok
     for strict in (False, True):
         with pytest.raises(ValueError):
