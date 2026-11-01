@@ -357,7 +357,8 @@ it is absent from the whole-record count. They sum to the V part of
 
 ```text
 n_pcr_errors           ← bases mutated by PcrAmplifyPass
-n_quality_errors       ← bases corrupted by SequencingErrorsPass / AmbiguousBaseCallsPass
+n_quality_errors       ← bases corrupted by SequencingErrorsPass
+n_ambiguous_bases      ← positions masked with N by AmbiguousBaseCallsPass
 n_indels               ← total indels across all PolymeraseIndelsPass passes
 n_v_indels             ← indels landing in the V segment
 n_d_indels             ← indels landing in the D segment
@@ -482,8 +483,8 @@ roughly a quarter of them draw the base already present.
 the SHM partition (`n_mutations`, `n_observable_mutations`,
 `n_v_mutations`, `n_d_mutations`, `n_j_mutations`,
 `n_np_mutations`, the six V-subregion fields) describes biology. `n_pcr_errors`,
-`n_quality_errors`, `n_indels`, and the end-loss lengths
-describe library / sequencer artefacts. They live on the same
+`n_quality_errors`, `n_ambiguous_bases`, `n_indels`, and the
+end-loss lengths describe library / sequencer artefacts. They live on the same
 record by design - they don't share a counter.
 
 **Confusing inferred calls with generating alleles.** Standard calls are

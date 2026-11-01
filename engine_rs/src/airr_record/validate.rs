@@ -171,6 +171,10 @@ pub enum RecordValidationIssue {
         reported: i64,
         trace_count: i64,
     },
+    NAmbiguousBasesMismatch {
+        reported: i64,
+        event_count: i64,
+    },
     NIndelsMismatch {
         reported: i64,
         event_count: i64,

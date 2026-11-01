@@ -287,30 +287,59 @@ def test_a_pass_moves_no_counter_belonging_to_another_mechanism(one):
         "does.")
 
 
-def test_the_pass_with_no_counter_of_its_own_moves_none():
-    """`ambiguous_base_calls` masks bases and is reported on no counter.
+def test_the_masking_pass_moves_its_own_counter_and_no_other():
+    """`ambiguous_base_calls` masks bases and now reports how many.
 
-    Its count lives in the trace (`corrupt.ns.count`) and nowhere in the
-    record, which is a declared truth gap on `assay.ambiguous_calls` rather
-    than an oversight -- an N is not a mutation and the suite is explicit that
-    counting it as one would be wrong. Asserted here because the property
-    above is satisfied trivially by a pass that moves no counter at all, and
-    the reason it moves none should be visible rather than inferred.
+    This test used to assert the opposite. `assay.ambiguous_calls` declared a
+    truth gap -- its count lived in the trace (`corrupt.ns.count`) and nowhere
+    in the record -- and the assertion was that no counter moved at all, with
+    a message saying that if the gap ever closed this test should check the
+    count moves instead. The gap has closed: `n_ambiguous_bases` is exported,
+    so this is that test.
+
+    The counter is *realized*, not requested, which is the part worth pinning.
+    A site drawn twice writes `N` over an `N` and masks nothing new, so a
+    record can report fewer than the count asked for -- and asking for `N`
+    where the reference already holds one is not a masking either. Counting
+    the `N`s in the sequence is a different number again, because an allele
+    may carry an `N` of its own.
     """
     from tests.biology import catalog
 
     mechanism = catalog.by_id("assay.ambiguous_calls")
-    assert mechanism.truth_gap, (
-        "assay.ambiguous_calls no longer declares a truth gap, so its count "
-        "may now be exported -- in which case this test should check it moves")
+    assert not mechanism.truth_gap, (
+        "assay.ambiguous_calls declares a truth gap again, so its count is no "
+        "longer exported and this test is asserting against a field that has "
+        "gone away")
+    assert "n_ambiguous_bases" in mechanism.truth_fields, (
+        "the mechanism no longer owns n_ambiguous_bases, so this test is no "
+        "longer checking the counter that belongs to it")
+
     owners = _counter_owners()
     baseline = _records(())
     after = _records((("ambiguous_base_calls", {"count": 4}),))
     moved = _moved(baseline, after)
     assert moved, "masking four bases changed nothing at all"
-    assert moved & set(owners) == set(), (
-        f"a counter moved for a pass that has none: "
-        f"{sorted(moved & set(owners))}")
+
+    counters_moved = moved & set(owners)
+    assert counters_moved == {"n_ambiguous_bases"}, (
+        f"masking moved {sorted(counters_moved)}; it owns n_ambiguous_bases "
+        "and nothing else, so anything more means the pass is reaching into "
+        "another mechanism's truth and anything less means its own counter "
+        "stopped reporting")
+
+    # Realized, not requested: every record's count is the number of
+    # positions that actually differ from the unmasked run, which is at most
+    # what was asked for and is frequently less.
+    for before, after_record in zip(baseline, after):
+        realized = sum(1 for old, new in zip(before["sequence"], after_record["sequence"])
+                       if old != new)
+        assert after_record["n_ambiguous_bases"] == realized, (
+            f"n_ambiguous_bases reports {after_record['n_ambiguous_bases']} "
+            f"where {realized} positions changed")
+        assert after_record["n_ambiguous_bases"] <= 4, (
+            "the realized count exceeded the requested count, which no "
+            "sequence of draws can produce")
 
 
 #: A pass that draws per base, placed after the pass under test, so anything

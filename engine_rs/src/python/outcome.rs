@@ -437,6 +437,7 @@ pub(crate) fn airr_record_to_pydict<'py>(
     dict.set_item("mutation_rate", rec.mutation_rate)?;
     dict.set_item("n_pcr_errors", rec.n_pcr_errors)?;
     dict.set_item("n_quality_errors", rec.n_quality_errors)?;
+    dict.set_item("n_ambiguous_bases", rec.n_ambiguous_bases)?;
     dict.set_item("n_indels", rec.n_indels)?;
     // Per-segment indel counters (audit §6.2 fix). Count
     // `IndelInserted` + `IndelDeleted` events attributed to V/D/J
@@ -783,6 +784,15 @@ fn issue_to_pydict<'py>(
             d.set_item("reported", reported)?;
             d.set_item("expected", trace_count)?;
             details.set_item("source", "trace:corrupt.quality.count")?;
+        }
+        RecordValidationIssue::NAmbiguousBasesMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NAmbiguousBasesMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item("source", "events:corrupt.ns")?;
         }
         RecordValidationIssue::NIndelsMismatch {
             reported,

@@ -393,13 +393,8 @@ MECHANISMS = (
         stage="assay",
         summary="Positions the instrument could not call, which appear as N and "
                 "must not be read as mutations.",
-        truth_fields=("sequence",),
+        truth_fields=("sequence", "n_ambiguous_bases"),
         engine_passes=("NCorruptionPass",),
-        truth_gap="No N-count field is exported, and because the sites are drawn "
-                  "with replacement the requested count is not recoverable from "
-                  "the sequence either (20 requested produced 18 Ns). The claim "
-                  "that matters -- ambiguous positions must not be read as "
-                  "mutations -- has no field of its own to carry it.",
     ),
     Mechanism(
         id="assay.contamination",

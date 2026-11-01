@@ -746,3 +746,54 @@ def test_segment_indels_account_for_everything_when_there_is_no_np_region():
     assert unattributed, (
         "no record lost an indel to an NP region, so this comparison does not "
         "establish where the shortfall comes from")
+
+
+@verifies("assay.ambiguous_calls",
+          claim="n_ambiguous_bases reports the positions that actually became "
+                "N, not the count requested: against the same seed without "
+                "the pass it equals the number of differing positions, on "
+                "every record, and it is strictly below the requested total "
+                "across a run because a draw can land on a position already "
+                "masked",
+          fields=("n_ambiguous_bases",),
+          basis="cross-run")
+def test_the_ambiguous_base_count_is_realized_rather_than_requested():
+    """The field the mechanism's truth gap said did not exist.
+
+    The requested count is not recoverable from the sequence -- sites are
+    drawn with replacement, so 20 requested produced 18 Ns -- and until now
+    nothing in the record carried the realized figure either. The claim that
+    an N is not a mutation had to be made against `sequence` alone.
+
+    The expected value here comes from a second run rather than from the
+    record: with no ambiguous-call pass the same seed produces no N anywhere,
+    so every position that differs between the two runs is one this pass
+    masked, and that number is what the field must say. A field echoing
+    `count` back would fail on the repeat hits; a field counting Ns in the
+    sequence would agree here and is not what is asserted -- the comparison is
+    against the other run.
+    """
+    requested = 6
+    plain = experiment_builder.recombined()
+    masked = experiment_builder.recombined().ambiguous_base_calls(count=requested)
+    clean = [outcome.airr_record(plain.refdata)["sequence"]
+             for outcome in plain.run(n=40, seed=5)]
+    records = [outcome.airr_record(masked.refdata)
+               for outcome in masked.run(n=40, seed=5)]
+    total = 0
+    for index, (before, record) in enumerate(zip(clean, records)):
+        after = record["sequence"]
+        assert len(before) == len(after), (
+            f"record {index}: masking changed the molecule's length")
+        expected = sum(1 for position in range(len(before))
+                       if before[position].upper() != after[position].upper())
+        assert record["n_ambiguous_bases"] == expected, (
+            f"record {index}: n_ambiguous_bases is "
+            f"{record['n_ambiguous_bases']} where {expected} positions "
+            f"differ from the unmasked run")
+        assert record["n_mutations"] == 0, (
+            "an ambiguous position was counted as a mutation as well")
+        total += expected
+    assert total < requested * 40, (
+        f"every draw masked a fresh position ({total} of {requested * 40}), "
+        "so this run cannot tell a realized count from the requested one")

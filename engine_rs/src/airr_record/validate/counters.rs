@@ -146,6 +146,36 @@ pub(super) fn check_counters(
         });
     }
 
+    // Walked here rather than through `realized_substitutions`, which the two
+    // checks above share with the builder and so can only catch tampering.
+    // This one asserts more than the builder does: that the pass wrote `N` and
+    // nothing else. A pass that masked a position with a definite base would
+    // satisfy the builder's count and be caught here.
+    let mut ambiguous_realized = 0i64;
+    for pass_record in outcome.events() {
+        if pass_record.pass_name != crate::address::CORRUPT_NS {
+            continue;
+        }
+        for event in &pass_record.simulation_events {
+            if let crate::ir::SimulationEvent::BaseChanged {
+                old_base, new_base, ..
+            } = event
+            {
+                if new_base.eq_ignore_ascii_case(&b'N')
+                    && !old_base.eq_ignore_ascii_case(new_base)
+                {
+                    ambiguous_realized += 1;
+                }
+            }
+        }
+    }
+    if record.n_ambiguous_bases != ambiguous_realized {
+        issues.push(RecordValidationIssue::NAmbiguousBasesMismatch {
+            reported: record.n_ambiguous_bases,
+            event_count: ambiguous_realized,
+        });
+    }
+
     // n_indels and per-segment indel counters from event ledger of the
     // corrupt.indel pass only (per audit §6.1 / §6.2).
     let mut total = 0i64;

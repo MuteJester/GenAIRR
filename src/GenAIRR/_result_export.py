@@ -161,6 +161,7 @@ _DEFAULT_COLUMN_ORDER = [
     "mutation_rate",
     "n_pcr_errors",
     "n_quality_errors",
+    "n_ambiguous_bases",
     "n_indels",
     # Per-segment indel counters (docs/indel_provenance_audit.md
     # §6.2). NP1/NP2 indels are excluded from these but still
