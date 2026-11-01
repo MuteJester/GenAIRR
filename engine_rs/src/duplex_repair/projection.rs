@@ -4,6 +4,7 @@ use super::bindings::DuplexReferenceBindings;
 use super::*;
 use crate::codon::translate_codon;
 use crate::ir::Segment;
+use crate::productivity::Reason;
 use crate::refdata::RefDataConfig;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -223,7 +224,7 @@ struct Landmark {
     codon_start: Option<usize>,
     codon_end: Option<usize>,
     accepted: Option<bool>,
-    reason: &'static str,
+    reason: Reason,
 }
 
 /// The query span of whatever survives of the codon at reference `anchor..anchor + 3`, or `None`
@@ -265,10 +266,10 @@ fn landmark(
         reason,
     };
     if !source.landmark_ready {
-        return unknown("reference_anchor_unresolved");
+        return unknown(Reason::ReferenceAnchorUnresolved);
     }
     let Some(anchor) = source.anchor else {
-        return unknown("reference_anchor_unresolved");
+        return unknown(Reason::ReferenceAnchorUnresolved);
     };
     let (codon_start, codon_end) = codon_span(path, anchor).unzip();
     let mut positions = Vec::new();
@@ -283,11 +284,11 @@ fn landmark(
                 codon_start,
                 codon_end,
                 accepted: Some(false),
-                reason: "anchor_removed",
+                reason: Reason::AnchorRemoved,
             };
         }
         if matches.len() != 1 {
-            return unknown("anchor_placement_ambiguous");
+            return unknown(Reason::AnchorPlacementAmbiguous);
         }
         let q = matches[0].query_position;
         if path
@@ -295,7 +296,7 @@ fn landmark(
             .iter()
             .any(|b| b.query_position == q && b.reference_position != g)
         {
-            return unknown("anchor_placement_ambiguous");
+            return unknown(Reason::AnchorPlacementAmbiguous);
         }
         positions.push(q);
     }
@@ -304,7 +305,7 @@ fn landmark(
             codon_start,
             codon_end,
             accepted: Some(false),
-            reason: "anchor_provenance_disrupted",
+            reason: Reason::AnchorProvenanceDisrupted,
         };
     }
     let q = positions[0];
@@ -317,9 +318,9 @@ fn landmark(
         codon_end,
         accepted,
         reason: match accepted {
-            Some(true) => "anchor_accepted",
-            Some(false) => "anchor_residue_rejected",
-            None => "anchor_ambiguous",
+            Some(true) => Reason::AnchorAccepted,
+            Some(false) => Reason::AnchorResidueRejected,
+            None => Reason::AnchorAmbiguous,
         },
     }
 }
@@ -389,25 +390,25 @@ fn assess(
         reasons.push(j.reason);
     }
     if frame.is_none() {
-        reasons.push("coding_phase_unresolved");
+        reasons.push(Reason::CodingPhaseUnresolved);
     }
     match in_frame {
-        Some(false) => reasons.push("vj_out_of_frame"),
-        None => reasons.push("vj_frame_unresolved"),
+        Some(false) => reasons.push(Reason::VjOutOfFrame),
+        None => reasons.push(Reason::VjFrameUnresolved),
         _ => (),
     }
     match stop {
-        Some(true) => reasons.push("coding_stop"),
-        None => reasons.push("coding_stop_unresolved"),
+        Some(true) => reasons.push(Reason::CodingStop),
+        None => reasons.push(Reason::CodingStopUnresolved),
         _ => (),
     }
     match tail {
-        Some(false) => reasons.push("j_tail_out_of_frame"),
-        None => reasons.push("j_tail_unresolved"),
+        Some(false) => reasons.push(Reason::JTailOutOfFrame),
+        None => reasons.push(Reason::JTailUnresolved),
         _ => (),
     }
     if productive == Some(true) {
-        reasons.push("accepted");
+        reasons.push(Reason::Accepted);
     }
     for (field, value) in [
         ("productive", json!(productive)),
@@ -438,7 +439,10 @@ fn assess(
         "productivity_scope".into(),
         json!(crate::productivity::SCOPE),
     );
-    record.insert("productivity_reasons".into(), json!(reasons));
+    record.insert(
+        "productivity_reasons".into(),
+        json!(reasons.iter().map(|r| r.as_str()).collect::<Vec<_>>()),
+    );
     set(
         record,
         availability,

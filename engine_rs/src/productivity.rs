@@ -379,11 +379,141 @@ pub fn coding_span(view: &impl SequenceView, refdata: &RefDataConfig) -> Option<
     Some(CodingSpan { phase, start, end })
 }
 
+/// The productivity reason vocabulary.
+///
+/// `productivity_reasons` is a contract: the record validator compares the
+/// projected list against its own re-derivation joined by comma
+/// (`validate/junction.rs`), and consumers read the strings to find out which
+/// predicate failed. Until this enum existed the vocabulary was 30
+/// `&'static str` literals spread across the production assessment, the duplex
+/// projection and the validator's oracle, so a typo in one copy was a runtime
+/// validator mismatch on that path's records only -- never a compile error.
+///
+/// The oracle keeps its own arithmetic and its own IUPAC resolver: it must,
+/// since a validator that calls what it validates checks nothing. It shares
+/// only the *names*, which is the part that is a contract.
+///
+/// Not to be confused with the duplex *layout* reasons (`path.reason`:
+/// `body_absent_after_repair`, `segment_alignment_unresolved`, …), which are a
+/// separate vocabulary describing why a path could not be read at all.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum Reason {
+    // ── anchor verdicts ─────────────────────────────────────────
+    /// No assignment for the segment, so there is no allele to anchor in.
+    AssignmentMissing,
+    /// The assignment names an allele the reference does not hold.
+    ReferenceMissing,
+    /// The allele carries no usable anchor codon. Six of the 114 bundled TCRB
+    /// alleles are in this class.
+    ReferenceAnchorUnresolved,
+    /// The segment was never assembled into the molecule.
+    SegmentUnassembled,
+    /// Trimming ate the anchor codon.
+    AnchorRemoved,
+    /// The anchor lies outside the observed window of the allele.
+    AnchorNotObserved,
+    /// A base of the anchor codon no longer carries the germline position it
+    /// needs to, so the codon cannot be read.
+    AnchorProvenanceDisrupted,
+    /// The anchor codon survived and translates to the expected residue.
+    AnchorAccepted,
+    /// The anchor codon survived and translates to something else.
+    AnchorResidueRejected,
+    /// The anchor codon survived but holds an ambiguous base, so the residue
+    /// could be the expected one or not.
+    AnchorAmbiguous,
+    /// Duplex only: the anchor could be placed at more than one position on
+    /// the coupled path.
+    AnchorPlacementAmbiguous,
+    // ── the five-predicate conjunction ──────────────────────────
+    /// The coding span, and so the reading frame, could not be resolved.
+    CodingPhaseUnresolved,
+    VjOutOfFrame,
+    VjFrameUnresolved,
+    CodingStop,
+    CodingStopUnresolved,
+    JTailOutOfFrame,
+    JTailUnresolved,
+    /// Every predicate held. Present only on a productive record.
+    Accepted,
+}
+
+impl Reason {
+    /// The exported spelling. These strings are the external contract and do
+    /// not change without a documented field-reference change.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AssignmentMissing => "assignment_missing",
+            Self::ReferenceMissing => "reference_missing",
+            Self::ReferenceAnchorUnresolved => "reference_anchor_unresolved",
+            Self::SegmentUnassembled => "segment_unassembled",
+            Self::AnchorRemoved => "anchor_removed",
+            Self::AnchorNotObserved => "anchor_not_observed",
+            Self::AnchorProvenanceDisrupted => "anchor_provenance_disrupted",
+            Self::AnchorAccepted => "anchor_accepted",
+            Self::AnchorResidueRejected => "anchor_residue_rejected",
+            Self::AnchorAmbiguous => "anchor_ambiguous",
+            Self::AnchorPlacementAmbiguous => "anchor_placement_ambiguous",
+            Self::CodingPhaseUnresolved => "coding_phase_unresolved",
+            Self::VjOutOfFrame => "vj_out_of_frame",
+            Self::VjFrameUnresolved => "vj_frame_unresolved",
+            Self::CodingStop => "coding_stop",
+            Self::CodingStopUnresolved => "coding_stop_unresolved",
+            Self::JTailOutOfFrame => "j_tail_out_of_frame",
+            Self::JTailUnresolved => "j_tail_unresolved",
+            Self::Accepted => "accepted",
+        }
+    }
+
+    /// The exported spelling as an owned `String`, for the field projections.
+    pub fn to_field(self) -> String {
+        self.as_str().to_string()
+    }
+
+    /// Every variant, for tests that assert the vocabulary is closed.
+    pub const ALL: [Self; 19] = [
+        Self::AssignmentMissing,
+        Self::ReferenceMissing,
+        Self::ReferenceAnchorUnresolved,
+        Self::SegmentUnassembled,
+        Self::AnchorRemoved,
+        Self::AnchorNotObserved,
+        Self::AnchorProvenanceDisrupted,
+        Self::AnchorAccepted,
+        Self::AnchorResidueRejected,
+        Self::AnchorAmbiguous,
+        Self::AnchorPlacementAmbiguous,
+        Self::CodingPhaseUnresolved,
+        Self::VjOutOfFrame,
+        Self::VjFrameUnresolved,
+        Self::CodingStop,
+        Self::CodingStopUnresolved,
+        Self::JTailOutOfFrame,
+        Self::JTailUnresolved,
+        Self::Accepted,
+    ];
+}
+
+/// The reason list as the record and the contract paths carry it: the
+/// spellings joined by comma.
+///
+/// One function because the separator is part of the contract -- the record
+/// validator compares its own re-derivation against the projected list by
+/// joining both this way (`validate/junction.rs`), so a second site choosing
+/// `", "` would read as a mismatch on every unproductive record.
+pub fn joined(reasons: &[Reason]) -> String {
+    reasons
+        .iter()
+        .map(|r| r.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 #[derive(Clone, Debug)]
 pub struct AnchorAssessment {
     pub accepted: Option<bool>,
     pub position: Option<usize>,
-    pub reason: &'static str,
+    pub reason: Reason,
 }
 
 pub fn anchor(
@@ -397,43 +527,43 @@ pub fn anchor(
         reason,
     };
     let Some(inst) = view.assignment(segment) else {
-        return unknown("assignment_missing");
+        return unknown(Reason::AssignmentMissing);
     };
     let Some(allele) = refdata.get(segment, inst.allele_id) else {
-        return unknown("reference_missing");
+        return unknown(Reason::ReferenceMissing);
     };
     if !reference_ready(refdata, segment, inst.allele_id) {
-        return unknown("reference_anchor_unresolved");
+        return unknown(Reason::ReferenceAnchorUnresolved);
     }
     let a = usize::from(allele.anchor.unwrap());
     let Some((start, end)) = view.region(segment) else {
-        return unknown("segment_unassembled");
+        return unknown(Reason::SegmentUnassembled);
     };
     let retained_end = allele.seq.len().saturating_sub(usize::from(inst.trim_3));
     if usize::from(inst.trim_5) > a || a + 3 > retained_end {
         return AnchorAssessment {
             accepted: Some(false),
             position: None,
-            reason: "anchor_removed",
+            reason: Reason::AnchorRemoved,
         };
     }
     let observed_start = inst.observed_ref_start.unwrap_or(u32::from(inst.trim_5)) as usize;
     let observed_end = inst.observed_ref_end.unwrap_or(retained_end as u32) as usize;
     if a < observed_start || a + 3 > observed_end || start == end {
-        return unknown("anchor_not_observed");
+        return unknown(Reason::AnchorNotObserved);
     }
     let position = view.germline_position(segment, a as u16);
     let Some(p) = position else {
         return AnchorAssessment {
             accepted: Some(false),
             position: None,
-            reason: "anchor_removed",
+            reason: Reason::AnchorRemoved,
         };
     };
     let mut codon = [b'N'; 3];
     for (offset, byte) in codon.iter_mut().enumerate() {
         let Some(n) = view.nucleotide(p + offset) else {
-            return unknown("anchor_not_observed");
+            return unknown(Reason::AnchorNotObserved);
         };
         if p + offset >= end
             || view
@@ -444,7 +574,7 @@ pub fn anchor(
             return AnchorAssessment {
                 accepted: Some(false),
                 position: Some(p),
-                reason: "anchor_provenance_disrupted",
+                reason: Reason::AnchorProvenanceDisrupted,
             };
         }
         *byte = n.base;
@@ -454,9 +584,9 @@ pub fn anchor(
         accepted,
         position: Some(p),
         reason: match accepted {
-            Some(true) => "anchor_accepted",
-            Some(false) => "anchor_residue_rejected",
-            None => "anchor_ambiguous",
+            Some(true) => Reason::AnchorAccepted,
+            Some(false) => Reason::AnchorResidueRejected,
+            None => Reason::AnchorAmbiguous,
         },
     }
 }
@@ -548,7 +678,7 @@ pub struct ProductivityAssessment {
     /// their tri-state depends on provenance a reader does not have.
     pub v_anchor_accepted: Option<bool>,
     pub j_anchor_accepted: Option<bool>,
-    pub reasons: Vec<&'static str>,
+    pub reasons: Vec<Reason>,
 }
 
 pub fn assess(view: &impl SequenceView, refdata: &RefDataConfig) -> ProductivityAssessment {
@@ -590,25 +720,25 @@ pub fn assess(view: &impl SequenceView, refdata: &RefDataConfig) -> Productivity
         reasons.push(j.reason);
     }
     if frame.is_none() {
-        reasons.push("coding_phase_unresolved");
+        reasons.push(Reason::CodingPhaseUnresolved);
     }
     match vj_in_frame {
-        Some(false) => reasons.push("vj_out_of_frame"),
-        None => reasons.push("vj_frame_unresolved"),
+        Some(false) => reasons.push(Reason::VjOutOfFrame),
+        None => reasons.push(Reason::VjFrameUnresolved),
         _ => {}
     }
     match stop_codon {
-        Some(true) => reasons.push("coding_stop"),
-        None => reasons.push("coding_stop_unresolved"),
+        Some(true) => reasons.push(Reason::CodingStop),
+        None => reasons.push(Reason::CodingStopUnresolved),
         _ => {}
     }
     match tail {
-        Some(false) => reasons.push("j_tail_out_of_frame"),
-        None => reasons.push("j_tail_unresolved"),
+        Some(false) => reasons.push(Reason::JTailOutOfFrame),
+        None => reasons.push(Reason::JTailUnresolved),
         _ => {}
     }
     if productive == Some(true) {
-        reasons.push("accepted");
+        reasons.push(Reason::Accepted);
     }
     ProductivityAssessment {
         productive,
@@ -666,7 +796,10 @@ pub fn record_fields(
         ("junction_start", json!(junction.map(|x| x.0))),
         ("junction_end", json!(junction.map(|x| x.1))),
         ("junction_length", json!(junction.map(|(a, b)| b - a))),
-        ("productivity_reasons", json!(reasons)),
+        (
+            "productivity_reasons",
+            json!(reasons.iter().map(|r| r.as_str()).collect::<Vec<_>>()),
+        ),
     ]
 }
 
@@ -682,6 +815,46 @@ mod tests {
     use crate::pass::Outcome;
     use crate::refdata::ChainType;
     use crate::trace::Trace;
+
+    #[test]
+    fn every_reason_has_its_own_spelling() {
+        // Two variants sharing a string would make the vocabulary lossy: a
+        // consumer reading `productivity_reasons` could not tell which
+        // predicate failed, and the validator's comparison would accept a
+        // re-derivation that reached the other one.
+        let mut spellings: Vec<&str> = Reason::ALL.iter().map(|r| r.as_str()).collect();
+        let total = spellings.len();
+        spellings.sort_unstable();
+        spellings.dedup();
+        assert_eq!(
+            spellings.len(),
+            total,
+            "two Reason variants share a spelling: {spellings:?}"
+        );
+        for spelling in spellings {
+            assert!(
+                !spelling.is_empty()
+                    && spelling
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b == b'_'),
+                "reason {spelling:?} is not lower snake_case, and these \
+                 strings are the exported contract"
+            );
+        }
+    }
+
+    #[test]
+    fn the_reason_list_is_joined_by_comma_without_spaces() {
+        // The separator is contract, not formatting: the record validator
+        // compares its own re-derivation against the projected list by
+        // joining both, so a second convention anywhere reads as a mismatch
+        // on every unproductive record.
+        assert_eq!(
+            joined(&[Reason::VjOutOfFrame, Reason::CodingStop]),
+            "vj_out_of_frame,coding_stop"
+        );
+        assert_eq!(joined(&[]), "");
+    }
 
     fn fixture(v: &[u8], j: &[u8]) -> (RefDataConfig, Simulation) {
         let mut cfg = RefDataConfig::empty(ChainType::Vj);

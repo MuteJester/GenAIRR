@@ -80,7 +80,7 @@ pub fn build_airr_record(
         j_anchor_accepted,
         reasons,
     } = &assessment;
-    rec.productivity_reasons = reasons.iter().map(|r| (*r).into()).collect();
+    rec.productivity_reasons = reasons.iter().map(|r| r.to_field()).collect();
     rec.productive = *productive;
     rec.vj_in_frame = *vj_in_frame;
     rec.stop_codon = *stop_codon;

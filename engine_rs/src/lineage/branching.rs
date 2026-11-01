@@ -63,7 +63,7 @@ fn require_productive(
                 "lineage.productive",
                 vec![ContractViolation::new(
                     crate::productivity::policy_name(sim),
-                    assessment.reasons.join(","),
+                    crate::productivity::joined(&assessment.reasons),
                 )],
             ));
         }

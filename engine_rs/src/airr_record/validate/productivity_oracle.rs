@@ -1,6 +1,7 @@
 //! Deliberately independent, slow assessment for record validation. It does not
 //! call the projection or production productivity/frame/anchor helpers.
 use crate::ir::{Segment, Simulation};
+use crate::productivity::Reason;
 use crate::refdata::{AnchorEvidenceStatus, RefDataConfig};
 
 pub(super) struct Oracle {
@@ -19,7 +20,7 @@ pub(super) struct Oracle {
     pub j_tail_in_frame: Option<bool>,
     pub v_anchor_accepted: Option<bool>,
     pub j_anchor_accepted: Option<bool>,
-    pub reasons: Vec<&'static str>,
+    pub reasons: Vec<Reason>,
 }
 
 fn resolutions(b: u8) -> &'static [u8] {
@@ -76,7 +77,7 @@ struct Landmark {
     /// base's placement: this codon's share of the junction window.
     codon_start: Option<usize>,
     codon_end: Option<usize>,
-    reason: &'static str,
+    reason: Reason,
 }
 
 /// Independent reading of certified placements. Do not use the production
@@ -119,12 +120,12 @@ fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Land
         position: None,
         codon_start: None,
         codon_end: None,
-        reason: "assignment_missing",
+        reason: Reason::AssignmentMissing,
     };
     let Some(inst) = sim.assignments.get(segment) else {
         return out;
     };
-    out.reason = "reference_missing";
+    out.reason = Reason::ReferenceMissing;
     let Some(allele) = refdata.get(segment, inst.allele_id) else {
         return out;
     };
@@ -155,12 +156,12 @@ fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Land
         .filter(|&p| p < 3)
         .map(usize::from)
         .or_else(|| (evidence_ok && canonical_source).then(|| allele.anchor.unwrap() as usize % 3));
-    out.reason = "reference_anchor_unresolved";
+    out.reason = Reason::ReferenceAnchorUnresolved;
     if !out.ready {
         return out;
     }
     let a = allele.anchor.unwrap() as usize;
-    out.reason = "segment_unassembled";
+    out.reason = Reason::SegmentUnassembled;
     let Some(region) = sim.sequence.regions.iter().find(|r| r.segment == segment) else {
         return out;
     };
@@ -184,42 +185,42 @@ fn landmark(sim: &Simulation, refdata: &RefDataConfig, segment: Segment) -> Land
     }
     if inst.trim_5 as usize > a || a + 3 > retained_end {
         out.accepted = Some(false);
-        out.reason = "anchor_removed";
+        out.reason = Reason::AnchorRemoved;
         return out;
     }
     if a < inst.observed_ref_start.unwrap_or(u32::from(inst.trim_5)) as usize
         || a + 3 > inst.observed_ref_end.unwrap_or(retained_end as u32) as usize
         || begin == end
     {
-        out.reason = "anchor_not_observed";
+        out.reason = Reason::AnchorNotObserved;
         return out;
     }
     let pool = sim.pool.as_slice();
     out.position = (begin..end).find(|&p| placed_reference(sim, segment, p) == Some(a));
     let Some(p) = out.position else {
         out.accepted = Some(false);
-        out.reason = "anchor_removed";
+        out.reason = Reason::AnchorRemoved;
         return out;
     };
     let mut codon = Vec::new();
     for offset in 0..3 {
         let Some(n) = pool.get(p + offset) else {
             out.position = None;
-            out.reason = "anchor_not_observed";
+            out.reason = Reason::AnchorNotObserved;
             return out;
         };
         if p + offset >= end || placed_reference(sim, segment, p + offset) != Some(a + offset) {
             out.accepted = Some(false);
-            out.reason = "anchor_provenance_disrupted";
+            out.reason = Reason::AnchorProvenanceDisrupted;
             return out;
         }
         codon.push(n.base);
     }
     out.accepted = predicate(&codon, accepts);
     out.reason = match out.accepted {
-        Some(true) => "anchor_accepted",
-        Some(false) => "anchor_residue_rejected",
-        None => "anchor_ambiguous",
+        Some(true) => Reason::AnchorAccepted,
+        Some(false) => Reason::AnchorResidueRejected,
+        None => Reason::AnchorAmbiguous,
     };
     out
 }
@@ -331,25 +332,25 @@ pub(super) fn derive(sim: &Simulation, refdata: &RefDataConfig) -> Oracle {
         reasons.push(j.reason);
     }
     if phase.is_none() {
-        reasons.push("coding_phase_unresolved");
+        reasons.push(Reason::CodingPhaseUnresolved);
     }
     match frame {
-        Some(false) => reasons.push("vj_out_of_frame"),
-        None => reasons.push("vj_frame_unresolved"),
+        Some(false) => reasons.push(Reason::VjOutOfFrame),
+        None => reasons.push(Reason::VjFrameUnresolved),
         _ => {}
     }
     match stop {
-        Some(true) => reasons.push("coding_stop"),
-        None => reasons.push("coding_stop_unresolved"),
+        Some(true) => reasons.push(Reason::CodingStop),
+        None => reasons.push(Reason::CodingStopUnresolved),
         _ => {}
     }
     match tail {
-        Some(false) => reasons.push("j_tail_out_of_frame"),
-        None => reasons.push("j_tail_unresolved"),
+        Some(false) => reasons.push(Reason::JTailOutOfFrame),
+        None => reasons.push(Reason::JTailUnresolved),
         _ => {}
     }
     if productive == Some(true) {
-        reasons.push("accepted");
+        reasons.push(Reason::Accepted);
     }
     Oracle {
         productive,

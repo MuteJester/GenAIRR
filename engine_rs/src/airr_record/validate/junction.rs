@@ -115,7 +115,7 @@ pub(super) fn check_junction(
         (
             "productivity_reasons",
             record.productivity_reasons.join(","),
-            expected.reasons.join(","),
+            crate::productivity::joined(&expected.reasons),
         ),
     ] {
         if reported != recomputed {

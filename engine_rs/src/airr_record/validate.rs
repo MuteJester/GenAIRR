@@ -63,7 +63,10 @@ pub(crate) fn validate_duplex_productivity(
             json!(crate::productivity::DUPLEX_POLICY),
         ),
         ("productivity_scope", json!(crate::productivity::SCOPE)),
-        ("productivity_reasons", json!(expected.reasons)),
+        (
+            "productivity_reasons",
+            json!(expected.reasons.iter().map(|r| r.as_str()).collect::<Vec<_>>()),
+        ),
     ]
     .into_iter()
     .filter_map(|(field, value)| {

@@ -411,7 +411,7 @@ pub(crate) fn execute_transactional(
         });
         if assessment.as_ref().and_then(|a| a.productive) != Some(true) {
             let reason = assessment
-                .map(|a| a.reasons.join(","))
+                .map(|a| crate::productivity::joined(&a.reasons))
                 .unwrap_or_else(|| "reference_missing".into());
             return Err(abort(
                 PassError::contract_violation(
