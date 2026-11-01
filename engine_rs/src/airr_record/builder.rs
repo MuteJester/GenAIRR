@@ -571,6 +571,29 @@ pub fn build_airr_record(
         rec.np2 = rec.sequence[start..end].to_string();
         rec.np2_length = (end - start) as i64;
     }
+    // Partition each np interval by what wrote each base. The three counts
+    // sum to the region length because a base with no germline coordinate is
+    // a P addition, a TdT addition or a later polymerase insertion and
+    // exactly one of those, which
+    // `tests/biology/junction/test_base_provenance_exposure.py` checks per
+    // position rather than assuming.
+    //
+    // Counted here rather than from the np string: case would be the only
+    // signal there, and case is overloaded -- `sequencing_errors` lowercases
+    // what it corrupts and hypermutation writes uppercase, so a corrupted TdT
+    // addition reads as palindromic.
+    if let Some((start, end)) = np1_bounds {
+        let (tdt, p, inserted) = np_origin_counts(sim, start, end);
+        rec.np1_n_tdt = tdt;
+        rec.np1_n_p = p;
+        rec.np1_n_inserted = inserted;
+    }
+    if let Some((start, end)) = np2_bounds {
+        let (tdt, p, inserted) = np_origin_counts(sim, start, end);
+        rec.np2_n_tdt = tdt;
+        rec.np2_n_p = p;
+        rec.np2_n_inserted = inserted;
+    }
     if let Some(frame) = crate::coding::coding_frame(sim, refdata) {
         if let Some((start, end)) = np1_bounds {
             rec.np1_aa = aa_slice_for_region(start, end, frame.phase, &rec.sequence_aa);
@@ -656,7 +679,7 @@ pub fn build_airr_record(
 /// A non-overlapping inter-segment interval in the emitted sequence.
 /// Missing alignments do not establish an NP interval, and overlapping
 /// segment hypotheses have no intervening nucleotides.
-fn np_interval(
+pub(crate) fn np_interval(
     left_end: Option<i64>,
     right_start: Option<i64>,
     sequence_len: usize,
@@ -775,6 +798,38 @@ fn original_v_call_from_assignment(
 ///   not recoverable and is not counted.
 /// - A position masked with `N`, on either side, carries no recoverable
 ///   substitution: `N` is the absence of a call, not a base that differs.
+/// `(tdt, p, inserted)` over a pool span, from each nucleotide's flags.
+///
+/// Shared by the builder and the record validator so the two cannot disagree
+/// about which bucket owns a base. A position carrying none of the three
+/// flags is counted in none of them, which is correct and is why the
+/// validator checks the sum against the region length rather than trusting
+/// it: a templated base inside the np interval would be a real finding, not
+/// something to silently absorb into a bucket.
+pub(crate) fn np_origin_counts(
+    sim: &crate::ir::Simulation,
+    start: usize,
+    end: usize,
+) -> (i64, i64, i64) {
+    use crate::ir::flag;
+    let mut tdt = 0i64;
+    let mut p = 0i64;
+    let mut inserted = 0i64;
+    for index in start..end {
+        let Some(nuc) = sim.pool.get(crate::ir::NucHandle::new(index as u32)) else {
+            continue;
+        };
+        if nuc.flags.contains(flag::INDEL_INSERTED) {
+            inserted += 1;
+        } else if nuc.flags.contains(flag::P_NUC) {
+            p += 1;
+        } else if nuc.flags.contains(flag::N_NUC) {
+            tdt += 1;
+        }
+    }
+    (tdt, p, inserted)
+}
+
 /// Route a V germline position into its IMGT subregion.
 ///
 /// `None` is the catch-all bucket -- `n_v_unannotated_*` -- and it covers

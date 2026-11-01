@@ -330,3 +330,104 @@ fn each_counter_check_rejects_only_its_own_field() {
         );
     }
 }
+
+#[test]
+fn an_honest_record_trips_no_np_partition_check() {
+    // The floor under the two below, and a real assertion in its own right:
+    // the np origin partition is re-derived on every record, so a clean
+    // record tripping it would mean the walk and the builder disagree about
+    // which bucket owns a base.
+    let cfg = common::vdj_ambiguous_refdata();
+    let (outcome, rec) = run_counted(&cfg, 17);
+
+    let np_issues: Vec<_> = validate_airr_record(&rec, &outcome, &cfg)
+        .into_iter()
+        .filter(|i| {
+            matches!(
+                i,
+                RecordValidationIssue::NpPartitionMismatch { .. }
+                    | RecordValidationIssue::NpPartitionOriginAmbiguous { .. }
+            )
+        })
+        .collect();
+    assert!(
+        np_issues.is_empty(),
+        "clean record tripped the np partition check: {:?}",
+        np_issues,
+    );
+}
+
+#[test]
+fn a_tampered_np_origin_count_is_rejected() {
+    // The np interval is partitioned by what wrote each base, and the
+    // validator walks the pool flags itself rather than calling the helper
+    // the builder uses -- a helper shared with the thing it checks can only
+    // catch a tampered record, never a wrong projection.
+    let cfg = common::vdj_ambiguous_refdata();
+    let (outcome, mut rec) = run_counted(&cfg, 17);
+    let truth = rec.np1_n_tdt;
+
+    rec.np1_n_tdt = truth + 3;
+
+    let issues = validate_airr_record(&rec, &outcome, &cfg);
+    let found = issues.iter().find_map(|i| match i {
+        RecordValidationIssue::NpPartitionMismatch {
+            region: "np1",
+            bucket: "tdt",
+            reported,
+            flag_count,
+        } => Some((*reported, *flag_count)),
+        _ => None,
+    });
+    assert_eq!(
+        found,
+        Some((truth + 3, truth)),
+        "validator did not reject np1_n_tdt={} against {} flagged positions; \
+         issues were {:?}",
+        truth + 3,
+        truth,
+        issues,
+    );
+}
+
+#[test]
+fn moving_a_base_between_np_buckets_is_rejected_though_the_sum_still_holds() {
+    // The case the sum identity cannot see, and the reason the validator
+    // compares each bucket rather than only their total. Take one base from
+    // the TdT count and give it to the P count: the three still add to
+    // np1_length, and every base is still accounted for, but two buckets now
+    // lie about which pass wrote it.
+    //
+    // Demonstrated rather than assumed: replacing the builder's projection
+    // with "every flagged base is TdT" left
+    // test_the_np_partition_sums_to_the_np_length passing on both of its
+    // parameters.
+    let cfg = common::vdj_ambiguous_refdata();
+    let (outcome, mut rec) = run_counted(&cfg, 17);
+    assert!(
+        rec.np1_n_tdt > 0,
+        "np1 carries no TdT addition under the counted plan, so there is \
+         nothing to move out of that bucket",
+    );
+    let sum_before = rec.np1_n_tdt + rec.np1_n_p + rec.np1_n_inserted;
+
+    rec.np1_n_tdt -= 1;
+    rec.np1_n_p += 1;
+    assert_eq!(
+        rec.np1_n_tdt + rec.np1_n_p + rec.np1_n_inserted,
+        sum_before,
+        "the tamper was supposed to preserve the sum",
+    );
+
+    let fired: Vec<_> = validate_airr_record(&rec, &outcome, &cfg)
+        .into_iter()
+        .filter(|i| matches!(i, RecordValidationIssue::NpPartitionMismatch { .. }))
+        .collect();
+    assert_eq!(
+        fired.len(),
+        2,
+        "moving a base between buckets should be reported against both \
+         buckets, got {:?}",
+        fired,
+    );
+}

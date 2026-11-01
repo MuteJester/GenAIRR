@@ -86,6 +86,38 @@ pub struct AirrRecord {
     pub np2_aa: String,
     pub np2_length: i64,
 
+    /// The np intervals partitioned by what wrote each base.
+    ///
+    /// `np1`/`np2` are the stretch between the segment alignment bounds, and
+    /// that is all they promise. The stretch also contains the palindromic
+    /// additions, which the documentation says, and any polymerase insertion
+    /// that landed between the two segments, which nothing said: measured by
+    /// running one seed with and without `polymerase_indels`, 24 of 200
+    /// records had an np length move by the insertion. So `np1_length` was
+    /// not the TdT amount and nothing in the record said by how much it
+    /// differed.
+    ///
+    /// The three counts of each triple sum to that region's length. Counted
+    /// from `P_NUC` / `N_NUC` / `INDEL_INSERTED`, which the engine already
+    /// records per nucleotide -- no new modelling, a projection over
+    /// provenance it had all along.
+    pub np1_n_tdt: i64,
+    /// Palindromic (P) additions inside the np1 interval. See
+    /// [`Self::np1_n_tdt`].
+    pub np1_n_p: i64,
+    /// Polymerase insertions inside the np1 interval, which have no germline
+    /// provenance and are not part of the recombination. See
+    /// [`Self::np1_n_tdt`].
+    pub np1_n_inserted: i64,
+    /// TdT additions inside the np2 interval. See [`Self::np1_n_tdt`].
+    pub np2_n_tdt: i64,
+    /// Palindromic (P) additions inside the np2 interval. See
+    /// [`Self::np1_n_tdt`].
+    pub np2_n_p: i64,
+    /// Polymerase insertions inside the np2 interval. See
+    /// [`Self::np1_n_tdt`].
+    pub np2_n_inserted: i64,
+
     // Per-end P-nucleotide length counters (Slice —
     // P-nucleotide v1). Counts of templated palindromic
     // (P-)nucleotide bytes emitted by `PAdditionPass` at each

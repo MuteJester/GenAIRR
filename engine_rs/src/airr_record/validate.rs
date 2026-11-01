@@ -175,6 +175,25 @@ pub enum RecordValidationIssue {
         reported: i64,
         event_count: i64,
     },
+    /// One bucket of an np interval's origin partition disagrees with the
+    /// per-nucleotide flags over that interval.
+    NpPartitionMismatch {
+        region: &'static str,
+        bucket: &'static str,
+        reported: i64,
+        flag_count: i64,
+    },
+    /// A position inside an np interval carries no origin flag, or more than
+    /// one. The np interval is by construction the stretch no segment
+    /// alignment covers, so every base in it was written by the
+    /// recombination or by a later insertion -- a templated base there, or a
+    /// base claimed by two origins, means the partition cannot be trusted
+    /// even though its three counts may still sum to the region length.
+    NpPartitionOriginAmbiguous {
+        region: &'static str,
+        position: usize,
+        flags: u8,
+    },
     NIndelsMismatch {
         reported: i64,
         event_count: i64,
