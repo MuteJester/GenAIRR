@@ -140,6 +140,16 @@ _DEFAULT_COLUMN_ORDER = [
     "np2",
     "np2_aa",
     "np2_length",
+    # The np intervals partitioned by what wrote each base. np*_length is the
+    # stretch between the segment bounds, which also holds the P nucleotides
+    # and any polymerase insertion that landed there, so it was never the TdT
+    # amount on its own. The three counts of each triple sum to the length.
+    "np1_n_tdt",
+    "np1_n_p",
+    "np1_n_inserted",
+    "np2_n_tdt",
+    "np2_n_p",
+    "np2_n_inserted",
     # Functionality
     "productive",
     "vj_in_frame",

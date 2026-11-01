@@ -169,16 +169,16 @@ def test_a_truth_gap_reports_as_its_own_status_not_as_unverified():
 
 def test_a_truth_gap_stays_visible_even_when_the_mechanism_verifies():
     """A mechanism can be verified on the one borrowed field it owns while the
-    truth that actually matters is still not exported. junction.n_addition is
-    exactly that: the junction bases are in the sequence and can be checked
-    against it, but the record does not say how many of them TdT added as
-    against how many are palindromic, so "verified" alone would hide the gap
-    rather than report it.
+    truth that actually matters is still not exported. clonality.founder is
+    exactly that: a clonal family's records are checkable against each other,
+    but which record is the founder is not exported, so "verified" alone
+    would hide the gap rather than report it.
 
-    The example used to be assay.ambiguous_calls, whose N-count field did not
-    exist. It does now -- `n_ambiguous_bases` -- so that row is verified with
-    no gap left to stay visible, and an example has to be a mechanism that is
-    still in the state being described."""
+    The example has now moved twice, which is the column working rather than
+    churn. It was assay.ambiguous_calls until `n_ambiguous_bases` was
+    exported, then junction.n_addition until the np origin partition was,
+    and an example has to be a mechanism still in the state being
+    described."""
     gapped = {m.id for m in catalog.all_mechanisms() if m.truth_gap}
     rows = {r.mechanism_id: r for r in catalog.coverage_rows(
         {mid: ("x::y",) for mid in gapped})}
@@ -575,8 +575,22 @@ def test_the_coverage_report_numbers_are_pinned():
     actually became `N`. Counting `N`s in the sequence would not substitute
     for it, because a reference allele may carry an `N` of its own.
 
-    So the surface is now: 21 verified, 4 at a declared gapped ceiling, 4 with
-    no exported truth at all, and 2 consistent. `unverified` is empty.
+    junction.n_addition followed it, and for the same reason rather than by
+    new testing: the np*_n_tdt / np*_n_p / np*_n_inserted triples partition
+    each np interval by what wrote each base, so the mechanism's own claim --
+    how much TdT added -- is answerable from the record for the first time.
+    np1_length never was that number: the interval also holds the P bases,
+    which the documentation said, and any polymerase insertion that landed
+    between the segments, which nothing said.
+
+    Worth recording about that row, because it nearly did not hold: the
+    partition was first checked only by its sum against the region length,
+    and a projection that put every flagged base in the TdT bucket satisfied
+    that check on every record. A partition claim needs a test that the
+    buckets *differ*, not only that they add up.
+
+    So the surface is now: 22 verified, 3 at a declared gapped ceiling, 4
+    with no exported truth at all, and 2 consistent. `unverified` is empty.
     """
     tests, covered, bases = _declared_registrations()
     rows = catalog.coverage_rows(tests, covered_by_mechanism=covered,
@@ -597,7 +611,7 @@ def test_the_coverage_report_numbers_are_pinned():
         "recombination.trimming":         "verified",
         "junction.assembly":              "verified",
         "junction.coding_end_processing": "verified",
-        "junction.n_addition":            "gap-limited",
+        "junction.n_addition":            "verified",
         "junction.p_nucleotide":          "verified",
         "expression.productivity":        "consistent",
         "expression.receptor_revision":   "verified",
@@ -635,8 +649,8 @@ def test_the_coverage_report_numbers_are_pinned():
         "field moved without anyone noticing.")
     counts = {name: sum(1 for value in status.values() if value == name)
               for name in sorted(set(status.values()))}
-    assert counts == {"consistent": 2, "gap-limited": 4, "no-truth-exported": 4,
-                      "verified": 21}, counts
+    assert counts == {"consistent": 2, "gap-limited": 3, "no-truth-exported": 4,
+                      "verified": 22}, counts
 
 
 def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():

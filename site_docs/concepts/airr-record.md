@@ -192,7 +192,9 @@ end-loss describes the sequencer (the read ran short).
 | `np1` | Bases between the final V and D alignment bounds (V–J on VJ chains), including intervening N and P bases |
 | `np2` | Bases between the final D and J alignment bounds, including intervening N and P bases (VDJ only; empty on VJ) |
 | `np1_aa`, `np2_aa` | Complete codons within those intervals, translated in the retained V coding frame |
-| `np1_length`, `np2_length` | Lengths in nucleotides |
+| `np1_length`, `np2_length` | Lengths in nucleotides -- the interval between the segment bounds, which also holds P bases and any polymerase insertion that landed there |
+| `np1_n_tdt`, `np1_n_p`, `np1_n_inserted` | That interval partitioned by what wrote each base; the three sum to `np1_length` |
+| `np2_n_tdt`, `np2_n_p`, `np2_n_inserted` | The same for NP2 |
 
 The NP strings are slices of the coding-oriented sequence between
 the final segment alignments. Their lengths equal the lengths of

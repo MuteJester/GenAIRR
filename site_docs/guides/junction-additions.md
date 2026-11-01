@@ -205,6 +205,11 @@ rec["p_v_3_length"]     # 1      - number of P bases at V_3 end
 rec["p_d_5_length"]     # 0
 rec["p_d_3_length"]     # 1
 rec["p_j_5_length"]     # 0
+
+rec["np1_n_tdt"]        # 3      - TdT additions inside np1
+rec["np1_n_p"]          # 1      - palindromic additions inside np1
+rec["np1_n_inserted"]   # 0      - polymerase insertions inside np1
+# the three sum to np1_length; np2 carries the same triple
 ```
 
 Two things to know:
@@ -212,7 +217,10 @@ Two things to know:
 - **`np1` / `np2` combine intervening N and P bases.** They are
   slices between final segment alignment bounds in coding orientation.
   Their lengths equal their string lengths. They are not direct
-  measurements of TdT-only addition lengths.
+  measurements of TdT-only addition lengths - `np1_n_tdt` is.
+  With `polymerase_indels` running the interval can also contain an
+  insertion, which `np1_n_inserted` reports; that is why the
+  partition exists rather than a single "N length" field.
 - **P bases don't have their own string fields in v1.** Per-base P
   strings (`p_v_3`, `p_d_5`, etc.) and an aggregate
   `n_p_nucleotides` counter are deliberately deferred - the

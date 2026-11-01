@@ -278,7 +278,8 @@ here:
 
 - **N additions** - random bases sampled from the cartridge's
   `np_lengths` + `np_bases` planes. The final `np1` / `np2`
-  intervals combine intervening N and P bases between alignments.
+  intervals combine intervening N and P bases between alignments,
+  so read `np1_n_tdt` rather than `np1_length` for the N amount.
 - **P additions** - deterministic palindromic bases derived from
   each coding end. Realised lengths on `p_v_3_length` /
   `p_d_5_length` / `p_d_3_length` / `p_j_5_length`.
@@ -288,6 +289,23 @@ here:
 They include P bases remaining in those gaps. The P-length fields
 instead preserve emitted recombination history, including bases
 later removed by read loss.
+
+**`np1_length` is not the TdT amount.** The interval also holds
+the P bases, as above, *and* any polymerase insertion that landed
+between the two segments - so with `polymerase_indels` running,
+some records' np lengths move by the insertion. Six fields
+partition each interval by what wrote each base:
+
+```python
+rec["np1_n_tdt"]       # TdT additions
+rec["np1_n_p"]         # palindromic additions
+rec["np1_n_inserted"]  # polymerase insertions that landed here
+# the three sum to rec["np1_length"]; likewise for np2
+```
+
+These come from the engine's per-base provenance, not from letter
+case, so they stay correct on a read whose bases a sequencing
+error has lowercased or hypermutation has uppercased.
 
 ## Productivity
 
@@ -368,6 +386,10 @@ rec["v_trim_3"], rec["d_trim_5"], rec["d_trim_3"], rec["j_trim_5"]
 # NP regions
 rec["np1"], rec["np1_length"]
 rec["np2"], rec["np2_length"]      # VDJ only
+
+# What wrote each base of those intervals (each triple sums to the length)
+rec["np1_n_tdt"], rec["np1_n_p"], rec["np1_n_inserted"]
+rec["np2_n_tdt"], rec["np2_n_p"], rec["np2_n_inserted"]
 
 # P-nucleotide lengths
 rec["p_v_3_length"], rec["p_d_5_length"], rec["p_d_3_length"], rec["p_j_5_length"]

@@ -22,7 +22,7 @@ better starting point.
 |---|---|---|---|---|
 | **V(D)J recombination** | `.recombine()` | Recombination | `v_call`, `d_call`, `j_call`, `junction`, `np1`, `np2`, all `*_sequence_*` coords, `productive` | [Recombination + junction biology](recombination-junction.md) |
 | **Exonuclease trimming** | `cfg.reference_models.trims` (cartridge) + `.trim(v_3=..., d_5=..., d_3=..., j_5=..., enabled=...)` (experiment override) | Recombination | `v_trim_3`, `d_trim_5`, `d_trim_3`, `j_trim_5` | [Recombination + junction biology](recombination-junction.md) |
-| **N-addition (NP)** | `cfg.reference_models.np_lengths` + `np_bases` (cartridge) | Recombination | `np1`, `np2`, `np1_length`, `np2_length`, `np1_aa`, `np2_aa` | [Junction N/P additions](junction-additions.md) |
+| **N-addition (NP)** | `cfg.reference_models.np_lengths` + `np_bases` (cartridge) | Recombination | `np1`, `np2`, `np1_length`, `np2_length`, `np1_aa`, `np2_aa`, and the `np*_n_tdt` / `np*_n_p` / `np*_n_inserted` triples that partition each interval by what wrote each base | [Junction N/P additions](junction-additions.md) |
 | **P-nucleotide insertions** | `cfg.reference_models.p_nucleotide_lengths` (cartridge) | Recombination | `p_v_3_length`, `p_d_5_length`, `p_d_3_length`, `p_j_5_length` (P bases contribute to `sequence` + `junction`, not to `np1`/`np2`) | [Junction N/P additions](junction-additions.md) |
 | **D inversion** | `.invert_d(prob=...)` | Recombination editing | `d_inverted` | [D inversion + receptor revision](recombination-editing.md) |
 | **Receptor revision** | `.receptor_revision(prob=...)` | Recombination editing | `receptor_revision_applied`, `original_v_call`, post-revision `v_call` | [D inversion + receptor revision](recombination-editing.md) |
