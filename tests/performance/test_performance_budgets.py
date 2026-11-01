@@ -139,12 +139,16 @@ def test_w2_vdj_recombine_only_budget() -> None:
 def test_w3_vdj_productive_full_stack_budget() -> None:
     """W3: VDJ + SHM + PCR + sequencing + productive_only.
     The contract-narrowing workload — most expensive per-pass.
-    Measured 0.860 ms/rec on 2026-10-29 -- 3.7× the recorded 0.235 ms/rec,
-    which leaves 2.3× headroom against the 2.0s budget rather than the 8.5×
-    recorded here. See the note at the end of this module: this is one of the
-    two budgets that use productive_only(), and the only two that have
-    drifted. The budget value is deliberately unchanged, because the drift is
-    the finding.
+    Measured 0.759 ms/rec on 2026-11-01, down from 0.839 on the same box when
+    the N-length feasibility walk was quadratic. Still 3.2× the recorded
+    0.235 ms/rec, so the drift this docstring has recorded since 2026-10-29 is
+    only partly accounted for. The budget value is deliberately unchanged,
+    because the drift is the finding.
+
+    **This budget barely sees the cost it is named for.** Its refdata is one
+    allele per segment with a narrow N-length support, and the quadratic walk
+    that cost packaged TCRB 2.7× showed up here as 10%. A constrained budget
+    on a packaged reference is what covers that, and it is W11 below.
 
     Regressions in NP-base admit mask, S5F per-site filtering,
     or indel DP retry budget would land here first."""
