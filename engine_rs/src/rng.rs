@@ -23,11 +23,54 @@
 //! generators" (2014); Steele et al. "Fast Splittable Pseudorandom
 //! Number Generators" (2014, OOPSLA).
 //!
-//! ## Future
+//! ## Substreams
 //!
-//! When we need parallel batches across rayon worker threads we'll
-//! add `Rng::split() -> Rng` for sub-stream generation. Not needed
-//! yet.
+//! One stream shared by a whole plan makes every pass's draws depend
+//! on how many words the passes in front of it happened to consume.
+//! [`fold_in`] is the primitive that ends that coupling: a substream
+//! seed is *computed* from a run seed and an identifying word rather
+//! than taken from the parent stream, so no amount of drawing in one
+//! substream can move another, and no ordering of the derivations can
+//! either. [`crate::rng::substream`] builds the typed layer on top of
+//! it; this module stays ignorant of what the identifying word means.
+
+pub mod substream;
+
+/// The SplitMix64 increment — 2^64 divided by the golden ratio. An
+/// odd constant, so repeatedly adding it walks the whole 64-bit state
+/// space before returning.
+const GOLDEN_GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;
+
+/// The SplitMix64 finalizer — see Vigna 2014. A bijection on `u64`
+/// that makes every output bit depend on every input bit, which is
+/// what both the generator and [`fold_in`] need and the only reason
+/// either is sound.
+#[inline]
+fn mix64(mut z: u64) -> u64 {
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
+/// Fold an identifying word into a seed, yielding a seed whose stream
+/// is unrelated to the original's.
+///
+/// This is seed derivation, not splitting: it reads no state and
+/// advances nothing, so `fold_in(seed, a)` is the same stream however
+/// many other words were folded into the same seed first, and in
+/// whatever order. That is the property per-pass substreams need —
+/// sequential splitting would reproduce the coupling it removes,
+/// moving it from the stream position into the split count.
+///
+/// Both arguments pass through the finalizer before they meet, so
+/// neither a zero seed (the library default, and a fixed point of
+/// [`mix64`]) nor a zero data word degenerates. Each step is a
+/// bijection, so distinct inputs give distinct seeds — the collision
+/// bound is exact, not probabilistic.
+#[inline]
+pub fn fold_in(seed: u64, data: u64) -> u64 {
+    mix64(mix64(seed) ^ mix64(data.wrapping_add(GOLDEN_GAMMA)))
+}
 
 /// Deterministic PRNG for the engine.
 ///
@@ -45,11 +88,7 @@ impl Rng {
     /// with a fixed non-zero constant so the stream cannot stall.
     pub fn new(seed: u64) -> Self {
         Self {
-            state: if seed == 0 {
-                0x9e37_79b9_7f4a_7c15
-            } else {
-                seed
-            },
+            state: if seed == 0 { GOLDEN_GAMMA } else { seed },
             words_consumed: 0,
         }
     }
@@ -63,15 +102,11 @@ impl Rng {
     }
 
     /// Advance the stream and return the next 64-bit word.
-    /// SplitMix64 finalizer — see Vigna 2014.
     pub fn next_u64(&mut self) -> u64 {
         crate::family_replay::primitive_random_word();
         self.words_consumed = self.words_consumed.saturating_add(1);
-        self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut z = self.state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        z ^ (z >> 31)
+        self.state = self.state.wrapping_add(GOLDEN_GAMMA);
+        mix64(self.state)
     }
 
     /// Next 32-bit word. Takes the high 32 bits of `next_u64`,
@@ -258,6 +293,71 @@ mod tests {
                 c
             );
         }
+    }
+
+    #[test]
+    fn fold_in_is_a_pure_function_of_its_two_words() {
+        // The whole reproducibility claim rests on this: a substream's
+        // seed is computed, never accumulated, so it cannot depend on
+        // how many other substreams were derived first.
+        assert_eq!(fold_in(7, 11), fold_in(7, 11));
+        assert_ne!(fold_in(7, 11), fold_in(11, 7));
+    }
+
+    #[test]
+    fn folding_consecutive_data_words_gives_unrelated_streams() {
+        // `data` is a label hash in production, but the labels of two
+        // passes with the same name differ by 1, so neighbouring words
+        // are the case that has to work.
+        let first_words: Vec<u64> = (0..4096)
+            .map(|data| Rng::new(fold_in(42, data)).next_u64())
+            .collect();
+        let mut sorted = first_words.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            first_words.len(),
+            "two of 4096 consecutive data words collided into one stream"
+        );
+    }
+
+    #[test]
+    fn folding_into_a_zero_seed_still_depends_on_the_data() {
+        // `seed=0` is the library's default seed, and the SplitMix64
+        // finalizer maps 0 to 0 — so a derivation that mixed the seed
+        // and then xored the data in would degenerate on exactly the
+        // seed most runs use. Asserted on the real default rather than
+        // on an arbitrary one.
+        let first_words: Vec<u64> = (0..4096)
+            .map(|data| Rng::new(fold_in(0, data)).next_u64())
+            .collect();
+        assert!(
+            first_words.iter().all(|word| *word != 0),
+            "a derived stream starts at zero"
+        );
+        let mut sorted = first_words.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), first_words.len(), "seed 0 collapsed two labels");
+    }
+
+    #[test]
+    fn folding_the_same_data_into_consecutive_seeds_gives_unrelated_streams() {
+        // Batch runs seed record i with `seed + i`, so consecutive
+        // seeds holding one pass's label is the other case that has to
+        // work: record 7's `mutate` must not echo record 8's.
+        let first_words: Vec<u64> = (0..4096)
+            .map(|seed| Rng::new(fold_in(seed, 0xdead_beef)).next_u64())
+            .collect();
+        let mut sorted = first_words.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            first_words.len(),
+            "two of 4096 consecutive seeds collided for one label"
+        );
     }
 
     #[test]
