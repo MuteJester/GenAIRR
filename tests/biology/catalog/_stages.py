@@ -53,6 +53,12 @@ UNCLAIMED_FIELDS = {
                      "maturation.hypermutation rather than separately",
     "c_call": "always empty: no isotype or class-switch recombination is "
               "modelled. See maturation.class_switching's truth_gap",
+    "determinism_version": "which sampling model drew the row -- provenance of "
+                           "the run, not of the molecule. No mechanism can own "
+                           "it, because it is the same number on every record "
+                           "the installed engine ever produces, and it is "
+                           "answerable to the reproducibility claim rather than "
+                           "to any biology. See engine_rs/src/determinism.rs",
     # The fourth kind of unclaimed field, and the only one that is unclaimable
     # by the nature of the tool rather than by a modelling decision: an
     # inference output of a search that never happens.

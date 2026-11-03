@@ -6,6 +6,17 @@ The biological metadata fixes deliberately change calls, alignments, and
 translations. The sampling digest below pins the unchanged molecules,
 generating alleles, trims, and event counts; derived metadata is checked
 by the dedicated biological regression suites.
+
+**What this digest can and cannot be asked.** It answers "did a change to the
+genotype machinery move the no-genotype sampling path", which is the question
+it was written for, and it answers it well: anything that perturbs an
+unconstrained run shows up here immediately. It is not a cross-version
+promise, because the engine's sampling model is versioned separately and a
+bump moves every seeded draw by design. ``SAMPLING_DIGEST`` was recaptured
+once, at ``DETERMINISM_VERSION`` 2, when per-pass RNG substreams landed; a
+later bump will move it again, and the move is correct exactly when
+``DETERMINISM_VERSION`` moved with it. ``MASTER_DIGEST`` is older still and
+describes the pre-genotype model under version 1.
 """
 import hashlib
 
@@ -17,7 +28,9 @@ import pytest
 pytestmark = pytest.mark.behavior
 
 MASTER_DIGEST = "3be8e5ea124e1dfff256f93b5ddbb925fdb738d4d6f2eeb5763a81e5b6213460"
-SAMPLING_DIGEST = "72332c92093bf1d4dc2f21ae6020ad19458bfdba2e9d16b0cbff021bb898c24f"
+#: Recaptured at DETERMINISM_VERSION 2 (per-pass RNG substreams). See the
+#: module docstring for when moving this is correct and when it is a bug.
+SAMPLING_DIGEST = "0c29c80527193f4f12d7ed52d378da7f29ed9f753e7726051b3d2cc1582b1905"
 SAMPLING_FIELDS = (
     "sequence_id", "sequence", "truth_v_call", "truth_d_call", "truth_j_call",
     "v_trim_5", "v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5", "j_trim_3",
@@ -47,7 +60,11 @@ def test_no_genotype_preserves_sampling_while_correcting_metadata():
         for seg in ("v", "d", "j"):
             assert rec[f"{seg}_call"] == rec[f"truth_{seg}_call"]
         sampled_records.append({k: rec[k] for k in SAMPLING_FIELDS})
-    assert _digest(sampled_records) == SAMPLING_DIGEST
+    assert _digest(sampled_records) == SAMPLING_DIGEST, (
+        f"the unconstrained sampling path moved. If that was deliberate, "
+        f"DETERMINISM_VERSION (now {ga.DETERMINISM_VERSION}) has to move with "
+        "it and this digest is recaptured; if it was not, a change to the "
+        "genotype machinery has reached a run that uses no genotype.")
 
 
 def test_no_genotype_output_is_deterministic():

@@ -26,7 +26,6 @@ import pytest
 
 import GenAIRR as ga
 from GenAIRR import _engine as genairr_engine
-from tests.support import paths
 
 pytestmark = pytest.mark.behavior
 
@@ -260,63 +259,58 @@ def test_validate_addresses_accepts_built_in_run(vj_compiled):
 
 
 # ──────────────────────────────────────────────────────────────────
-# Golden fixture for future Option B (trace-injected replay)
+# The emitted artifact, round-tripped
 # ──────────────────────────────────────────────────────────────────
 
 
-GOLDEN_DIR = paths.golden("trace_files")
+def test_an_emitted_trace_file_reruns_to_the_same_choices(tmp_path, vj_compiled):
+    """A trace file written to disk reruns to the choices it recorded.
 
+    This used to compare a fresh run against
+    `tests/golden/trace_files/human_igk_recombine_seed4242.trace.json`,
+    emitting it if absent, and say that a failure meant either a schema bump
+    or a determinism regression. There is a third case, and it is the one that
+    arrived: a deliberate determinism change. Per-pass RNG substreams move
+    every recorded value, so seed 4242 no longer draws what that file holds.
 
-def test_emit_golden_trace_file_for_future_b(vj_compiled):
-    """Emit (and check the round-trip of) a golden trace file the
-    follow-up trace-injected-replay slice will consume as a fixture.
+    Regenerating the file was the wrong answer. It is the canonical v1
+    backwards-compat anchor -- `test_trace_file_compat.py::
+    test_v1_fixtures_exist_in_committed_set` exists to keep a fixture written
+    by an older build, which is the only way to prove v1 still loads at the
+    next schema bump. Overwriting it would have destroyed the one thing it is
+    for.
 
-    The file is committed to source control; this test confirms that
-    a fresh build against the same plan + refdata still reproduces
-    its trace byte-for-byte. If this test fails after an engine
-    change, either the schema bumped (intentional) or determinism
-    regressed (a bug); inspect the diff before regenerating.
+    So the two claims are separated. **Durability** of the on-disk format
+    against old files stays with `test_trace_file_compat.py`, over the frozen
+    fixtures, which load and replay there. **Round-tripping** is this test,
+    over a file it writes itself, which can never go stale.
 
-    **Cross-schema comparison.** The fixture is preserved as the
-    canonical v1 backwards-compat anchor (per
-    ``test_trace_file_compat.py::test_v1_fixtures_exist_in_committed_set``);
-    fresh emissions ship at the current ``TRACE_FILE_SCHEMA_VERSION``.
-    When the fixture's schema is older than the live one, the test
-    compares the determinism-preserving fields only (per-choice
-    address + value); the schema-version-bearing fields
-    (``pass_plan_signature``, ``schema_version``) are intentionally
-    skipped because they reflect the on-disk format change and not
-    a determinism regression. Equal schemas compare byte-for-byte
-    as before.
+    What a determinism change costs, and what nothing here catches: a trace
+    file records a seed and a plan signature but not which sampling model drew
+    it, so `rerun_from_trace_file` on a file written by an older engine
+    re-draws a different molecule and reports no mismatch. The record column
+    `determinism_version` says it for a dataset; the trace file has no such
+    field yet.
     """
     seed = 4242
     outcome = vj_compiled.simulator.run(seed=seed)
-    tf = vj_compiled.simulator.trace_file_from(outcome, seed=seed)
+    emitted = vj_compiled.simulator.trace_file_from(outcome, seed=seed)
 
-    # Read or emit the golden artifact.
-    GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
-    golden_path = GOLDEN_DIR / f"human_igk_recombine_seed{seed}.trace.json"
-    if not golden_path.exists():
-        tf.write_to(str(golden_path))
-        pytest.skip(f"Emitted fresh golden trace file at {golden_path}")
+    path = tmp_path / f"human_igk_recombine_seed{seed}.trace.json"
+    emitted.write_to(str(path))
+    loaded = genairr_engine.TraceFile.read_from(str(path))
 
-    # Compare engine output against the on-disk golden.
-    loaded = genairr_engine.TraceFile.read_from(str(golden_path))
     assert loaded.seed == seed
-    assert loaded.refdata_signature == tf.refdata_signature
-    if loaded.schema_version == tf.schema_version:
-        # Same-schema fixture: the full byte-for-byte equality
-        # holds, including the plan signature.
-        assert loaded.pass_plan_signature == tf.pass_plan_signature
-    assert len(loaded.trace) == len(tf.trace)
-    for a, b in zip(loaded.trace.choices(), tf.trace.choices()):
-        assert a.address == b.address
-        assert a.value == b.value
+    assert loaded.schema_version == emitted.schema_version
+    assert loaded.refdata_signature == emitted.refdata_signature
+    assert loaded.pass_plan_signature == emitted.pass_plan_signature
+    assert len(loaded.trace) == len(emitted.trace)
+    assert loaded.trace.choices(), "the run recorded no choices to round-trip"
+    for from_disk, in_memory in zip(loaded.trace.choices(), emitted.trace.choices()):
+        assert from_disk.address == in_memory.address
+        assert from_disk.value == in_memory.value
 
-    # And: re-running from the golden trace file matches both.
-    # The schema-version-aware comparator in `rerun_from_trace_file`
-    # handles legacy fixtures transparently.
     rerun = vj_compiled.simulator.rerun_from_trace_file(loaded)
-    for a, b in zip(rerun.trace().choices(), tf.trace.choices()):
-        assert a.address == b.address
-        assert a.value == b.value
+    for redrawn, recorded in zip(rerun.trace().choices(), emitted.trace.choices()):
+        assert redrawn.address == recorded.address
+        assert redrawn.value == recorded.value
