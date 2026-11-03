@@ -17,9 +17,16 @@ Fixture design notes:
   truth, isolating evidence-changing mechanisms from sampling
   variance.
 
-Empirical seeds were searched ahead of time and are pinned into
-the tests; if walker behaviour shifts the seed assertions are the
-first to fire.
+**Seeds are searched by the tests, not pinned into them.** They used to be
+pinned, found by a search run by hand and written in beside a prose
+description of the molecule each one produced. Every change to the engine's
+draw order invalidated all of them at once -- per-pass RNG substreams did,
+and eleven of these tests failed together while their comments went on
+describing molecules those seeds no longer produce. What a test here needs is
+not seed 24, it is a record with the other allele's base at the
+distinguishing position. `_seed_where` finds one and says so if it cannot,
+which is the same premise the pinned seeds encoded, stated where it can
+still be read.
 """
 from __future__ import annotations
 
@@ -94,6 +101,60 @@ def _record(exp: "ga.Experiment", seed: int = 0, **kwargs) -> dict:
     return record
 
 
+#: How many seeds a premise search scans before giving up. One record on
+#: these nine-base fixtures costs about a millisecond, so the whole module
+#: searching is cheaper than one real simulation.
+SEED_SCAN = 300
+
+
+def _seed_where(exp: "ga.Experiment", premise, *, scan: int = SEED_SCAN,
+                **kwargs) -> tuple[int, dict]:
+    """The first seed whose record satisfies ``premise``, and that record.
+
+    The premise is the molecular configuration a claim is about -- an `N` at
+    the distinguishing position, a substitution that wrote the other allele's
+    base there. Searching for it keeps the claim exact without tying it to a
+    draw order, and a premise no seed satisfies fails loudly rather than
+    quietly testing something else.
+    """
+    for seed in range(scan):
+        record = _record(exp, seed=seed, **kwargs)
+        if premise(record):
+            return seed, record
+    raise AssertionError(
+        f"no seed below {scan} produced a record satisfying the premise, so "
+        "this claim cannot be tested on this pipeline -- the mechanism may "
+        "have stopped reaching the position the premise names")
+
+
+def _distinguishing_pipeline(mechanism) -> "ga.Experiment":
+    """The two-allele fixture with the truth locked and one mechanism on."""
+    return mechanism(
+        _baseline_vj_experiment(_two_v_one_distinguishing())
+        .restrict_alleles(v="v1*01"))
+
+
+def _three_allele_n_pipeline() -> "ga.Experiment":
+    """The three-allele fixture with one base masked per record."""
+    return (_baseline_vj_experiment(_three_v_prefix_suffix())
+            .restrict_alleles(v="v_A*01")
+            .ambiguous_base_calls(count=1))
+
+
+def _shm_flip() -> tuple[int, dict]:
+    """A record where hypermutation wrote v2*01's base at position 4."""
+    return _seed_where(
+        _distinguishing_pipeline(lambda e: e.mutate(rate=0.1)),
+        lambda rec: rec["sequence"][4] == "T")
+
+
+def _pcr_flip() -> tuple[int, dict]:
+    """The same molecule, reached by a PCR misincorporation instead."""
+    return _seed_where(
+        _distinguishing_pipeline(lambda e: e.pcr_amplify(rate=0.1)),
+        lambda rec: rec["sequence"][4] == "T")
+
+
 # ──────────────────────────────────────────────────────────────────
 # 1. Tie-set formation — model basics
 # ──────────────────────────────────────────────────────────────────
@@ -105,9 +166,13 @@ def test_identical_v_alleles_produce_csv_tie_with_truth_first() -> None:
     the CSV with the truth allele first (`projected_call_name`
     convention)."""
     exp = _baseline_vj_experiment(_two_v_identical())
-    # Sweep multiple seeds so we see both truth picks.
+    # Sweep until both truth picks have been seen. The sweep was eight seeds,
+    # which was enough for one draw order and not for the next -- the number
+    # that matters is "both", so the loop stops when it has them.
     truth_first_observations = {"v1*01": False, "v1*02": False}
-    for seed in range(8):
+    for seed in range(SEED_SCAN):
+        if all(truth_first_observations.values()):
+            break
         rec = _record(exp, seed=seed)
         truth = rec["truth_v_call"]
         csv = rec["recalled_v_call"].split(",")
@@ -117,9 +182,10 @@ def test_identical_v_alleles_produce_csv_tie_with_truth_first() -> None:
             f"seed {seed}: truth {truth} must be first in CSV {csv}"
         )
         truth_first_observations[truth] = True
-    # We expect both truths to have been sampled at least once.
+    # Both truths must have been sampled, or the CSV-order claim was only
+    # ever checked for one of them.
     assert all(truth_first_observations.values()), (
-        "fixture didn't sweep both truth alleles in 8 seeds"
+        f"the fixture drew only one truth allele in {SEED_SCAN} seeds"
     )
 
 
@@ -148,20 +214,16 @@ def test_shm_at_distinguishing_position_can_switch_call_away_from_truth() -> Non
     to the other allele's germline base, the walker scores the
     other allele higher → call switches.
 
-    Seed=24 with `mutate(rate=0.1)` and locked truth=v1*01
-    produces sequence 'AACCTCGGG' (T at pos 4, matching v2*01's
-    germline). recalled_v_call flips to 'v2*01' while truth_v_call stays
-    'v1*01'; the standard v_call and alignment remain generating."""
-    exp = (
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .mutate(rate=0.1)
-    )
-    rec = _record(exp, seed=24)
+    The premise is a `T` at position 4, matching v2*01's germline;
+    `_shm_flip` searches for a record that has one. recalled_v_call must then
+    flip to 'v2*01' while truth_v_call stays 'v1*01', and the standard v_call
+    and alignment stay generating."""
+    seed, rec = _shm_flip()
+    assert rec["sequence"][4] == "T", f"premise broken at seed {seed}"
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["recalled_v_call"] == "v2*01"  # singleton, not CSV
-    # The mutated sequence has T at the distinguishing position.
-    assert rec["sequence"][4] == "T"
+    assert rec["recalled_v_call"] == "v2*01", (
+        f"seed {seed}: a T at the distinguishing position did not move the "
+        "call")
     # SHM increments n_mutations only.
     assert rec["n_mutations"] > 0
     assert rec["n_pcr_errors"] == 0
@@ -173,18 +235,16 @@ def test_shm_at_non_distinguishing_position_preserves_call() -> None:
     alleles' scores drop by the same amount. The distinguishing
     position still resolves the call to truth.
 
-    Seed=6 with `mutate(rate=0.1)` produces a single mutation
-    leaving position 4 unchanged → recalled_v_call still equals truth."""
-    exp = (
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .mutate(rate=0.1)
-    )
-    rec = _record(exp, seed=6)
+    The premise is one mutation that left position 4 alone, which is the
+    case the claim is about -- searched rather than pinned, like the flip
+    above."""
+    seed, rec = _seed_where(
+        _distinguishing_pipeline(lambda e: e.mutate(rate=0.1)),
+        lambda r: r["n_mutations"] == 1 and r["sequence"][4] == "C")
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["recalled_v_call"] == "v1*01"  # call preserved
-    assert rec["sequence"][4] == "C"  # distinguishing position unchanged
-    assert rec["n_mutations"] == 1
+    assert rec["recalled_v_call"] == "v1*01", (
+        f"seed {seed}: a mutation away from the distinguishing position moved "
+        "the call")
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -198,17 +258,12 @@ def test_pcr_error_at_distinguishing_position_switches_call() -> None:
     the distinguishing position with the other allele's base
     flips the call.
 
-    Seed=39 + `pcr_amplify(rate=0.1)` produces a uniform T at pos
-    4 → switches to v2*01."""
-    exp = (
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .pcr_amplify(rate=0.1)
-    )
-    rec = _record(exp, seed=39)
+    The premise is the same molecule as the SHM case -- an uppercase `T` at
+    position 4 -- reached by a different mechanism."""
+    seed, rec = _pcr_flip()
+    assert rec["sequence"][4] == "T", f"premise broken at seed {seed}"
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["recalled_v_call"] == "v2*01"
-    assert rec["sequence"][4] == "T"
+    assert rec["recalled_v_call"] == "v2*01", f"at seed {seed}"
     # PCR increments n_pcr_errors only — n_mutations stays zero.
     assert rec["n_pcr_errors"] > 0
     assert rec["n_mutations"] == 0
@@ -222,19 +277,17 @@ def test_sequencing_error_lowercase_letter_is_not_a_wildcard() -> None:
     position is treated as 'T' — flipping the call, not widening
     it.
 
-    Seed=39 + `sequencing_errors(rate=0.1)` produces a lowercase
-    't' at pos 4 → recalled_v_call = 'v2*01' (singleton), confirming the
-    walker did NOT treat the lowercase letter as N (which would
-    have widened to 'v1*01,v2*01')."""
-    exp = (
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .sequencing_errors(rate=0.1)
-    )
-    rec = _record(exp, seed=39)
+    The premise is a lowercase 't' at position 4. recalled_v_call must then
+    be 'v2*01' alone, which is what confirms the walker did not treat the
+    lowercase letter as an N -- that would have widened the set to
+    'v1*01,v2*01'."""
+    seed, rec = _seed_where(
+        _distinguishing_pipeline(lambda e: e.sequencing_errors(rate=0.1)),
+        lambda r: r["sequence"][4] == "t")
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["recalled_v_call"] == "v2*01"  # singleton — NOT widened
-    assert rec["sequence"][4] == "t"  # lowercase preserved in output
+    assert rec["recalled_v_call"] == "v2*01", (
+        f"seed {seed}: a lowercase base widened the tie set, so it was read "
+        "as a wildcard")
     assert rec["n_quality_errors"] > 0
     assert rec["n_mutations"] == 0
     assert rec["n_pcr_errors"] == 0
@@ -251,18 +304,16 @@ def test_n_substitution_at_distinguishing_position_widens_tie_set() -> None:
     tie — the tie-set widens to include alleles that were one
     point behind.
 
-    Seed=0 + `ambiguous_base_calls(count=1)` places N at position
-    4 → recalled_v_call widens from {v1*01} to {v1*01, v2*01}, with truth
-    listed first per the projection convention."""
-    exp = (
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .ambiguous_base_calls(count=1)
-    )
-    rec = _record(exp, seed=0)
-    assert rec["sequence"][4] == "N"
+    The premise is an `N` at position 4. recalled_v_call must then widen
+    from {v1*01} to {v1*01, v2*01}, truth first per the projection
+    convention."""
+    seed, rec = _seed_where(
+        _distinguishing_pipeline(lambda e: e.ambiguous_base_calls(count=1)),
+        lambda r: r["sequence"][4] == "N")
     assert rec["truth_v_call"] == "v1*01"
-    assert rec["recalled_v_call"] == "v1*01,v2*01"  # truth first, widened
+    assert rec["recalled_v_call"] == "v1*01,v2*01", (
+        f"seed {seed}: an N at the distinguishing position did not widen the "
+        "tie set to both alleles with truth first")
 
 
 def test_n_substitution_at_non_distinguishing_position_preserves_call() -> None:
@@ -271,16 +322,14 @@ def test_n_substitution_at_non_distinguishing_position_preserves_call() -> None:
     the *relative* scores don't change. The call stays
     singleton-truth.
 
-    Seed=4 + `ambiguous_base_calls(count=1)` places N at position
-    8 (non-distinguishing) → recalled_v_call still equals truth."""
-    exp = (
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .ambiguous_base_calls(count=1)
-    )
-    rec = _record(exp, seed=4)
-    assert rec["sequence"][8] == "N"
-    assert rec["recalled_v_call"] == "v1*01"  # unchanged
+    The premise is an `N` at position 8, which both alleles match
+    identically."""
+    seed, rec = _seed_where(
+        _distinguishing_pipeline(lambda e: e.ambiguous_base_calls(count=1)),
+        lambda r: r["sequence"][8] == "N" and r["sequence"][4] == "C")
+    assert rec["recalled_v_call"] == "v1*01", (
+        f"seed {seed}: an N away from the distinguishing position widened the "
+        "tie set anyway")
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -294,31 +343,20 @@ def test_three_allele_prefix_widening_keeps_truth_first() -> None:
     ambiguous with v_A), an N at pos 4 widens the tie to {v_A,
     v_B} only (v_C still loses at pos 8). Truth v_A first.
 
-    Seed=0 + `ambiguous_base_calls(count=1)` places N at position
-    4 on the 3-allele fixture."""
-    exp = (
-        _baseline_vj_experiment(_three_v_prefix_suffix())
-        .restrict_alleles(v="v_A*01")
-        .ambiguous_base_calls(count=1)
-    )
-    rec = _record(exp, seed=0)
-    assert rec["sequence"][4] == "N"
+    The premise is an `N` at position 4 on the three-allele fixture."""
+    seed, rec = _seed_where(
+        _three_allele_n_pipeline(), lambda r: r["sequence"][4] == "N")
     assert rec["truth_v_call"] == "v_A*01"
-    assert rec["recalled_v_call"] == "v_A*01,v_B*01"  # v_C excluded
+    assert rec["recalled_v_call"] == "v_A*01,v_B*01", f"at seed {seed}"
     assert "v_C*01" not in rec["recalled_v_call"]
 
 
 def test_three_allele_suffix_widening_keeps_truth_first() -> None:
     """Mirror of the prefix case: N at pos 8 widens to {v_A, v_C}
     only (v_B still loses at pos 4)."""
-    exp = (
-        _baseline_vj_experiment(_three_v_prefix_suffix())
-        .restrict_alleles(v="v_A*01")
-        .ambiguous_base_calls(count=1)
-    )
-    rec = _record(exp, seed=4)
-    assert rec["sequence"][8] == "N"
-    assert rec["recalled_v_call"] == "v_A*01,v_C*01"
+    seed, rec = _seed_where(
+        _three_allele_n_pipeline(), lambda r: r["sequence"][8] == "N")
+    assert rec["recalled_v_call"] == "v_A*01,v_C*01", f"at seed {seed}"
     assert "v_B*01" not in rec["recalled_v_call"]
 
 
@@ -329,40 +367,28 @@ def test_three_allele_suffix_widening_keeps_truth_first() -> None:
 
 def test_recalled_v_call_can_differ_while_standard_call_keeps_truth() -> None:
     """Evidence-based inference changes without replacing generative origin."""
-    # SHM flip
-    rec_shm = _record(
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .mutate(rate=0.1),
-        seed=24,
-    )
+    _, rec_shm = _shm_flip()
     assert rec_shm["recalled_v_call"] != rec_shm["truth_v_call"]
     assert rec_shm["truth_v_call"] == "v1*01"
 
-    # PCR flip — same property, different mechanism
-    rec_pcr = _record(
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .pcr_amplify(rate=0.1),
-        seed=39,
-    )
+    # Same property, different mechanism.
+    _, rec_pcr = _pcr_flip()
     assert rec_pcr["recalled_v_call"] != rec_pcr["truth_v_call"]
     assert rec_pcr["truth_v_call"] == "v1*01"
 
 
 def test_v_identity_uses_generating_reference_when_recalled_allele_changes() -> None:
-    """AACCTCGGG has 7/9 matches to generating AAACCCGGG, despite
-    the inferred alternative AAACTCGGG having 8/9 matches."""
-    rec = _record(
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .mutate(rate=0.1),
-        seed=24,
-    )
+    """`v_identity` measures the molecule against the allele that generated
+    it, not against the one the evidence now favours -- so on a flipped
+    record it is the *lower* of the two numbers."""
+    _, rec = _shm_flip()
     assert rec["recalled_v_call"] == "v2*01"
     assert rec["v_call"] == "v1*01"
     assert rec["germline_alignment"][:9] == "AAACCCGGG"
-    assert rec["v_identity"] == pytest.approx(7 / 9, abs=1e-9)
+    mismatches = sum(a.upper() != b for a, b in
+                     zip(rec["sequence"][:9], "AAACCCGGG"))
+    assert mismatches >= 1, "the flipped record matches its generating allele"
+    assert rec["v_identity"] == pytest.approx((9 - mismatches) / 9, abs=1e-9)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -528,12 +554,7 @@ def test_drift_pinned_no_call_is_truthful_field_on_airr_record() -> None:
     """Audit §6.2: no `v_call_is_truthful` / etc. denormalised
     truthfulness boolean today. Users compare
     `recalled_v_call.split(',')[0] != truth_v_call` manually. Pin absence."""
-    rec = _record(
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .mutate(rate=0.1),
-        seed=24,
-    )
+    _, rec = _shm_flip()
     # The flip has happened (recalled_v_call != truth_v_call), but no field
     # exposes that boolean directly.
     assert rec["recalled_v_call"] != rec["truth_v_call"]
@@ -547,13 +568,10 @@ def test_drift_pinned_no_call_is_truthful_field_on_airr_record() -> None:
 
 def test_drift_pinned_no_v_identity_to_truth_field() -> None:
     """Standard v_identity already measures the generating reference."""
-    rec = _record(
-        _baseline_vj_experiment(_two_v_one_distinguishing())
-        .restrict_alleles(v="v1*01")
-        .mutate(rate=0.1),
-        seed=24,
-    )
+    _, rec = _shm_flip()
     assert "v_identity_to_truth" not in rec
     assert "d_identity_to_truth" not in rec
     assert "j_identity_to_truth" not in rec
-    assert rec["v_identity"] == pytest.approx(7 / 9)
+    assert rec["v_identity"] < 1.0, (
+        "the flipped record matches its generating allele perfectly, so this "
+        "says nothing about which reference v_identity measures against")
