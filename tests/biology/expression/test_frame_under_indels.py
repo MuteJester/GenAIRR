@@ -191,12 +191,48 @@ def test_the_documented_conditions_for_productive_are_not_the_whole_rule(
         f"{locus}: {len(productive_without_all_four)} records are productive "
         "without satisfying all four documented conditions, so the direction "
         "that was supposed to hold does not")
-    assert len(satisfied_but_unproductive) >= expected_at_least, (
-        f"{locus}: only {len(satisfied_but_unproductive)} records satisfied "
-        "the documented conditions and were unproductive anyway; the fixture "
-        "no longer reaches the case this documents")
-    for record in satisfied_but_unproductive:
-        assert "j_tail_out_of_frame" in record["productivity_reasons"], (
-            f"{locus}: a record satisfying all four documented conditions is "
-            f"unproductive for an undocumented reason: "
+    # Partitioned by the engine's reason, because two different things put a
+    # record in this bucket and only one of them is the documentation defect.
+    tail_frame = [record for record in satisfied_but_unproductive
+                  if "j_tail_out_of_frame" in record["productivity_reasons"]]
+    anchor_removed = [record for record in satisfied_but_unproductive
+                      if "j_tail_out_of_frame" not in record["productivity_reasons"]
+                      and any("anchor_removed" in reason
+                              for reason in record["productivity_reasons"])]
+
+    assert len(tail_frame) >= expected_at_least, (
+        f"{locus}: only {len(tail_frame)} records satisfied the documented "
+        "conditions and were unproductive for the undocumented tail-frame "
+        "rule; the fixture no longer reaches the case this documents")
+    unexplained = (len(satisfied_but_unproductive)
+                   - len(tail_frame) - len(anchor_removed))
+    assert unexplained == 0, (
+        f"{locus}: {unexplained} records satisfy all four documented "
+        "conditions and are unproductive for a reason that is neither the "
+        "tail frame nor a removed anchor: "
+        f"{[r['productivity_reasons'] for r in satisfied_but_unproductive]}")
+
+    # The second bucket is the ORACLE being wrong, not the engine, and it is
+    # the third instance of that in this area -- see `disagreements` in
+    # tests/support/oracles/expression.py for the other two. When a trim or a
+    # deletion takes the germline anchor away, the engine says so and still
+    # exports a junction window with a fallback end; the oracle reads the last
+    # codon of that window, which is some other codon and can coincidentally
+    # translate to W or F. So the oracle reports an anchor that is not there.
+    #
+    # Pre-existing, and not about indels: 4 of 600 human_igh records with no
+    # indel at all are reported anchor-removed with a junction still exported
+    # (one has j_trim_5=15, which is what ate the anchor). What per-pass RNG
+    # substreams changed is only that one IGK record now lands in this bucket
+    # as well as the others. Bounded so it cannot grow quietly, and each one
+    # has to carry the mechanism that could remove an anchor.
+    assert len(anchor_removed) <= 2, (
+        f"{locus}: {len(anchor_removed)} records read as anchor-intact to the "
+        "oracle while the engine reports the anchor removed. That was 1 of "
+        "200 on IGK and 0 on IGH; if it is growing, the oracle's anchor "
+        "reading needs the reference rather than the junction window")
+    for record in anchor_removed:
+        assert record["j_trim_5"] > 0 or record["n_j_indels"] > 0, (
+            f"{locus}: the engine reports a removed J anchor on a record with "
+            f"no J trim and no J indel, so nothing could have removed it: "
             f"{record['productivity_reasons']}")
