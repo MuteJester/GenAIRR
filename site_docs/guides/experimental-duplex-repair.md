@@ -285,9 +285,10 @@ Unknown phase gives a missing amino-acid value.
 
 Mutation burden retains each stage's input molecule denominator even after
 read loss. Mechanism counts accumulate over the observation's history. In
-particular, `n_pcr_errors` and `n_quality_errors` count sampled attempts;
-`duplex_repair.applied_error_substitutions` separately counts applied
-substitutions. Attempt summaries include zero-effect and empty-query stages.
+particular, `n_pcr_errors` and `n_quality_errors` count the substitutions
+each pass applied; `duplex_repair.applied_error_substitutions` counts them
+again on the repair side. Attempt summaries include zero-effect and
+empty-query stages.
 These cumulative counts remain available across successive continuations,
 whereas a single legacy trace is not a complete descendant history. Low-level
 unattributed edits make mechanism counters unavailable instead of assigning

@@ -49,16 +49,21 @@ class _MutationMixin:
           ``"hh_s5f"``, ``"hh_s5f_60"``, ``"hh_s5f_opposite"``,
           ``"hkl_s5f"``.
         - ``"uniform"`` — position-independent SHM. Each mutated
-          position gets a uniformly drawn A/C/G/T replacement.
+          position gets a uniformly drawn replacement from the
+          three bases it does not already hold.
 
-        **``count`` is attempts; ``n_mutations`` is what changed.**
-        A uniform replacement is drawn from A/C/G/T including the
-        base already present, so roughly a quarter of draws land
-        on it. Those are not counted: ``n_mutations`` reports the
-        substitutions that changed a base, so ``count=7`` with
-        ``model="uniform"`` typically reports five or six. No
-        single ``"s5f"`` write is ever a no-op -- that kernel does
-        not draw the base already present.
+        **``count`` is mutations, not attempts.** The replacement
+        is drawn from the three bases the site does not already
+        hold, under both models, so every substitution changes a
+        base and ``n_mutations`` equals the configured count.
+        ``count=7`` reports seven.
+
+        In GenAIRR 2.3.1 and earlier the uniform replacement was
+        drawn from all four bases including the one already
+        present, so roughly a quarter of draws wrote what was
+        there and were correctly not counted: ``count=7``
+        typically reported five or six. Seeded output from before
+        that change cannot be reproduced after it.
 
         **Score a mutation caller against ``n_observable_mutations``**,
         the subset still visible in the sequence. It is below

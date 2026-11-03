@@ -155,21 +155,22 @@ def test_record_corruption_counters_default_to_zero():
 
 
 def test_record_corruption_counters_track_pcr_errors():
-    # `count=4` is four attempts. A replacement is drawn from A/C/G/T
-    # including the base already present, so the counter reports the subset
-    # that changed a base. Bounded above by the attempts and asserted
-    # non-zero in aggregate, which a counter reading the drawn count would
-    # fail by hitting the attempt total exactly.
+    # `count=4` is four errors, and the counter reports the substitutions that
+    # changed a base. The two agree because a replacement is drawn from the
+    # bases the site does not already hold. This asserted `0 < total < 100`
+    # while the draw included the incumbent and the shortfall was what told a
+    # realized count apart from a drawn one.
     result = (
         _human_igh_exp().pcr_amplify(count=4).run_records(n=25, seed=0)
     )
     total = 0
     for rec in result:
-        assert rec["n_pcr_errors"] <= 4
+        assert rec["n_pcr_errors"] == 4
         total += rec["n_pcr_errors"]
-    assert 0 < total < 100, (
-        f"{total} realized errors across 25 records of 4 attempts is either "
-        f"nothing or every attempt")
+    assert total == 100, (
+        f"{total} errors across 25 records of 4 requested; a budget the "
+        f"library accepts and under-delivers biases every calibration made "
+        f"against it")
 
 
 def test_compiled_run_records_matches_experiment_run_records():

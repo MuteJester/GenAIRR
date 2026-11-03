@@ -459,7 +459,7 @@ mod tests {
                 .find("corrupt.quality.error_base[0]")
                 .unwrap()
                 .value,
-            ChoiceValue::Base(b'c')
+            ChoiceValue::Base(b't')
         );
         assert!(contracts
             .verify(constrained.final_simulation(), Some(&cfg))
@@ -472,14 +472,20 @@ mod tests {
             Some(&cfg),
             None,
         );
-        assert_eq!(
-            unconstrained
-                .trace
-                .find("corrupt.quality.error_base[0]")
-                .unwrap()
-                .value,
-            ChoiceValue::Base(b'a')
-        );
+        // Not the base the unfiltered draw writes -- which it was, pinned to
+        // `A` -- because a replacement is now drawn from the distribution's
+        // enumerated support minus the base at the site, so `sample()` is
+        // consulted only when a distribution cannot enumerate itself. This
+        // fixture's `sample()` returns `A` and its support does not single it
+        // out, so an unfiltered draw at this site is `A` or `T`.
+        //
+        // What survives is the half the claim needs, and it is a guard on the
+        // premise rather than a finding: the seed was selected for it. The
+        // diversion above is only worth asserting if the undiverted run at
+        // the same seed would have been rejected.
+        assert!(contracts
+            .verify(unconstrained.final_simulation(), Some(&cfg))
+            .is_err());
         // Conditioning also changes site weights, so the same seed need
         // not choose the same unconstrained site. Independently evaluate the
         // rejected target-2 candidate: TGC -> TGA is a coding stop.

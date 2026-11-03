@@ -258,10 +258,12 @@ n_np_mutations          ← NP1 + NP2 combined SHM
 mutation_rate           ← cumulative realized SHM event burden per input-molecule base
 ```
 
-`n_mutations` counts substitutions that changed a base, not substitution
-attempts. A uniform replacement is drawn from A/C/G/T including the base
-already present, and such a draw is not a mutation: `mutate(model="uniform",
-count=7)` typically reports five or six.
+`n_mutations` counts substitutions that changed a base, which under both
+kernels is every one the configuration asked for: the replacement is drawn
+from the three bases the position does not already hold, so
+`mutate(model="uniform", count=7)` reports seven. In GenAIRR 2.3.1 and earlier the
+uniform draw included the base already present, such a draw was not a
+mutation, and the same call typically reported five or six.
 
 ### Scoring a mutation caller
 
@@ -477,9 +479,12 @@ and ones a later mutation reversed. `n_observable_mutations`
 is the recoverable number; see
 [Scoring a mutation caller](#scoring-a-mutation-caller).
 
-**Reading `count=N` as a promise of `n_mutations == N`.** For
-`model="uniform"`, `count` is the number of attempts and
-roughly a quarter of them draw the base already present.
+**Reading a GenAIRR 2.3.1 or earlier dataset's
+`n_mutations` as `count`.** Under `model="uniform"` the
+replacement was drawn from all four bases, so roughly a
+quarter of draws wrote the base already present and were
+not counted. The draw now excludes it and
+`n_mutations == count`.
 
 **Treating all `n_*` counters as biological mutations.** Only
 the SHM partition (`n_mutations`, `n_observable_mutations`,

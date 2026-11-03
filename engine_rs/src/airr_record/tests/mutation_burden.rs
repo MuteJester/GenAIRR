@@ -112,15 +112,17 @@ fn continuation_preserves_ancestor_burden_counters_and_rebases_trace_spans() {
         PassRuntime::execute_with_refdata(&child_plan, parent.final_simulation().clone(), 91, &cfg);
     let merged = parent.with_continuation(&child).unwrap();
     let rec = build_airr_record(&merged, &cfg, "child");
-    // 2 + 1 substitution ATTEMPTS across the two stages. A uniform draw that
-    // lands on the base already there is not counted, so the realised total
-    // is below the attempt count: at these seeds the parent realises one of
-    // its two and the child its one, which is pinned exactly rather than
-    // bounded. A bound would have been satisfied by zero, and zero would have
-    // made both sides of the rate assertion below 0.0 -- leaving this test's
-    // real subject, that the denominators are the per-stage molecule lengths
-    // 18 and 12 rather than the merged length, asserted by nothing.
-    assert_eq!(rec.n_mutations, 2, "realised count across the two stages");
+    // 2 + 1 substitutions across the two stages, all three realised: a
+    // uniform replacement is drawn from the bases the site does not already
+    // hold, so a configured count is a count of mutations. It was 2 of 3
+    // here, the missing one a draw that landed on the base already there.
+    //
+    // Pinned exactly rather than bounded, because a bound would have been
+    // satisfied by zero, and zero would have made both sides of the rate
+    // assertion below 0.0 -- leaving this test's real subject, that the
+    // denominators are the per-stage molecule lengths 18 and 12 rather than
+    // the merged length, asserted by nothing.
+    assert_eq!(rec.n_mutations, 3, "realised count across the two stages");
     assert_eq!(
         rec.n_v_mutations + rec.n_d_mutations + rec.n_j_mutations + rec.n_np_mutations,
         rec.n_mutations
@@ -172,12 +174,12 @@ fn continuation_preserves_ancestor_burden_counters_and_rebases_trace_spans() {
         PassRuntime::execute_with_refdata(&grand_plan, merged.final_simulation().clone(), 93, &cfg);
     let grand = merged.with_continuation(&grand).unwrap();
     let rec = build_airr_record(&grand, &cfg, "grand");
-    // 2 + 1 + 1 attempts over three stages, of which three are realised at
-    // these seeds. The subject is again the per-stage denominators: the
-    // parent's 18 and the child's 12, each carrying that stage's realised
-    // count. The third stage runs on the same 12-base molecule as the second,
-    // which is why its mutation shares the child's denominator below.
-    assert_eq!(rec.n_mutations, 3, "realised count across the three stages");
+    // 2 + 1 + 1 substitutions over three stages, all four realised. The
+    // subject is again the per-stage denominators: the parent's 18 and the
+    // child's 12, each carrying that stage's count. The third stage runs on
+    // the same 12-base molecule as the second, which is why its mutation
+    // shares the child's denominator below.
+    assert_eq!(rec.n_mutations, 4, "realised count across the three stages");
     let merged_rec = build_airr_record(&merged, &cfg, "merged");
     let parent_share = parent_rec.n_mutations as f64 / 18.0;
     let child_share = (rec.n_mutations - parent_rec.n_mutations) as f64 / 12.0;

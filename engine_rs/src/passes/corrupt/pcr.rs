@@ -460,7 +460,7 @@ mod tests {
                 .find("corrupt.pcr.error_base[0]")
                 .unwrap()
                 .value,
-            ChoiceValue::Base(b'C')
+            ChoiceValue::Base(b'T')
         );
         assert!(contracts
             .verify(constrained.final_simulation(), Some(&cfg))
@@ -473,14 +473,20 @@ mod tests {
             Some(&cfg),
             None,
         );
-        assert_eq!(
-            unconstrained
-                .trace
-                .find("corrupt.pcr.error_base[0]")
-                .unwrap()
-                .value,
-            ChoiceValue::Base(b'A')
-        );
+        // Not the base the unfiltered draw writes -- which it was, pinned to
+        // `A` -- because a replacement is now drawn from the distribution's
+        // enumerated support minus the base at the site, so `sample()` is
+        // consulted only when a distribution cannot enumerate itself. This
+        // fixture's `sample()` returns `A` and its support does not single it
+        // out, so an unfiltered draw at this site is `A` or `T`.
+        //
+        // What survives is the half the claim needs, and it is a guard on the
+        // premise rather than a finding: the seed was selected for it. The
+        // diversion above is only worth asserting if the undiverted run at
+        // the same seed would have been rejected.
+        assert!(contracts
+            .verify(unconstrained.final_simulation(), Some(&cfg))
+            .is_err());
         // Conditioning also changes site weights, so the same seed need
         // not choose the same unconstrained site. Independently evaluate the
         // rejected target-2 candidate: TGC -> TGA is a coding stop.
@@ -489,6 +495,56 @@ mod tests {
         assert_eq!(
             crate::productivity::assess(&stopped, &cfg).stop_codon,
             Some(true)
+        );
+    }
+
+    #[test]
+    fn pcr_error_count_is_what_was_applied_not_what_was_drawn() {
+        // `n_pcr_errors` is recomputed from the pass's own base-change
+        // events, never read from the count it drew. Two tests in
+        // `tests/metadata_truth/` used to establish that by arithmetic: a
+        // replacement drawn from all four bases meant roughly a quarter of
+        // requested errors changed nothing, so a counter equal to the drawn
+        // count was visibly wrong. The replacement is now drawn from the
+        // bases the site does not already hold, so in the ordinary case the
+        // two numbers agree and that evidence is gone.
+        //
+        // This is where they still part company. Under an active contract
+        // that admits nothing anywhere -- V = TGG, J = TGG, a distribution
+        // offering only `A` -- the pass draws its count, finds no site it may
+        // write, and applies nothing. A counter reading the drawn count would
+        // report one error on a molecule that was never touched.
+        let (cfg, sim) = make_fully_locked_vj_fixture();
+        let contracts = productive();
+        let before = sim.pool.as_slice().to_vec();
+
+        let outcome = PassRuntime::execute_with_context(
+            &pcr_single_error_plan(Box::new(StopOnlyMutationBaseDist)),
+            sim,
+            0,
+            Some(&cfg),
+            Some(&contracts),
+        );
+
+        assert_eq!(
+            outcome.trace.find("corrupt.pcr.count").unwrap().value,
+            ChoiceValue::Int(1),
+            "the premise is that one error WAS requested; without that this \
+             test is about a pass that did nothing because it was asked for \
+             nothing"
+        );
+        assert_eq!(
+            crate::airr_record::builder::realized_substitutions(
+                &outcome,
+                address::CORRUPT_PCR
+            ),
+            0,
+            "no site admitted the draw, so no error was applied"
+        );
+        assert_eq!(
+            outcome.final_simulation().pool.as_slice(),
+            before.as_slice(),
+            "a pass that applied nothing must leave the molecule alone"
         );
     }
 

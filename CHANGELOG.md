@@ -87,6 +87,29 @@ All notable changes to GenAIRR are documented here.
 
 ### Changed
 
+- **`count` is now a count of events, not of attempts, for `mutate(model="uniform")`,
+  `pcr_amplify` and `sequencing_errors`.** Each of the three drew its replacement
+  base from all four bases including the one already at the position, so about a
+  quarter of draws wrote back what was there. Such a write changes nothing and was
+  correctly not counted, which left three of the five corruption budgets delivering
+  roughly 76% of their nominal value with nothing in the record or the documentation
+  saying so: `pcr_amplify(count=8)` produced about six errors. The replacement is now
+  drawn from the three bases the position does not hold, so `n_pcr_errors`,
+  `n_quality_errors` and `n_mutations` equal the configured count. Measured
+  realized/requested on human_igh, 300 records: `pcr_amplify` 0.757 → 1.000,
+  `sequencing_errors` 0.757 → 1.000, `mutate(model="uniform")` 0.780 → 1.000.
+  `mutate(model="s5f")` and `ambiguous_base_calls` were already at 1.000 and are
+  unchanged — the S5F kernel's substitution row carries no mass on the base at the
+  site, and `ambiguous_base_calls` pins its write to `N` rather than sampling.
+
+  **This changes the output of every seeded run that uses one of the three.** The
+  sequences differ, not only the counts. A dataset produced before this change
+  cannot be reproduced after it.
+
+  A requested error can still go undelivered, in one case: under a contract such as
+  `productive_only()` a position that admits no replacement is left alone, and the
+  counters report what was applied rather than what was asked for.
+
 - Every simulated `SimulationResult` (bundled references included) now records
   the content hash of the reference it ran against. `validate_records` and
   `validate_families_with_parents` against a different reference now raise

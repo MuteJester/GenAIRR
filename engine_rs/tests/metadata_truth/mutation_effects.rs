@@ -378,23 +378,22 @@ fn n_mutations_field_reports_the_realised_uniform_mutation_count() {
     )));
     let (sim, rec) = run_plan_with_record(&cfg, plan, 7);
 
-    // The count distribution samples 4, which is the number of substitution
-    // ATTEMPTS. A uniform replacement is drawn from all four bases including
-    // the one already present, and those draws are not counted, so
-    // n_mutations reports the realised subset -- which is why this test is no
-    // longer named for an equality with the sampled count.
+    // The count distribution samples 4, and all four are realised: a uniform
+    // replacement is drawn from the three bases the site does not already
+    // hold, so the sampled count and the realised count agree. It was 3 of 4
+    // while the draw included the incumbent base.
     //
     // Pinned against the number of pool positions that actually differ from
-    // their germline base, and against the realised integer itself. A bound
-    // of "at most 4" would have been satisfied by zero, leaving the field
-    // free to report nothing at all.
+    // their germline base, and against the realised integer itself, which is
+    // what keeps the equality from being read as "the field echoes the drawn
+    // count". A bound of "at most 4" would have been satisfied by zero.
     let changed = sim
         .pool
         .as_slice()
         .iter()
         .filter(|n| !n.base.eq_ignore_ascii_case(&n.germline))
         .count() as i64;
-    assert_eq!((rec.n_mutations, changed), (3, 3));
+    assert_eq!((rec.n_mutations, changed), (4, 4));
 }
 
 #[test]
@@ -614,23 +613,19 @@ fn pcr_error_at_distinguishing_position_behaves_like_shm() {
         let plan = plan_clone(&cfg, "v01*01", 3, "pcr");
         let (sim, rec) = run_plan_with_record(&cfg, plan, seed);
         // The counter against an independent count of what the pool shows.
-        // It used to assert `== 3`, the sampled count, which held only while
-        // the field was a read of the drawn count: a replacement is drawn
-        // from A/C/G/T including the base already present, so of three draws
-        // only some change a base.
         let changed = sim
             .pool
             .as_slice()
             .iter()
             .filter(|n| !n.base.eq_ignore_ascii_case(&n.germline))
             .count() as i64;
-        // Bounded on both sides rather than equal: two errors can land on one
-        // position, so the realized count is at least the number of distinct
-        // changed positions (seed 24 has 3 realized across 2 positions) and at
-        // most the three attempts. The aggregate below is what pins it away
-        // from the attempt count.
+        // Not an equality with `changed`: two of the three errors can land on
+        // one position, so the number of distinct changed positions is a lower
+        // bound on the count, not the count. The upper bound is the three
+        // requested, and every one of them is delivered now that a
+        // replacement is drawn from the bases the site does not already hold.
         assert!(
-            changed <= rec.n_pcr_errors && rec.n_pcr_errors <= 3,
+            changed <= rec.n_pcr_errors && rec.n_pcr_errors == 3,
             "seed {seed}: reports {} errors with {changed} bases changed",
             rec.n_pcr_errors
         );
@@ -643,13 +638,14 @@ fn pcr_error_at_distinguishing_position_behaves_like_shm() {
             v_calls,
         );
     }
-    // 32 seeds x 3 draws = 96 attempts. A realized total equal to that would
-    // mean every draw changed a base, which would make a draw count and a
-    // realized count indistinguishable here and let this test pass again if
-    // the field reverted to reading the trace.
-    assert!(
-        realized_total > 0 && realized_total < 96,
-        "realized PCR errors across 32 seeds was {realized_total}, which is \
-         either nothing or every attempt"
+    // 32 seeds x 3 draws = 96, every one of them delivered. This asserted
+    // `> 0 && < 96` while a replacement could be the base already present:
+    // the gap was what told a realized count apart from a drawn one here, and
+    // closing it is the fix. The test that still tells them apart is
+    // `pcr_error_count_is_what_was_applied_not_what_was_drawn`, where a
+    // contract leaves the requested error undeliverable.
+    assert_eq!(
+        realized_total, 96,
+        "32 seeds x 3 requested errors should all be delivered"
     );
 }

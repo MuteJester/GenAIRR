@@ -477,44 +477,107 @@ def test_shm_under_productive_narrows_v_anchor_codon_substitutions() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────
-# D7: PCR base distribution is uniform
+# D7: PCR base distribution is uniform over the three bases the site
+#     does not already hold
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_pcr_substitution_base_distribution_is_uniform() -> None:
-    """Audit §5 D7: PCR error base sampling is uniform over A/C/G/T
-    when no contracts narrow the per-site mask. With pool length 18
-    and rate=1/18 → ~1 error per record, accumulated over 4000
-    seeds, each base should appear with frequency ≈ 0.25."""
+#: Site -> base for the templated positions of the `_vj_basic` fixture with
+#: `trim(enabled=False)`: V `AAACCCTGT` at 0..8, J `TGGAAA` at 12..17. The
+#: three NP1 positions in between are drawn per record, so they carry no
+#: fixture-known incumbent and are skipped below.
+_VJ_BASIC_TEMPLATED_BASES = {
+    **{site: base for site, base in enumerate("AAACCCTGT")},
+    **{12 + offset: base for offset, base in enumerate("TGGAAA")},
+}
+
+
+def _base_value(choice_value) -> str:
+    """The canonical base inside a `ChoiceValue::Base(N)` repr.
+
+    The repr has varied, so this accepts any single canonical base character
+    appearing in the string rather than pinning a format.
+    """
+    text = str(choice_value)
+    for base in "ACGT":
+        if base in text:
+            return base
+    raise AssertionError(f"no canonical base in choice value {text!r}")
+
+
+def test_pcr_substitution_draws_a_base_the_site_does_not_hold() -> None:
+    """Audit §5 D7, restated for the three-base replacement draw.
+
+    This asserted the *marginal* over A/C/G/T was uniform at 0.25 each, which
+    held while a replacement could be the base already at the site. It cannot
+    now, and not because of a defect: excluding the incumbent makes the
+    marginal depend on the molecule's own composition. On this fixture `A`
+    occupies 6 of the 15 templated positions, so `A` is the base most often
+    excluded and its marginal falls below 0.25 -- measured 0.2096, which is
+    what a marginal test reports once the draw is conditional.
+
+    The invariant that survives is the conditional one, and it is the one the
+    model actually claims: given the base at the site, the replacement is
+    uniform over the other three, and never that base. Both halves are
+    asserted, because the uniformity alone would be satisfied by a draw that
+    sometimes wrote the incumbent and spread the rest evenly.
+    """
     exp = (
         ga.Experiment.on(_vj_basic())
         .recombine(np1_lengths=[(3, 1.0)])
         .trim(enabled=False)
         .pcr_amplify(rate=1.0 / 18.0)
     )
-    base_counts = Counter()
-    for choice in _collect_choices(
-        exp, N_SEEDS, lambda a: "pcr.error_base" in a
-    ):
-        # ChoiceValue::Base(N) stringifies as "Base(N)"; extract the
-        # byte character. The repr varies — accept any single-char
-        # canonical base inside the string.
-        s = str(choice.value)
-        for b in "ACGT":
-            if b in s:
-                base_counts[b] += 1
-                break
+    compiled = exp.compile()
+    transitions = Counter()
+    for seed in range(N_SEEDS):
+        outcome = compiled.simulator.run(seed=seed)
+        errors = []
+        for choice in outcome.trace().choices():
+            if "pcr.error_site" in choice.address:
+                errors.append([_int_value(choice.value), None])
+            elif "pcr.error_base" in choice.address:
+                errors[-1][1] = _base_value(choice.value)
+        # Only single-error records: a second error can land on the first
+        # one's site, and then the incumbent for that draw is the first
+        # error's base rather than the fixture's.
+        if len(errors) != 1:
+            continue
+        site, written = errors[0]
+        incumbent = _VJ_BASIC_TEMPLATED_BASES.get(site)
+        if incumbent is None:
+            continue
+        transitions[(incumbent, written)] += 1
 
-    total = sum(base_counts.values())
-    assert total >= 1000, f"too few PCR errors ({total})"
-    assert set(base_counts.keys()) == set("ACGT")
+    total = sum(transitions.values())
+    assert total >= 600, (
+        f"too few single-error records at a templated site ({total}) for "
+        f"statistical power")
 
-    for b in "ACGT":
-        observed = base_counts[b] / total
-        assert _within_5sigma(observed, 0.25, total), (
-            f"base {b}: observed Pr = {observed:.4f}, "
-            f"expected 0.25 ± 5σ (N={total})"
-        )
+    diagonal = {pair: n for pair, n in transitions.items() if pair[0] == pair[1]}
+    assert not diagonal, (
+        f"a substitution wrote the base already at the site: {diagonal}. "
+        f"That write changes nothing, is correctly not counted, and so turns "
+        f"a requested error into no error at all")
+
+    for incumbent in "ACGT":
+        row = {written: n for (held, written), n in transitions.items()
+               if held == incumbent}
+        row_total = sum(row.values())
+        if row_total < 100:
+            # `C`, `G` and `T` each hold 3 of the 15 templated positions and
+            # `A` holds 6, so the rows are unequal by construction; a thin one
+            # is skipped rather than asserted on noise.
+            continue
+        expected = {base for base in "ACGT" if base != incumbent}
+        assert set(row) == expected, (
+            f"from {incumbent} the replacement reached {sorted(row)}, "
+            f"expected {sorted(expected)}")
+        for written, count in row.items():
+            observed = count / row_total
+            assert _within_5sigma(observed, 1.0 / 3.0, row_total), (
+                f"{incumbent}->{written}: observed Pr = {observed:.4f}, "
+                f"expected {1 / 3:.4f} ± 5σ (N={row_total})")
 
 
 # ──────────────────────────────────────────────────────────────────

@@ -36,12 +36,14 @@ def test_every_counted_mutation_changed_a_base(model):
     definition: AID deamination repair yields transitions and transversions,
     never a base replaced by itself.
 
-    The engine used to count them. The replacement is drawn from all four
-    bases including the original, so roughly a quarter of uniform draws landed
-    on the base already present; those writes still happened and were still
-    counted. They are now subtracted at the point of the write, which leaves
-    the draw, the RNG consumption, the recorded trace and the sequence exactly
-    as they were -- only the count moved.
+    The engine used to count them, in two stages. First the replacement was
+    drawn from all four bases including the original, so roughly a quarter of
+    uniform draws landed on the base already present; those writes still
+    happened and were still counted. Subtracting them at the point of the
+    write made the count honest but left `count=` an attempt budget --
+    `pcr_amplify(count=8)` delivered about six. The draw now excludes the base
+    at the site, so there is nothing to subtract: the subtraction stays as the
+    backstop for the write paths that pin their value rather than draw it.
 
     Compared case-insensitively on purpose: a templated base is stored
     lowercase and an SHM write emits uppercase, so a byte comparison sees a
@@ -50,10 +52,11 @@ def test_every_counted_mutation_changed_a_base(model):
     seven write sites, and the uniform model takes a different one, so the
     measurement did not move at all.
 
-    Measured at one mutation per record, seed 101, over 200 records: 198
-    positions differ from their germline byte, 191 of them a lowercase
-    germline byte against an uppercase base, 44 the same base differing only
-    in case, and 46 records realise no mutation at all.
+    Measured at one mutation per record, seed 101, over 200 records before the
+    draw excluded the incumbent: 198 positions differed from their germline
+    byte, 191 of them a lowercase germline byte against an uppercase base, 44
+    the same base differing only in case, and 46 records realised no mutation
+    at all. All 200 realise one now.
     """
     exp = experiment_builder.recombined().mutate(model=model, count=1)
     unchanged = []
@@ -304,11 +307,14 @@ BUNDLED_S5F_KERNELS = ("hh_s5f", "hh_s5f_60", "hh_s5f_opposite", "hkl_s5f")
           basis="reference")
 @pytest.mark.parametrize("kernel", BUNDLED_S5F_KERNELS)
 def test_no_bundled_s5f_kernel_draws_the_base_already_present(kernel):
-    """The uniform model's quarter-of-draws no-op rate is the reason
-    `n_mutations` stopped counting attempts. S5F is exempt -- but only
-    because of what is in the four bundled tables, and the documentation
-    says so in several places, so it is worth a measurement rather than a
-    reading of the sampler.
+    """S5F reached this on its own, before the uniform draw was fixed to
+    exclude the base at the site, and it reached it through the data rather
+    than through a guard: the sampler takes every positive entry in a
+    context's substitution row, and the four bundled tables carry zero on the
+    row's own centre base. Nothing in the code says so, which is why this is
+    a measurement per kernel rather than a reading of the sampler -- a table
+    shipped with a positive diagonal would make this model an attempt budget
+    again and no other test would notice.
     """
     attempts = 15
     exp = experiment_builder.recombined().mutate(
