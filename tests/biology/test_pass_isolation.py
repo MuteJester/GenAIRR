@@ -42,12 +42,19 @@ docstring that per-pass substreams would make the sequence half start
 passing and that the test should then be replaced by the stronger claim.
 That is what happened, and what the last test in this module now asserts.
 
-**What the toggle comparison still cannot ask.** It compares one pipeline
-with one pass to the same pipeline without it. A pass whose effect depends on
-another pass -- an indel that lands inside a region a later pass reads -- is
-measured here only in that one combination. `polymerase_indels` is where that
-shows: it moves `np1_length` and `np2_length`, which it declares, and which
-nothing noticed until the substream change moved where its indels land.
+**What this comparison is not sensitive to.** It runs one seed. A pass whose
+effect depends on where its draws land is measured only in the cases that seed
+produces, and `polymerase_indels` is where that shows: it moves `np1_length`
+and `np2_length` -- documented behaviour, since those fields are the interval
+between the segment bounds and an insertion joins it -- and seed 17 put no
+indel in an NP interval, so nothing here noticed until per-pass substreams
+moved where the indels land. 9 of the first 20 seeds move them.
+
+What that exposes is in `RECOMBINATION_FACTS`, not in the engine: the set
+holds the two np lengths, which the product documents as observed intervals,
+and holds no field for the amount TdT added at generation time. There is none
+to hold -- `np1_n_tdt` counts the TdT bases still present, so a deletion moves
+it too, on 30 of 400 records. See `polymerase_indels` in the registry.
 """
 from __future__ import annotations
 
@@ -157,9 +164,10 @@ def test_the_library_prep_passes_leave_the_rearrangement_alone():
 
     The number is at its floor, and it got there the honest way: the group
     held eight until `polymerase_indels` was measured moving `np1_length` and
-    `np2_length` and had to declare them. So the next pass that declares
-    anything fails this assertion, which is the point of writing the count
-    down rather than deriving it.
+    `np2_length` -- documented behaviour for an interval an insertion can join
+    -- and had to declare them. So the next pass that declares anything fails
+    this assertion, which is the point of writing the count down rather than
+    deriving it.
     """
     library_prep = [one for one in COMPARABLE if not one.may_move]
     assert len(library_prep) >= 7, (

@@ -343,26 +343,34 @@ PASSES = (
                     "exact_node_budget": st.just(200_000)},
         mechanisms=("assay.polymerase_indels",),
         may_move={
-            "np1_length": "an indel inside NP1 lands among untemplated bases, "
-                          "and the record reports the untemplated span the "
-                          "molecule now has rather than the number of bases "
-                          "TdT added. Measured on human_igh over 400 records "
-                          "at four indels: 40 records move, by exactly one "
-                          "base per indel that lands in the region -- a "
-                          "deletion shortens NP1, an insertion lengthens NP2. "
-                          "Every other recombination fact survives, germline "
-                          "coordinates included, which is what makes this an "
-                          "asymmetry in one pair of fields rather than a "
-                          "coordinate failure.",
+            "np1_length": "the record documents np1_length as the interval "
+                          "between the segment bounds -- 'not the TdT amount' "
+                          "in site_docs/guides/recombination-junction.md, "
+                          "which says in as many words that with "
+                          "polymerase_indels running some records' np lengths "
+                          "move by the insertion. So this declaration records "
+                          "documented behaviour, not a defect. Measured on "
+                          "human_igh over 400 records at four indels: 66 move "
+                          "NP1, 33 move NP2, by one base per indel landing in "
+                          "the interval. Every germline coordinate survives.",
             "np2_length": "as above",
         },
         notes="the pass that breaks the one-column-one-base assumption every "
-              "coordinate identity rests on. The two NP declarations above are "
-              "a finding, not a design: they were invisible until per-pass "
-              "substreams moved where the indels land, because the comparison "
-              "runs on one seed and seed 17 happened to put no indel in an NP "
-              "region. On the engine as it was, 9 of the first 20 seeds moved "
-              "them.",
+              "coordinate identity rests on. The two NP declarations are "
+              "documented behaviour that this comparison had never drawn: it "
+              "runs on one seed, and seed 17 put no indel in an NP interval. "
+              "On the engine before per-pass substreams, 9 of the first 20 "
+              "seeds moved them. What the declarations expose is a gap in "
+              "RECOMBINATION_FACTS rather than in the engine -- the set holds "
+              "np1_length/np2_length, which are observed intervals, and holds "
+              "no field for the amount TdT added at generation time. The "
+              "partition fields are observed too: np1_n_tdt moves on 30 of "
+              "those 400 records, because a deletion removes a base TdT "
+              "added and the count is over the bases still present. A "
+              "benchmark scoring junction-length inference on an "
+              "indel-corrupted read therefore has no ground-truth field that "
+              "survives the corruption, which is a truth-surface question and "
+              "not this pass's fault.",
         zero_setting=("count", 0),
     ),
     Pass(
