@@ -28,16 +28,16 @@ pytestmark = pytest.mark.composition
 FIXTURES = golden.every_fixture()
 
 
-def _tsv(tmp_path, locus: str, *, n: int, mixed: bool, tag: str = "a") -> str:
+def _tsv(tmp_path, locus: str, *, n: int, variant: str, tag: str = "a") -> str:
     """The TSV export as text, written through the real export path -- that is
     the artifact users actually compare against."""
     out = golden.write_reproducibility_tsv(
-        tmp_path / f"{locus}-{n}-{tag}.tsv", locus, n=n, mixed=mixed)
+        tmp_path / f"{locus}-{n}-{tag}.tsv", locus, n=n, variant=variant)
     return out.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("name,locus,n,mixed", FIXTURES)
-def test_one_seed_produces_identical_bytes_twice(name, locus, n, mixed, tmp_path):
+@pytest.mark.parametrize("name,locus,n,variant", FIXTURES)
+def test_one_seed_produces_identical_bytes_twice(name, locus, n, variant, tmp_path):
     """Determinism on whatever platform this runs on.
 
     Separate from the golden comparison on purpose: this fails for
@@ -45,13 +45,13 @@ def test_one_seed_produces_identical_bytes_twice(name, locus, n, mixed, tmp_path
     two platforms disagreeing, and it fails on every platform rather than only
     on the ones that did not build the golden.
     """
-    first = _tsv(tmp_path, locus, n=n, mixed=mixed, tag="first")
-    second = _tsv(tmp_path, locus, n=n, mixed=mixed, tag="second")
+    first = _tsv(tmp_path, locus, n=n, variant=variant, tag="first")
+    second = _tsv(tmp_path, locus, n=n, variant=variant, tag="second")
     assert first == second, f"{name}: two runs of the same seed produced different bytes"
 
 
-@pytest.mark.parametrize("name,locus,n,mixed", FIXTURES)
-def test_output_matches_the_committed_golden(name, locus, n, mixed, tmp_path):
+@pytest.mark.parametrize("name,locus,n,variant", FIXTURES)
+def test_output_matches_the_committed_golden(name, locus, n, variant, tmp_path):
     """Cross-platform agreement.
 
     Passes on the platform that produced the golden and bites on the others,
@@ -63,7 +63,7 @@ def test_output_matches_the_committed_golden(name, locus, n, mixed, tmp_path):
         f"{golden_path} is missing. Regenerate with "
         "`python tools/regenerate_golden_files.py`.")
     expected = golden_path.read_text(encoding="utf-8").splitlines()
-    actual = _tsv(tmp_path, locus, n=n, mixed=mixed).splitlines()
+    actual = _tsv(tmp_path, locus, n=n, variant=variant).splitlines()
 
     if expected == actual:
         return
@@ -71,6 +71,12 @@ def test_output_matches_the_committed_golden(name, locus, n, mixed, tmp_path):
         f"{name}: golden has {len(expected)} lines, this platform produced "
         f"{len(actual)}. If the output format changed intentionally, regenerate "
         "the goldens; otherwise this is a divergence.")
+    # A failure here is one of three things, and they are not interchangeable:
+    # this platform disagrees with the one that built the golden (a bug), the
+    # export format changed on purpose (regenerate), or the sampling changed on
+    # purpose -- in which case DETERMINISM_VERSION in
+    # engine_rs/src/determinism.rs has to move too, or every dataset produced
+    # on either side of the change claims to be the same model.
     for number, (want, got) in enumerate(zip(expected, actual), start=1):
         if want != got:
             column = next((i for i, (a, b) in enumerate(zip(want, got)) if a != b),
