@@ -202,16 +202,26 @@ def test_productive_true_for_in_frame_no_stop_anchors_preserved() -> None:
 
 def test_in_frame_junction_with_stop_codon_is_not_productive() -> None:
     """Audit §4 row 2: in_frame=True, stop_codon=True → productive=False.
-    Seed=0 with mutate(rate=0.5) lands a TGA inside the junction
-    codon frame."""
-    exp = (
-        _baseline_vj().mutate(rate=0.5)
-    )
-    rec = _record(exp, seed=0)
-    assert rec["vj_in_frame"] is True
-    assert rec["stop_codon"] is True
-    assert "*" in rec["junction_aa"]  # stop codon in AA translation
-    assert rec["productive"] is False
+
+    The premise is a record whose hypermutation put a stop inside the coding
+    frame while leaving the junction in frame. Searched rather than pinned on
+    a seed: which position a mutation lands on is a draw, and seed 0 produced
+    this case under one draw order and not the next.
+    """
+    exp = _baseline_vj().mutate(rate=0.5)
+    for seed in range(300):
+        rec = _record(exp, seed=seed)
+        if rec["vj_in_frame"] is True and rec["stop_codon"] is True:
+            break
+    else:
+        raise AssertionError(
+            "no seed in 300 produced an in-frame record with a stop codon, so "
+            "this row of the productivity table cannot be checked here")
+    assert "*" in rec["junction_aa"], (
+        f"seed {seed}: stop_codon is set but the translation has no stop")
+    assert rec["productive"] is False, (
+        f"seed {seed}: an in-frame record with a junction stop was called "
+        "productive")
 
 
 def test_v_anchor_mutation_to_non_cys_breaks_productive_only() -> None:

@@ -25,9 +25,27 @@ def _revision_fixture(equal_lengths=False):
     )
 
 
-def test_revision_records_current_allele_trim_without_fabricated_deletions():
+def _revision_seed(applied: bool):
+    """A seed whose initial V draw leaves the revision pass able to fire, or not.
+
+    Only `v1*01` has a length-eligible alternate in this fixture, so whether
+    the revision applies is decided by which allele the first draw picks. That
+    was encoded as "seed 0" and "seed 1", which stopped being true when
+    per-pass RNG substreams moved the draw; the premise is the case, so it is
+    searched.
+    """
     exp = _revision_fixture()
-    result = exp.run_records(n=1, seed=0)
+    for seed in range(200):
+        result = exp.run_records(n=1, seed=seed, expose_provenance=True)
+        if result[0]["receptor_revision_applied"] is applied:
+            return exp, result
+    raise AssertionError(
+        f"no seed in 200 produced a record with receptor_revision_applied="
+        f"{applied}, so that half of the pass's behaviour is untested here")
+
+
+def test_revision_records_current_allele_trim_without_fabricated_deletions():
+    exp, result = _revision_seed(applied=True)
     rec = result[0]
     assert rec["original_v_call"] == "v1*01"
     assert rec["v_call"] == "v2*01"
@@ -48,8 +66,9 @@ def test_revision_always_selects_a_different_eligible_allele():
 
 
 def test_revision_without_a_length_eligible_alternate_is_not_applied():
-    # Seed 1 initially selects the 12-base V; the remaining V has only 9.
-    result = _revision_fixture().run_records(n=1, seed=1, expose_provenance=True)
+    # The searched seed is one whose initial draw takes the 12-base V; the
+    # remaining V has only 9, so there is nothing to revise to.
+    _, result = _revision_seed(applied=False)
     rec = result[0]
     assert rec["truth_v_call"] == "v2*01"
     assert rec["receptor_revision_applied"] is False
