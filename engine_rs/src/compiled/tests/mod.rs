@@ -263,5 +263,6 @@ pub(super) mod indels;
 mod j_extensions;
 pub(super) mod live_call_edits;
 mod overlaps;
+mod substreams;
 mod trim_geometry;
 mod v_extensions;

@@ -81,6 +81,12 @@ fn mutate_child(
     retain_edge: bool,
 ) -> Result<(Simulation, Option<Outcome>), PassError> {
     let mut trace = Trace::new();
+    // The child's seed *is* this pass's stream, not a plan-wide one that
+    // several passes draw from in turn: one division runs one mutator, and
+    // each child's seed is a fresh word. There is no position in a shared
+    // stream here for another pass to move, so there is nothing for
+    // `rng::substream` to separate — see `compiled::execute`, which does
+    // need it because a plan runs many passes against one seed.
     let mut rng = Rng::new(child_seed);
     let mut events = Vec::new();
     let mut ctx = PassContext {

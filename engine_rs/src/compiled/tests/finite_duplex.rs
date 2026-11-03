@@ -890,8 +890,18 @@ fn genotype_keeps_natural_gene_dosage_when_only_some_copies_have_productive_comp
     ));
     // Independent SplitMix64 word-four oracle. The preceding choices are
     // haplotype, V gene and V copy; all are singletons but each consumes a word.
+    //
+    // All four words come from the genotype pass's own substream, so the
+    // oracle steps from that stream's seed rather than the run seed. The
+    // derivation of the seed has its own tests under `rng::substream`;
+    // what is checked independently here is which word the gene choice
+    // lands on, how that word becomes a float, and how the float meets
+    // the copy-number threshold.
     let d_gene_uniform = |seed: u64| {
-        let mut word = seed.wrapping_add(0x9e37_79b9_7f4a_7c15u64.wrapping_mul(4));
+        let stream_seed = crate::rng::substream::StreamRoot::new(seed).substream_seed(
+            crate::rng::substream::SubstreamLabel::for_pass("sample_genotype", 0),
+        );
+        let mut word = stream_seed.wrapping_add(0x9e37_79b9_7f4a_7c15u64.wrapping_mul(4));
         word = (word ^ (word >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
         word = (word ^ (word >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         word ^= word >> 31;

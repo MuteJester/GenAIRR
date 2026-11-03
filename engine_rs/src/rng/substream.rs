@@ -80,7 +80,15 @@ impl StreamRoot {
 
     /// The stream belonging to `label` under this run's seed.
     pub fn substream(&self, label: SubstreamLabel) -> Rng {
-        Rng::new(fold_in(self.seed, label.0))
+        Rng::new(self.substream_seed(label))
+    }
+
+    /// The seed of that stream. Exposed for oracles that step the
+    /// generator by hand to check which word a choice lands on: they
+    /// need somewhere to start, and starting from the run seed stopped
+    /// being right when passes stopped sharing a stream.
+    pub fn substream_seed(&self, label: SubstreamLabel) -> u64 {
+        fold_in(self.seed, label.0)
     }
 }
 

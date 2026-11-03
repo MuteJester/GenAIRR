@@ -21,7 +21,7 @@ use crate::pass::{
 };
 use crate::refdata::RefDataConfig;
 use crate::replay::TraceCursor;
-use crate::rng::Rng;
+use crate::rng::substream::StreamRoot;
 use crate::trace::{ChoiceRecord, Trace};
 
 /// Concrete implementations whose current edits preserve the duplex
@@ -189,13 +189,19 @@ pub(crate) fn execute_transactional(
     seed: u64,
 ) -> Result<Outcome, ExecutionAbort> {
     let mut trace = Trace::new();
-    let mut rng = Rng::new(seed);
+    // One root, no shared generator. Each pass is handed the stream its
+    // label names, derived from the run seed and the pass's identity, so
+    // what a pass draws does not depend on what the passes in front of
+    // it happened to consume. `StreamRoot` has no draw method, which is
+    // what keeps that true: there is no parent stream here to reach.
+    let root = StreamRoot::new(seed);
 
     // Replay-mode plumbing: when `inputs.replay_records` is `Some`,
     // build a cursor whose lifetime spans the whole run and reborrow
     // it into each `PassContext`. Passes that haven't been migrated
-    // to the trace-injected path still draw from `rng` (this slice
-    // wires only SampleAllelePass; other passes ignore the cursor).
+    // to the trace-injected path still draw from their own substream
+    // (this slice wires only SampleAllelePass; other passes ignore
+    // the cursor).
     let mut cursor_opt: Option<TraceCursor> = inputs.replay_records.map(TraceCursor::new);
 
     let mut revisions: Vec<Simulation> = Vec::with_capacity(inputs.plan.len() + 1);
@@ -262,6 +268,7 @@ pub(crate) fn execute_transactional(
         // and the simulation-event stream (consequences) for every
         // committed pass.
         let mut simulation_events: Vec<SimulationEvent> = Vec::new();
+        let mut rng = root.substream(inputs.plan.substream_label(*node));
         let mut ctx = PassContext {
             trace: &mut trace_delta,
             rng: &mut rng,
