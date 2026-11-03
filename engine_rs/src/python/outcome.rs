@@ -326,6 +326,15 @@ pub(crate) fn airr_record_to_pydict<'py>(
         dict.set_item("coding_end_processing", json_value_to_py(py, metadata)?)?;
     }
 
+    // Which sampling model drew this row. Stamped here rather than
+    // carried on `AirrRecord`, because this is the boundary where a
+    // molecule becomes a row of a dataset, and the engine that drew a
+    // molecule is a fact about the run and not about the molecule.
+    dict.set_item(
+        "determinism_version",
+        crate::determinism::DETERMINISM_VERSION,
+    )?;
+
     // AIRR metadata
     dict.set_item("sequence_id", &rec.sequence_id)?;
     dict.set_item("sequence", &rec.sequence)?;

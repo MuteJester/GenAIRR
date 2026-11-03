@@ -35,6 +35,12 @@ from ._validation import FamilyValidationFailedError, RecordValidationFailedErro
 # Re-exported here so users don't have to reach into ``GenAIRR._engine``.
 from GenAIRR._engine import RefDataConfig, StrictSamplingError, productive
 
+# The engine's sampling-model version: one seed and one version give one
+# answer, and two versions promise nothing to each other. Stamped on every
+# exported record as `determinism_version`, and readable here so a script can
+# decide whether a dataset it holds is comparable before running anything.
+from GenAIRR._engine import DETERMINISM_VERSION
+
 # Reference data — DataConfig + species pickles.
 from .data import list_configs
 from .dataconfig import ChainType, ConfigInfo, DataConfig, DataConfigError, Species
@@ -91,6 +97,7 @@ def __getattr__(name):
 __all__ = [
     # Version
     "__version__",
+    "DETERMINISM_VERSION",
     # Simulation API
     "Experiment",
     "CompiledExperiment",

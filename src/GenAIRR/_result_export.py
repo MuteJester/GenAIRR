@@ -250,6 +250,12 @@ _DEFAULT_COLUMN_ORDER = [
     "r2_start",
     "r2_end",
     "insert_size",
+    # Which sampling model drew these rows. Last, because it describes
+    # the run rather than the molecule, and one constant column is the
+    # price of a file that still answers "which engine?" after it has
+    # been separated from everything shipped beside it. See
+    # engine_rs/src/determinism.rs for the contract and the numbering.
+    "determinism_version",
 ]
 
 
