@@ -110,9 +110,18 @@ def test_indel_insertion_creates_gap_in_germline_alignment():
     )
     galn = rec["germline_alignment"]
     sa = rec["sequence_alignment"]
-    # All 4 indels are insertions → exactly 4 gaps in galn, 0 in sa.
-    assert galn.count("-") == 4
-    assert sa.count("-") == 0
+    assert rec["n_indels"] == 4, "the fixture did not apply four insertions"
+    assert sa.count("-") == 0, "an insertion put a gap in the sequence"
+    # One gap per insertion that landed in a templated segment, which is not
+    # the same as one per insertion: the germline alignment writes the NP
+    # regions as N padding, so a base inserted between two segments extends
+    # that padding instead of opening a gap. This asserted four gaps for four
+    # insertions, which held until per-pass substreams moved one of them into
+    # NP1 -- three gaps, and the counters agreeing with them exactly.
+    in_segments = sum(rec[f"n_{segment}_indels"] for segment in "vdj")
+    assert galn.count("-") == in_segments, (
+        f"{galn.count('-')} gaps for {in_segments} insertions inside segments")
+    assert 0 < in_segments <= 4
 
 
 def test_indel_deletion_creates_gap_in_sequence_alignment():

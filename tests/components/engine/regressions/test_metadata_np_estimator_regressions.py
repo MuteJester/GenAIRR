@@ -85,8 +85,20 @@ def test_corrected_generated_np_record_cannot_double_count_p_during_estimation(e
         .trim(enabled=False).run_records(n=1, seed=0)[0]
     )
     assert record["np1_length"] == len(record["np1"]) == 6
-    assert record["np1"][2:-1] == "CAT"
+    # Two P, three TdT, one P -- which is the structure the double-counting
+    # bug would break, and the reason this record is the fixture. The middle
+    # three letters were pinned as "CAT"; they are a draw, and per-pass RNG
+    # substreams moved them to "ACG". The partition fields and the case
+    # convention state the structure without naming the bases: P bases come
+    # from the germline ends and are lowercase, TdT's are untemplated and
+    # uppercase.
     assert (record["p_v_3_length"], record["p_j_5_length"]) == (2, 1)
+    assert (record["np1_n_p"], record["np1_n_tdt"]) == (3, 3)
+    assert record["np1"][2:-1].isupper(), (
+        f"the three bases between the P flanks are not untemplated: "
+        f"{record['np1']!r}")
+    assert record["np1"][:2].islower() and record["np1"][-1].islower(), (
+        f"the P flanks are not germline-derived: {record['np1']!r}")
 
     builder = _builder()
     builder.estimate_p_nucleotide_lengths([record])

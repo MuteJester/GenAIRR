@@ -314,15 +314,56 @@ def test_duplex_records_report_the_recoverable_mutation_count():
     assert total > 0, "nothing was mutated, so this proves nothing"
 
 
-def test_duplex_recoverable_count_ignores_library_substitutions():
+def test_duplex_recoverable_count_counts_no_library_substitution_as_a_mutation():
     """A duplex record's recoverable count is attributable to hypermutation.
-    The duplex ledger attributes every write to its pass, so a PCR
-    misincorporation is distinguishable from a mutation and must not be
-    counted as one."""
+
+    `n_mutations` must not move at all: the duplex ledger attributes every
+    write to the pass that made it, so a PCR misincorporation is never counted
+    as a mutation.
+
+    The *recoverable* count may fall, and this test now says so, because it
+    was asserting the two counts equal and that is not true. A
+    misincorporation that lands on a mutated base draws a base the site does
+    not hold -- which includes the germline base, one time in three -- and
+    writing the germline base back erases the evidence that the mutation ever
+    happened. That is what "recoverable" means: the count is over mutations a
+    caller could still find in the read. Measured on this fixture, one of six
+    records loses one.
+
+    So the claim is a direction plus an explanation. It must never rise, and
+    every drop has to be accounted for by a position the clean run mutated and
+    the noisy run restored -- which rules out a misincorporation being
+    miscounted as a mutation in either direction.
+
+    This was never visible while the PCR pass's presence moved the mutation
+    pass's draws: the two runs were different molecules, so no position could
+    be compared. Per-pass substreams make them the same molecule plus the
+    errors.
+    """
     _, clean = _mutated_duplex()
     _, noisy = _mutated_duplex(pcr_amplify={"count": 4})
-    assert [r["n_observable_mutations"] for r in noisy] == \
-           [r["n_observable_mutations"] for r in clean], (
-        "a PCR pass moved the recoverable hypermutation count")
+    assert [r["n_mutations"] for r in noisy] == [r["n_mutations"] for r in clean], (
+        "a PCR substitution was counted as hypermutation")
     assert sum(r["n_pcr_errors"] for r in noisy) > 0, (
         "fixture error -- no PCR substitution was applied")
+
+    dropped = 0
+    for index, (before, after) in enumerate(zip(clean, noisy)):
+        assert before["germline_alignment"] == after["germline_alignment"], (
+            f"record {index}: the two runs aligned to different germlines, so "
+            "their positions are not comparable and this comparison is void")
+        loss = before["n_observable_mutations"] - after["n_observable_mutations"]
+        assert loss >= 0, (
+            f"record {index}: adding a PCR pass RAISED the recoverable "
+            f"hypermutation count by {-loss}, so an error is being counted as "
+            "a mutation")
+        reverted = sum(
+            1 for was, now, germline in zip(before["sequence_alignment"],
+                                            after["sequence_alignment"],
+                                            before["germline_alignment"])
+            if was.upper() != germline.upper() and now.upper() == germline.upper())
+        assert loss == reverted, (
+            f"record {index}: the recoverable count fell by {loss} where "
+            f"{reverted} mutated positions were restored to germline")
+        dropped += loss
+    assert dropped <= sum(r["n_pcr_errors"] for r in noisy)
