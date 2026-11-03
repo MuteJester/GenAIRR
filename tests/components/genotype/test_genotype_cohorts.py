@@ -298,8 +298,13 @@ def test_run_cohort_mixed_novel_and_plain_subjects():
           .add_novel_allele(novel, base=base, sequence=seq, segment="V")
           .homozygous(vg, novel).complete_from_reference().with_subject("A"))
     gB = Genotype.sample(cfg, seed=2, subject_id="B")
+    # 400 records per subject, not 40. The reference carries 52 V genes and
+    # the novel can only be called on records that draw this one, so 40
+    # records miss it outright about 46% of the time -- this assertion was a
+    # coin flip that happened to land, until per-pass substreams reshuffled
+    # which genes seed 0 draws. At 400 the gene comes up about 7 times.
     c = (ga.Experiment.on(cfg).recombine()
-         .run_cohort([gA, gB], n_per_subject=40, seed=0, expose_provenance=True))
+         .run_cohort([gA, gB], n_per_subject=400, seed=0, expose_provenance=True))
     # every record's truth call is carried by its subject's genotype
     geno = {s.subject_id: s.genotype for s in c.subjects}
     for r in c.records:
@@ -308,9 +313,20 @@ def test_run_cohort_mixed_novel_and_plain_subjects():
             if not call:
                 continue
             assert call in geno[r["subject_id"]].carried_alleles(seg, call.split("*")[0])
-    # the novel appears for subject A and never for subject B
-    assert any(r["truth_v_call"] == novel for r in c.result_for("A").records
-               if r.get("truth_v_call"))
+    # Subject A is homozygous for the novel, so every record of A's that draws
+    # this gene must call it -- which is the claim, where "it appears at least
+    # once" was a weaker shadow of it. The count is asserted too, so a run
+    # that never drew the gene fails as a premise rather than passing
+    # vacuously.
+    drew_gene = [r for r in c.result_for("A").records
+                 if (r.get("truth_v_call") or "").split("*")[0] == vg]
+    assert drew_gene, (
+        f"no record of subject A's drew {vg}, so nothing here establishes "
+        "that a carried novel reaches the records")
+    assert all(r["truth_v_call"] == novel for r in drew_gene), (
+        f"subject A is homozygous for {novel} but some record calls another "
+        f"allele of {vg}: "
+        f"{sorted({r['truth_v_call'] for r in drew_gene}) }")
     assert all(r.get("truth_v_call") != novel for r in c.result_for("B").records)
 
 
