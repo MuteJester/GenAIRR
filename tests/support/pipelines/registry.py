@@ -100,10 +100,6 @@ class Pass:
     #: while the isolation comparison that uses `loud` runs on one VDJ locus
     #: and needs them to reach the D P-lengths.
     loud: dict = field(default_factory=dict)
-    #: Set where the off switch is NOT equivalent to absence, with the
-    #: measurement. A pass that is configured off and still changes the record
-    #: breaks a seeded ablation, which is how anyone studies one pass.
-    zero_differs: str = ""
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -266,30 +262,17 @@ PASSES = (
         requires=(("the locus has no D segment, so inverting one is a no-op "
                    "that would pass by having nothing to do",
                    lambda facts: facts["has_d"]),),
-        may_move={"d_inverted": "the orientation it samples",
-                  "np2_length": "see zero_differs: the pass re-draws it"},
+        may_move={"d_inverted": "the orientation it samples"},
         zero_setting=("prob", 0.0),
-        zero_differs="`prob=0.0` is NOT equivalent to the pass being absent. "
-                     "The inversion coin flip is inlined into the "
-                     "V-NP1-D-NP2-J sequence immediately before assemble(D) "
-                     "-- see _lowering._extract_invert_d_prob -- so its draw "
-                     "falls between the NP1 and NP2 generations and the NP2 "
-                     "length is re-drawn whether or not anything inverts. "
-                     "Measured over 400 records on human_igh: np2_length "
-                     "agrees with a run without the pass on 21 of 400, with "
-                     "the same distribution (mean 7.77 against 8.00), so it "
-                     "is a re-draw and not a bias. What makes invert_d "
-                     "distinctive is only that it fails the SINGLE-PASS "
-                     "comparison: the flip is consumed upstream of a draw "
-                     "recombine() itself makes. It is NOT the only pass whose "
-                     "presence shifts a later draw -- rng.rs holds one u64 "
-                     "stream and no split(), so every pass does, and "
-                     "receptor_revision(prob=0.0) agreeing on 400 of 400 "
-                     "only means nothing drew after it. Measured with a "
-                     "mutate behind either pass: rearrangement identical 200 "
-                     "of 200, final sequence identical 0 of 200. A seeded "
-                     "ablation is therefore valid about the rearrangement "
-                     "and not about the molecule.",
+        notes="`prob=0.0` used not to be equivalent to the pass being absent: "
+              "with one random stream shared by the plan, the inversion coin "
+              "flip fell between the two NP generations and NP2 was re-drawn "
+              "whether or not anything inverted. Measured then over 400 "
+              "records on human_igh, np2_length agreed with a run without the "
+              "pass on 21 of 400. Per-pass substreams ended it -- the flip "
+              "comes out of this pass's own stream now -- and the measurement "
+              "is kept here because it is why the registry carried a "
+              "`zero_differs` field until nothing needed one."
     ),
     Pass(
         name="receptor_revision",
@@ -359,8 +342,27 @@ PASSES = (
                     # records here produces the same records there.
                     "exact_node_budget": st.just(200_000)},
         mechanisms=("assay.polymerase_indels",),
+        may_move={
+            "np1_length": "an indel inside NP1 lands among untemplated bases, "
+                          "and the record reports the untemplated span the "
+                          "molecule now has rather than the number of bases "
+                          "TdT added. Measured on human_igh over 400 records "
+                          "at four indels: 40 records move, by exactly one "
+                          "base per indel that lands in the region -- a "
+                          "deletion shortens NP1, an insertion lengthens NP2. "
+                          "Every other recombination fact survives, germline "
+                          "coordinates included, which is what makes this an "
+                          "asymmetry in one pair of fields rather than a "
+                          "coordinate failure.",
+            "np2_length": "as above",
+        },
         notes="the pass that breaks the one-column-one-base assumption every "
-              "coordinate identity rests on",
+              "coordinate identity rests on. The two NP declarations above are "
+              "a finding, not a design: they were invisible until per-pass "
+              "substreams moved where the indels land, because the comparison "
+              "runs on one seed and seed 17 happened to put no indel in an NP "
+              "region. On the engine as it was, 9 of the first 20 seeds moved "
+              "them.",
         zero_setting=("count", 0),
     ),
     Pass(
