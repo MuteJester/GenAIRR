@@ -781,13 +781,23 @@ def check(baseline: dict, current: dict, allow=frozenset(), revised=frozenset(),
     if True:          # present-but-empty compares to nothing; absent raises above
         cur_consts = current.get("constants", {})
         gone = sorted(set(base_consts) - set(cur_consts))
-        if gone and "module-split" not in allow:
+        # `dead-code` alongside `module-split`, because the vocabulary already
+        # defines it as "a member removed because nothing referenced it" and a
+        # module-level constant is a member. Without it, removing a constant
+        # whose only reader is gone left two options: declare `module-split`,
+        # which would be a false statement about what happened, or keep the
+        # constant so the gate stays quiet. Both are worse than the gate
+        # accepting the class that describes the change.
+        removal_classes = {"module-split", "dead-code"} & set(allow)
+        if gone and not removal_classes:
             violations.append(
                 f"module-level constants no longer defined anywhere: {gone}. "
                 "If a split replaced one with per-target constants, pass "
-                "--allow module-split.")
+                "--allow module-split; if nothing reads it any more, pass "
+                "--allow dead-code.")
         elif gone:
-            print(f"note: {len(gone)} constant(s) removed, attributed to module-split: {gone}")
+            print(f"note: {len(gone)} constant(s) removed, attributed to "
+                  f"{sorted(removal_classes)}: {gone}")
         retargeted = sorted(n for n in set(base_consts) & set(cur_consts)
                             if Counter(base_consts[n]) != Counter(cur_consts[n]))
         if retargeted:
