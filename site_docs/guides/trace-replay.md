@@ -19,6 +19,29 @@ the *exact* same environment to mean anything. Change a single
 default in your `Experiment` and the same seed produces a
 different outcome.
 
+**Which engine, though.** A seed is your half of that promise; the
+sampling model is the engine's half. `GenAIRR.DETERMINISM_VERSION`
+names the model the installed engine implements, and every exported
+record carries the same number as a `determinism_version` column. Two
+runs at the same version with the same seed agree byte for byte. Two
+runs at *different* versions promise each other nothing — a changed
+draw order moves every record in the batch, so there is no "mostly the
+same" to fall back on. Check the column before scoring anything
+against a dataset you did not generate yourself; a dataset with no
+such column was produced by GenAIRR 2.3.1 or earlier, before the stamp
+existed.
+
+**One stream per pass.** Each pass draws from its own random
+substream, derived from the run seed and the pass's identity rather
+than taken from a stream the pipeline shares. Two consequences worth
+relying on: adding, removing or switching off one step does not move
+what any other step draws, so a seeded ablation — the same repertoire
+with and without one step — differs only by that step; and two
+`pcr_amplify` steps in one pipeline draw independently instead of
+applying the same errors twice. Before GenAIRR 2.3.1 one stream served
+the whole pipeline, so any step's presence shifted every draw after
+it.
+
 **Trace reproducibility.** A trace is the **record** of choices
 the engine made during one run. It includes the seed, but it
 also includes the resolved plan signature, the cartridge
@@ -36,6 +59,8 @@ The mental model:
 | Reconstruct one specific record from a paper / bug report | **Trace** |
 | Run a regression test that survives a non-breaking refactor | **Trace** |
 | Verify a code change didn't perturb sampling | **Seed** before / **trace** after |
+| Score a prediction against someone else's dataset | **`determinism_version`** first, then seed |
+| Measure what one pipeline step does | **Seed**, with and without the step |
 
 A seed is a promise about RNG output. A trace is a record of
 sampling. Use both.

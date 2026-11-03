@@ -6,6 +6,18 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
+- `determinism_version` on every exported record, and
+  `GenAIRR.DETERMINISM_VERSION` to read the same number without running
+  anything. The engine's reproducibility promise is that one seed and one
+  determinism version give one answer, on every supported platform; two
+  different versions promise each other nothing at all. The number increments
+  whenever a released change moves what a seed produces, and it travels on the
+  record rather than in a sidecar because a dataset leaves this library as a
+  file of rows and is then passed on by itself. It is `2`; a dataset with no
+  such column was produced by the unnumbered model that preceded it, which is
+  why the numbering does not start at 1. The two changes below are what
+  separates version 2 from that model.
+
 - Six per-V-subregion recoverable mutation counters —
   `n_fwr1_observable_mutations`, `n_cdr1_observable_mutations`,
   `n_fwr2_observable_mutations`, `n_cdr2_observable_mutations`,
@@ -86,6 +98,29 @@ All notable changes to GenAIRR are documented here.
   microscopic hairpin-opening probabilities.
 
 ### Changed
+
+- **Every pass now draws from its own random substream.** The engine held one
+  random stream for the whole pipeline, so each pass's draws began wherever the
+  passes in front of it had left off. Adding a pass, removing one, or
+  configuring one to do nothing therefore moved every draw after it: measured
+  over 200 human IGH records with a `mutate` behind it,
+  `receptor_revision(prob=0.0)` left the rearrangement identical on 200 of 200
+  records and the final sequence identical on **0 of 200**. A seeded ablation —
+  the same repertoire with and without one step, which is how anyone measures
+  what a step does — was therefore a valid comparison about which alleles were
+  drawn and an invalid one about the molecule.
+
+  Each pass is now handed a stream derived from the run seed and the pass's own
+  identity: its name and which occurrence of that name it is. Two
+  `pcr_amplify` steps in one pipeline stay independent, and `mutate` draws the
+  same words whether or not an `invert_d` sits in front of it. A pass
+  configured off is now indistinguishable from a pass that is not there, the
+  molecule included.
+
+  **This changes the output of every seeded run.** Not only runs that use a
+  particular pass: the stream every pass draws from has moved. A dataset
+  produced before this change cannot be reproduced after it, which is what
+  `determinism_version` below exists to make visible.
 
 - **`count` is now a count of events, not of attempts, for `mutate(model="uniform")`,
   `pcr_amplify` and `sequencing_errors`.** Each of the three drew its replacement
