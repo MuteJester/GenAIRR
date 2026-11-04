@@ -25,6 +25,18 @@ def _read_source(path):
     return path.read_text(encoding="utf-8")
 
 
+def _relative_key(path, root):
+    """Name a file under `root` the same way on every platform.
+
+    `str(path.relative_to(root))` spells the result with the platform's
+    separator, so one file is `_compiled/plain.py` here and
+    `_compiled\\plain.py` on Windows -- and an allowlist keyed the first
+    way matches nothing the second way, turning a sanctioned site into a
+    reported violation.
+    """
+    return path.relative_to(root).as_posix()
+
+
 # The first schedule's arithmetic, as `origin/master` writes it at
 # `_compiled/repertoire.py:106`, `_compiled/lineage.py:164,178,298` and
 # `_compiled/repertoire.py:134`. Quoted here rather than read back off
@@ -153,7 +165,7 @@ class TestNothingDerivesASeedByArithmetic:
         root = paths.repo_root() / "src" / "GenAIRR"
         assert (root / "_seed_schedule.py").exists(), f"premise: scanning the package at {root}"
         return {
-            str(path.relative_to(root)): self._sites(path)
+            _relative_key(path, root): self._sites(path)
             for path in sorted(root.rglob("*.py"))
             # The schedule is where the arithmetic is allowed to live: it
             # has to keep deriving what the earlier scheme derived.
@@ -284,7 +296,7 @@ class TestEverySeedDerivedComesFromThePrimitive:
         root = paths.repo_root() / "src" / "GenAIRR"
         assert (root / "_seed_schedule.py").exists(), f"premise: scanning the package at {root}"
         offenders = {
-            str(path.relative_to(root)): sites
+            _relative_key(path, root): sites
             for path in sorted(root.rglob("*.py"))
             if (sites := self._sites(path))
         }
@@ -363,3 +375,42 @@ class TestTheseScansDeclareTheirEncoding:
         with pytest.raises(UnicodeDecodeError):
             offender.read_bytes().decode("cp1252")
         assert offender.read_text(encoding="utf-8"), "but UTF-8 reads it fine"
+
+
+class TestTheseScansNameAFileTheSameWayEverywhere:
+    """The second platform defect in these scans, after the encoding.
+
+    A scan's allowlist is keyed by path, and `str(path.relative_to(root))`
+    spells that path with the platform's separator -- so the entry
+    `_compiled/plain.py`, written and reviewed on Linux, matched nothing
+    on Windows, where the same file comes back as `_compiled\\plain.py`.
+    The sanctioned site was therefore reported as an unsanctioned one on
+    one of three platforms.
+
+    Checked against a Windows path object rather than by running on
+    Windows, so the guard holds wherever this suite runs.
+    """
+
+    def test_a_backslash_platform_produces_the_same_key(self):
+        import pathlib
+
+        root = pathlib.PureWindowsPath(r"C:\repo\src\GenAIRR")
+        path = pathlib.PureWindowsPath(r"C:\repo\src\GenAIRR\_compiled\plain.py")
+        assert _relative_key(path, root) == "_compiled/plain.py"
+
+    def test_the_naive_spelling_is_the_one_that_broke(self):
+        """Guard the premise: if `str()` already gave forward slashes
+        there would be nothing here to fix, and the test above would pass
+        against either implementation."""
+        import pathlib
+
+        root = pathlib.PureWindowsPath(r"C:\repo\src\GenAIRR")
+        path = pathlib.PureWindowsPath(r"C:\repo\src\GenAIRR\_compiled\plain.py")
+        assert str(path.relative_to(root)) == "_compiled\\plain.py"
+
+    def test_every_sanctioned_key_is_spelled_the_way_a_scan_reports_one(self):
+        """An entry no scan can ever match is an allowlist that silently
+        does nothing, which is worse than no allowlist."""
+        for key in TestNothingDerivesASeedByArithmetic.SANCTIONED:
+            assert "\\" not in key, f"{key!r} cannot match a key the scan builds"
+            assert key == key.replace("\\", "/")
