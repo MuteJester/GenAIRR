@@ -184,10 +184,17 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
     /// under the v3.0 **constrain-before-propose** API.
     ///
     /// Fast path (no contracts): pick `site` uniformly in `[0, pool_len)`,
-    /// draw `base = transform(base_dist.sample(rng))`, record both to
+    /// draw `base` from the distribution's support minus the base the site
+    /// already holds (see [`sample_replacement_base`]), record both to
     /// the trace, and write through the builder. RNG consumption
     /// (one word for site, one for base) matches the pre-v3.0
     /// uniform / PCR / quality loops exactly.
+    ///
+    /// Both paths exclude the incumbent base, and both read the
+    /// distribution's enumerated support to do it. That is why a
+    /// distribution whose `sample()` disagrees with its `support()` now
+    /// behaves the same way with contracts and without: before, only the
+    /// constrained path consulted the support.
     ///
     /// Constrained path (contracts present, `base_dist.support()`
     /// enumerable): compute per-site weight as
@@ -401,7 +408,18 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             self.ctx
                 .trace
                 .record_choice(site_address, ChoiceValue::Int(site as i64));
-            let base = transform(base_dist.sample(self.ctx.rng));
+            let incumbent = self
+                .builder
+                .peek()
+                .pool
+                .get(NucHandle::new(site))
+                .map(|nuc| nuc.base);
+            let base = match incumbent {
+                Some(current) => {
+                    sample_replacement_base(self.ctx.rng, base_dist, current, transform)
+                }
+                None => transform(base_dist.sample(self.ctx.rng)),
+            };
             self.ctx
                 .trace
                 .record_choice(base_address, ChoiceValue::Base(base));
@@ -453,6 +471,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
             let sim = self.builder.peek();
             for site in 0..pool_len {
                 let mask = contracts.admissible_bases_at(sim, refdata, NucHandle::new(site));
+                let incumbent = sim.pool.get(NucHandle::new(site)).map(|nuc| nuc.base);
                 let mass: f64 = support
                     .iter()
                     .filter(|(b, _)| {
@@ -460,6 +479,16 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                             return false;
                         }
                         let written = transform(*b);
+                        // A site whose only admissible base is the one
+                        // already there has nothing a substitution could
+                        // write, so it contributes no weight and is never
+                        // chosen. That is the constrained-path equivalent of
+                        // the three-base draw on the fast path: both say the
+                        // replacement is drawn from the bases other than the
+                        // incumbent.
+                        if incumbent.is_some_and(|current| changes_nothing(current, written)) {
+                            return false;
+                        }
                         if written == *b {
                             return true;
                         }
@@ -507,6 +536,7 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
         let filtered: Vec<(u8, f64)> = {
             let sim = self.builder.peek();
             let mask = contracts.admissible_bases_at(sim, refdata, NucHandle::new(chosen_site));
+            let incumbent = sim.pool.get(NucHandle::new(chosen_site)).map(|nuc| nuc.base);
             support
                 .iter()
                 .filter(|(b, _)| {
@@ -514,6 +544,13 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
                         return false;
                     }
                     let written = transform(*b);
+                    // Same exclusion as the site-weight loop above, and it
+                    // has to be the same predicate: a base admitted here but
+                    // not counted there would let the weighted draw land on
+                    // mass the site weight did not include.
+                    if incumbent.is_some_and(|current| changes_nothing(current, written)) {
+                        return false;
+                    }
                     if written == *b {
                         return true;
                     }
@@ -700,6 +737,72 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
 #[inline]
 fn identity_base(base: u8) -> u8 {
     base
+}
+
+/// Whether writing `candidate` over `incumbent` would leave the base alone.
+///
+/// Case-insensitive, because case is a separate channel: a templated base is
+/// stored lowercase and an untemplated one uppercase, an SHM write emits
+/// uppercase and a sequencing error emits lowercase. So `a` overwritten by
+/// `A` changes the byte and changes nothing a consumer can see -- and a
+/// consumer comparing the read to its germline has to fold case, which is the
+/// only correct way to read a sequence whose case carries provenance.
+#[inline]
+fn changes_nothing(incumbent: u8, candidate: u8) -> bool {
+    incumbent.eq_ignore_ascii_case(&candidate)
+}
+
+/// Draw a replacement base for a site currently holding `incumbent`.
+///
+/// A substitution replaces one base with a different one. Drawing from all
+/// four bases instead means about a quarter of draws write what was already
+/// there, and a write that changes nothing is not a substitution -- it is
+/// correctly not counted, which made `count=` an attempt budget for the three
+/// passes that come through here and an effect budget for the two that do not.
+/// AID repair yields transitions and transversions, never C->C, so the
+/// four-way draw was not modelling anything at those draws either.
+///
+/// The exclusion needs the distribution's support, so the three-base draw is
+/// available exactly where `support()` is. Both fallbacks below draw from the
+/// full distribution, so a caller whose distribution cannot enumerate itself,
+/// or can only write the base already present, gets the previous behaviour:
+/// one write, possibly a no-op, which `write_base` still declines to count.
+/// Every distribution the engine ships enumerates its support.
+///
+/// One RNG word either way, which is what keeps the per-pass consumption
+/// shape (`site`, then `base`) that the trace tests characterize.
+fn sample_replacement_base(
+    rng: &mut crate::rng::Rng,
+    base_dist: &dyn Distribution<Output = u8>,
+    incumbent: u8,
+    transform: fn(u8) -> u8,
+) -> u8 {
+    let Some(support) = base_dist.support() else {
+        return transform(base_dist.sample(rng));
+    };
+    let candidates: Vec<(u8, f64)> = support
+        .into_iter()
+        .filter(|(base, weight)| {
+            weight.is_finite()
+                && *weight > 0.0
+                && !changes_nothing(incumbent, transform(*base))
+        })
+        .collect();
+    let total: f64 = candidates.iter().map(|(_, w)| *w).sum();
+    if candidates.is_empty() || !total.is_finite() || total <= 0.0 {
+        return transform(base_dist.sample(rng));
+    }
+    let r = rng.next_f64() * total;
+    let mut cumulative = 0.0;
+    let mut chosen = candidates.last().expect("candidates non-empty").0;
+    for &(base, weight) in candidates.iter() {
+        cumulative += weight;
+        if r < cumulative {
+            chosen = base;
+            break;
+        }
+    }
+    transform(chosen)
 }
 
 /// Combined per-position SHM weight factor: `segment_rate ×

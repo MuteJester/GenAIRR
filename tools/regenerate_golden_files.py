@@ -34,10 +34,14 @@ GOLDEN_DIR = REPO_ROOT / "tests" / "golden"
 
 def main() -> int:
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
-    for name, locus, n, mixed in every_fixture():
-        out = write_reproducibility_tsv(GOLDEN_DIR / name, locus, n=n, mixed=mixed)
+    for name, locus, n, variant in every_fixture():
+        out = write_reproducibility_tsv(GOLDEN_DIR / name, locus, n=n, variant=variant)
         print(f"  {out.relative_to(REPO_ROOT)}  ({out.stat().st_size} bytes)")
     print("\nCommit these. They are the reference every CI platform is checked against.")
+    print("If the sampling changed rather than the format, bump "
+          "DETERMINISM_VERSION in engine_rs/src/determinism.rs in the same "
+          "commit: datasets on either side of the change are otherwise "
+          "indistinguishable.")
     return 0
 
 

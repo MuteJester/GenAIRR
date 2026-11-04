@@ -41,6 +41,7 @@ pub(crate) mod coding;
 pub mod codon;
 pub mod compiled;
 pub mod contract;
+pub mod determinism;
 pub mod dist;
 pub mod duplex_repair;
 pub mod end_processing;
@@ -63,6 +64,11 @@ pub mod s5f;
 pub mod trace;
 pub mod trace_file;
 
+/// Test-time machinery for guards that read this crate's own source,
+/// for invariants that visibility cannot express. Nothing here ships.
+#[cfg(test)]
+mod source_guard;
+
 /// Crate version string. Used as a smoke-test target to confirm the
 /// Cargo → maturin → Python import chain is functional end to end.
 #[pyfunction]
@@ -74,6 +80,7 @@ fn version() -> &'static str {
 #[pymodule]
 fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
+    m.add("DETERMINISM_VERSION", determinism::DETERMINISM_VERSION)?;
     python::register(m)?;
     Ok(())
 }

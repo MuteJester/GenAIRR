@@ -134,8 +134,8 @@ def disagreements(record, simulation, segment_of, *,
     this record. The engine's own rule for "this reference resolves an anchor"
     is that the codon at it IS canonical, so an allele that fails this
     identity is one the engine refuses to compute a junction for at all --
-    correctly, and with ``reference_anchor_unresolved`` in the record's
-    reasons. Six of the 114 bundled TCRB alleles are in that position
+    correctly, and with ``v_reference_anchor_unresolved`` or
+    ``j_reference_anchor_unresolved`` in the record's reasons. Six of the 114 bundled TCRB alleles are in that position
     (TRBV17*01/*02, TRBV7-3*02/*03, TRBJ2-2P*01, TRBJ2-7*02), so a per-record
     sweep that left this on would report six non-findings per TCRB campaign.
     The reference-level claim is tested where it belongs, in
@@ -153,7 +153,7 @@ def disagreements(record, simulation, segment_of, *,
         # UNRESOLVED rather than out-of-frame. Measured on 60 of 60 records
         # under trim(v_3=12..25): junction and junction_aa empty,
         # junction_length and junction_end null, vj_in_frame None, productive
-        # False, and the reasons naming anchor_removed and
+        # False, and the reasons naming v_anchor_removed and
         # vj_frame_unresolved. A consumer reading vj_in_frame as a boolean
         # gets False for "we could not tell", which is why this is an
         # identity and not a skip.

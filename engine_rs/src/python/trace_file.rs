@@ -47,6 +47,13 @@ impl PyTraceFile {
         self.inner.schema_version
     }
 
+    /// Which sampling model drew this trace. `0` means the file
+    /// predates the stamp, so the engine cannot tell.
+    #[getter]
+    fn determinism_version(&self) -> u32 {
+        self.inner.determinism_version
+    }
+
     /// Engine crate version that produced this trace file.
     #[getter]
     fn engine_version(&self) -> &str {

@@ -21,6 +21,27 @@ impl PySimulation {
     pub(crate) fn new(inner: Simulation) -> Self {
         Self { inner }
     }
+
+    /// One byte per pool position, `1` where `flag` is set.
+    ///
+    /// Outside the `#[pymethods]` block deliberately: the mask accessors
+    /// that call it are the public surface, and a caller passing a raw
+    /// `NucFlags` would be building on the bit layout rather than on a
+    /// named provenance question.
+    fn flag_mask<'py>(
+        &self,
+        py: Python<'py>,
+        flag: crate::ir::NucFlags,
+    ) -> Bound<'py, PyBytes> {
+        let bytes: Vec<u8> = self
+            .inner
+            .pool
+            .as_slice()
+            .iter()
+            .map(|n| u8::from(n.flags.contains(flag)))
+            .collect();
+        PyBytes::new_bound(py, &bytes)
+    }
 }
 
 #[pymethods]
@@ -69,6 +90,50 @@ impl PySimulation {
     fn germline_position(&self, index: u32) -> Option<u16> {
         let n = self.inner.pool.get(NucHandle::new(index))?;
         n.germline_pos.get()
+    }
+
+    /// Positions that are palindromic (P) additions, one byte per pool
+    /// position: `1` where the flag is set, `0` elsewhere.
+    ///
+    /// Exposed because letter case is not a substitute for it. A P
+    /// nucleotide is written lowercase, but so is every base
+    /// `sequencing_errors` corrupts, and hypermutation writes uppercase --
+    /// so inferring P-versus-N from case misreads a corrupted TdT addition
+    /// as palindromic and a mutated palindrome as TdT. Measured over 200
+    /// human IGH records, `sequencing_errors(count=8)` turned 54 of 382
+    /// pure-N untemplated runs into apparently mixed ones.
+    ///
+    /// A mask rather than raw flag bits: the bit layout includes
+    /// `INDEL_OUTSIDE_REGIONS`, which exists to work around a counter
+    /// attribution problem and is not something a caller should build on.
+    fn p_nucleotide_mask<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        self.flag_mask(py, crate::ir::flag::P_NUC)
+    }
+
+    /// Positions that are TdT (N) additions. See
+    /// [`PySimulation.p_nucleotide_mask`] for why this is a flag rather
+    /// than a reading of the base's case.
+    fn tdt_addition_mask<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        self.flag_mask(py, crate::ir::flag::N_NUC)
+    }
+
+    /// Positions written by a polymerase indel pass, which have no germline
+    /// provenance and are not part of the recombination. These sit inside
+    /// the np interval when the insertion landed between two segments, which
+    /// is why the np length alone does not report the TdT amount.
+    fn indel_inserted_mask<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        self.flag_mask(py, crate::ir::flag::INDEL_INSERTED)
+    }
+
+    /// Positions inside the junction, V anchor codon through J anchor codon.
+    fn junction_mask<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        self.flag_mask(py, crate::ir::flag::JUNCTION)
+    }
+
+    /// Positions copied from a D segment that was assembled in inverted
+    /// orientation.
+    fn inverted_mask<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        self.flag_mask(py, crate::ir::flag::INVERTED)
     }
 
     /// Number of regions assembled into this simulation.

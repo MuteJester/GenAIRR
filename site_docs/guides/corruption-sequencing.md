@@ -18,7 +18,7 @@ each is independently tunable:
 |---|---|---|
 | `.pcr_amplify(...)` | PCR-cycle substitution errors | `n_pcr_errors` |
 | `.sequencing_errors(...)` | Sequencer base-call errors (lowercases bytes) | `n_quality_errors` |
-| `.ambiguous_base_calls(...)` | N-base injection (replaces bytes with `N`) | (no dedicated counter - see below) |
+| `.ambiguous_base_calls(...)` | N-base injection (replaces bytes with `N`) | `n_ambiguous_bases` |
 | `.polymerase_indels(...)` | Polymerase-stage insertions and deletions | `n_indels`, `n_v_indels`, `n_d_indels`, `n_j_indels` |
 | `.end_loss_5prime(...)` | 5' adapter / primer loss | `end_loss_5_length` |
 | `.end_loss_3prime(...)` | 3' adapter / primer loss | `end_loss_3_length` |
@@ -42,7 +42,7 @@ real biology to library prep and vice versa.
 | Somatic hypermutation | Biology - `.mutate(...)` | `n_mutations` (plus per-segment `n_v_mutations` etc.) |
 | PCR substitution | Library - `.pcr_amplify(...)` | `n_pcr_errors` |
 | Sequencer base-call error | Sequencer - `.sequencing_errors(...)` | `n_quality_errors` |
-| N-base injection | Sequencer / quality flagging - `.ambiguous_base_calls(...)` | (none on the record) |
+| N-base injection | Sequencer / quality flagging - `.ambiguous_base_calls(...)` | `n_ambiguous_bases` |
 | Polymerase indel | Library - `.polymerase_indels(...)` | `n_indels` + per-segment partition |
 | Adapter / primer loss | Library - `.end_loss_*prime(...)` | `end_loss_*_length` |
 | Strand flip | Library - `.random_strand_orientation(...)` | `rev_comp` |
@@ -108,16 +108,23 @@ result = (
       .run_records(n=100, seed=1)
 )
 
-rec["sequence"]    # may contain 'N' characters at corrupted positions
+rec["sequence"]            # may contain 'N' characters at corrupted positions
+rec["n_ambiguous_bases"]   # int - positions that actually became N
 ```
 
 N-base injection replaces individual bytes with `N`. Useful when
 the downstream tool you're benchmarking handles ambiguity codes
 specifically (allele-call walkers, junction translators).
 
-**There is no `n_ns` counter on the AIRR record.** The pass leaves
-no provenance field; the only signal is the `N` characters in
-`sequence`. If you need a count, derive it: `rec["sequence"].count("N")`.
+**`n_ambiguous_bases` reports how many positions were masked.** It
+counts what the pass *realized*, not what you requested, and the two
+differ for an ordinary reason: sites are drawn with replacement, so a
+position drawn twice is masked once - asking for 20 might deliver 18.
+Masking a position that already held an `N` is likewise not a masking.
+
+Counting the `N`s in `sequence` is a third number again, and not a
+substitute: a reference allele may carry an `N` of its own, which the
+pass never wrote and this counter never counts.
 
 A few facts about how `N` corruption composes with downstream
 analysis:
@@ -348,7 +355,11 @@ from your sequencer:
 ```python
 n_rate_real = (real_reads.str.count("N") / real_reads.str.len()).mean()
 n_rate_sim  = (sim["sequence"].str.count("N") / sim["sequence_length"]).mean()
-# Adjust the ambiguous_base_calls count range until these match
+# Adjust the ambiguous_base_calls count range until these match.
+# Counting N in `sequence` is right here: a real read's Ns include any
+# the reference carries, so the comparison wants the same on both sides.
+# `n_ambiguous_bases` answers the different question of how many the
+# pass masked.
 ```
 
 **Match the length distribution.**
@@ -422,9 +433,11 @@ downstream produces wrong reads. The validator's
 `PairedEndWindowMismatch` check enforces the per-record R2 RC
 state.
 
-**Looking for an `n_ns` counter.** `ambiguous_base_calls` doesn't
-ship one. The only signal is the `N` characters in `sequence` -
-count them yourself with `rec["sequence"].count("N")`.
+**Looking for an `n_ns` counter.** The field is spelled
+`n_ambiguous_bases`. It counts positions the pass actually masked,
+which is at most the count you asked for and often fewer, and it is
+not the same as `rec["sequence"].count("N")` - that also counts any
+`N` the reference allele carries.
 
 ## Where to go next
 

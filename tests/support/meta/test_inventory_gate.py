@@ -227,6 +227,48 @@ def test_a_declaration_that_explains_nothing_is_reported_stale(tmp_path):
     assert gate.stale_declarations(path, {"revised": {"test_two", "test_long_gone"}}) == []
 
 
+def test_a_removed_constant_needs_a_class_that_says_why_it_went(tmp_path):
+    """Removing a module-level constant is a violation until a transform class
+    accounts for it, and `dead-code` is one of the two that can.
+
+    `module-split` was the only accepted class, so removing a constant whose
+    last reader was gone left the author declaring a split that did not happen
+    or keeping the constant to quiet the gate. Both put something false in the
+    tree. `dead-code` already means "a member removed because nothing
+    referenced it" everywhere else in the vocabulary, and a constant is a
+    member.
+
+    The no-class case is asserted alongside, because a class that accepts
+    everything and a check that accepts everything look the same from the
+    passing side.
+    """
+    tests = _write_suite(tmp_path)
+    before = gate.capture(str(tests))
+    inlined = {
+        "test_beta.py": """
+            def _helper(value):
+                assert value < 7
+                return value
+
+            def test_three():
+                assert _helper(4) == 4
+        """,
+    }
+    _write_suite(tmp_path, inlined)
+    after = gate.capture(str(tests))
+
+    undeclared = gate.check(before, after)
+    assert any("module-level constants no longer defined" in v for v in undeclared), (
+        f"a removed constant passed with no transform class named: {undeclared}")
+
+    for transform in ("dead-code", "module-split"):
+        remaining = gate.check(before, after, allow={transform},
+                               revised={"_helper"})
+        assert not any("constants no longer defined" in v for v in remaining), (
+            f"--allow {transform} did not account for the removed constant: "
+            f"{remaining}")
+
+
 def test_an_allow_class_with_no_rule_is_refused(tmp_path):
     """An empty rule used to mean "explains everything", which is the opposite
     of what a transform class is for."""

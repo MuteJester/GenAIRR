@@ -758,14 +758,21 @@ fn full_corruption_stack_mutation_count_matches_live_call_state_after_many_passe
 }
 
 #[test]
-fn full_corruption_stack_pcr_quality_counts_are_realized_not_requested() {
+fn full_corruption_stack_pcr_quality_counts_are_the_substitutions_applied() {
     // n_pcr_errors and n_quality_errors count the substitutions each pass
-    // APPLIED that changed a base -- not the counts requested via the plan
-    // distributions, which is what this test used to assert and what the
-    // fields used to report. One error is requested of each pass here; at
-    // this seed the PCR draw lands on the base already present and realizes
-    // nothing, while the quality draw changes a base. That asymmetry from a
-    // single requested error each is the whole point of the distinction.
+    // applied that changed a base, not the counts requested via the plan
+    // distributions.
+    //
+    // The two numbers now agree here, and that is the point of the fix rather
+    // than a weakening of the test: a replacement is drawn from the bases the
+    // site does not already hold, so a requested error is an error. This test
+    // pinned the asymmetry instead -- (0, 1) from one error requested of
+    // each, because the PCR draw landed on the base already present. The case
+    // where the counts still part company needs a pass that cannot apply what
+    // it was asked for, which is
+    // `pcr_error_count_is_what_was_applied_not_what_was_drawn` in the pass's
+    // own module: a contract that admits nothing leaves the requested error
+    // undelivered and uncounted.
     let cfg = common::vdj_ambiguous_refdata();
     let v_id = common::allele_id_by_name(&cfg, Segment::V, "v01*01");
     let d_id = common::allele_id_by_name(&cfg, Segment::D, "d01*01");
@@ -776,8 +783,8 @@ fn full_corruption_stack_pcr_quality_counts_are_realized_not_requested() {
 
     assert_eq!(
         (rec.n_pcr_errors, rec.n_quality_errors),
-        (0, 1),
-        "one error requested of each pass; PCR realized none at this seed"
+        (1, 1),
+        "one error requested of each pass, and each one changed a base"
     );
     assert_eq!(
         rec.n_indels, 1,

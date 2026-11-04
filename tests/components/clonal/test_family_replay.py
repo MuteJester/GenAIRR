@@ -142,7 +142,30 @@ def test_selected_targets_and_unsampled_cells_are_exact(target):
         assert packed(cell.airr_record(bundle.refdata)) == packed(expected.airr_record(result.refdata))
 
 
+def _seed_whose_founder_was_retried(scan=200):
+    """The first seed whose one clone goes extinct before a growth attempt
+    survives, so there is more than one attempt to record.
+
+    This premise used to be the literal seed 0, under a comment saying the
+    seed was "a scheduling label" -- which it is, and which is exactly why it
+    cannot carry the premise. A label says nothing about whether the family
+    drawn under it survived. When the growth stream moved to a named
+    substream, seed 0's first attempt lived, and the test was left asserting a
+    retry that had not happened.
+
+    At ``lambda_base=0.4`` a founder leaves no offspring about two thirds of
+    the time, so the search almost always ends on its first or second seed.
+    """
+    for seed in range(scan):
+        _, probe = experiment(n_clones=1, depth=1, rate=0, lambda_base=.4)
+        sealed = probe.compile().run_records(seed=seed, capture_family_replay=True)
+        if len(json.loads(sealed._family_replay_seal)["clones"][0]["attempts"]) > 1:
+            return seed
+    raise AssertionError(f"no seed below {scan} retried an extinct founder")
+
+
 def test_all_failed_attempts_recorded_and_founder_sampled_once():
+    seed = _seed_whose_founder_was_retried()
     _, exp = experiment(n_clones=1, depth=1, rate=0, lambda_base=.4)
     compiled = exp.compile()
     class CountSource:
@@ -156,9 +179,10 @@ def test_all_failed_attempts_recorded_and_founder_sampled_once():
             return self.wrapped.run_for_family_capture(*args)
     proxy = CountSource(compiled._pre)
     compiled._pre = proxy
-    # This seed's first draw is extinct; the exact seed is a scheduling label,
-    # while each attempt's semantic receipt is independently verified below.
-    result = compiled.run_records(seed=0, capture_family_replay=True)
+    # The founder is drawn once however many growth attempts follow it: that
+    # is what the proxy counts, and why the premise search above runs on its
+    # own compiled experiment rather than through this one.
+    result = compiled.run_records(seed=seed, capture_family_replay=True)
     assert proxy.calls == 1
     payload = json.loads(result._family_replay_seal)
     attempts = payload["clones"][0]["attempts"]
@@ -513,3 +537,70 @@ def test_content_tokens_are_closed_and_object_keys_unique(node):
     with pytest.raises(FamilyReplayError, match="format"):
         _content_decode({"ref": identity}, [{"id": identity, "value": node}], limits,
                         _engine.FamilyReplayBudget(limits._json()))
+
+
+# ---------------------------------------------------------------------------
+# The seed schedule is a wire value: a bundle records which scheme drew its
+# seeds, and that is what lets a bundle written under an earlier scheme still
+# replay after the scheme changes.
+# ---------------------------------------------------------------------------
+
+def test_a_fresh_bundle_records_the_schedule_that_drew_it():
+    from GenAIRR._seed_schedule import CURRENT
+
+    refs, exp = experiment()
+    result = exp.run_records(seed=5, capture_family_replay=True)
+    execution = json.loads(result._family_replay_seal)["execution"]
+    assert execution["seed_schedule"] == CURRENT.label
+    # The retry stride was a parameter of the additive scheme and means
+    # nothing under this one, so it is not written down any more.
+    assert "retry_stride" not in execution
+    assert packed(_bundle_from_result(result).replay_records().records) == packed(result.records)
+
+
+def test_a_bundle_drawn_under_the_earlier_schedule_still_replays(monkeypatch):
+    """Bundles exist that were captured when clone seeds were offsets.
+
+    Replaying one has to re-derive the seeds its capture actually used,
+    so the recorded label picks the scheme rather than being compared
+    against the current one. Captured here under the old scheme by
+    pointing both the runtime and the capture at it, then replayed with
+    the patch undone — so the replay runs the code a user's replay runs.
+    """
+    from GenAIRR import _seed_schedule
+    from GenAIRR._compiled import lineage as lineage_runtime
+
+    additive = _seed_schedule._Additive()
+    monkeypatch.setattr(_seed_schedule, "CURRENT", additive)
+    monkeypatch.setattr(lineage_runtime, "_schedule", additive)
+
+    refs, exp = experiment()
+    result = exp.run_records(seed=5, capture_family_replay=True)
+    bundle = _bundle_from_result(result)
+    execution = json.loads(result._family_replay_seal)["execution"]
+    assert execution["seed_schedule"] == additive.label
+    assert execution["retry_stride"] == 7919
+
+    monkeypatch.undo()
+    assert _seed_schedule.CURRENT is not additive, "premise: replay is the current build"
+    assert packed(bundle.replay_records().records) == packed(result.records)
+
+
+def test_a_bundle_naming_a_schedule_this_build_does_not_have_is_refused(captured):
+    refs, result, _ = captured
+    for label in ("clone_1000000_attempt_7919_node_plus_one_v3", "", None, 7, ["v1"]):
+        bundle = alter(result, lambda payload: payload["execution"].__setitem__("seed_schedule", label))
+        with pytest.raises(FamilyReplayError, match="unsupported seed schedule"):
+            bundle.replay_records()
+
+
+def test_a_relabelled_bundle_does_not_replay_as_if_it_were_the_other_schedule(captured):
+    """The label is not a free choice: the seeds a stage recorded have to
+    be the seeds the named scheme derives."""
+    from GenAIRR._seed_schedule import _Additive
+
+    refs, result, _ = captured
+    bundle = alter(result, lambda payload: payload["execution"].update(
+        seed_schedule=_Additive.label, retry_stride=7919))
+    with pytest.raises(FamilyReplayError, match="seed scheduling label mismatch|scheduling differs"):
+        bundle.replay_records()

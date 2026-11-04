@@ -80,7 +80,7 @@ pub fn build_airr_record(
         j_anchor_accepted,
         reasons,
     } = &assessment;
-    rec.productivity_reasons = reasons.iter().map(|r| (*r).into()).collect();
+    rec.productivity_reasons = reasons.iter().map(|r| r.to_field()).collect();
     rec.productive = *productive;
     rec.vj_in_frame = *vj_in_frame;
     rec.stop_codon = *stop_codon;
@@ -226,6 +226,9 @@ pub fn build_airr_record(
     // same defect `n_mutations` carried, in the counters beside it.
     rec.n_pcr_errors = realized_substitutions(outcome, address::CORRUPT_PCR);
     rec.n_quality_errors = realized_substitutions(outcome, address::CORRUPT_QUALITY);
+    // Realized for the same reason as the two above: a site drawn twice
+    // writes `N` over an `N` and masks nothing new.
+    rec.n_ambiguous_bases = realized_substitutions(outcome, address::CORRUPT_NS);
     // Count realized structural indels from the event ledger, not the
     // trace's `corrupt.indel.count` (which is the *attempted* count
     // and includes pool-empty / contract no-op sentinels). Scoped to
@@ -369,13 +372,7 @@ pub fn build_airr_record(
                     //   3. The position falls outside every subregion
                     //      interval (V-side CDR3 stretch, or an
                     //      allele with empty `subregions`).
-                    let label = v_subregions.and_then(|subs| {
-                        germline_pos.and_then(|pos| {
-                            subs.iter()
-                                .find(|s| s.start <= pos && pos < s.end)
-                                .map(|s| s.label)
-                        })
-                    });
+                    let label = v_subregion_label(v_subregions, *germline_pos);
                     match label {
                         Some(crate::refdata::VSubregionLabel::Fwr1) => n_fwr1_mutations += 1,
                         Some(crate::refdata::VSubregionLabel::Cdr1) => n_cdr1_mutations += 1,
@@ -401,11 +398,7 @@ pub fn build_airr_record(
         if *segment_code != Segment::V as u8 {
             continue;
         }
-        let label = v_subregions.and_then(|subs| {
-            subs.iter()
-                .find(|s| s.start <= *position && *position < s.end)
-                .map(|s| s.label)
-        });
+        let label = v_subregion_label(v_subregions, Some(*position));
         match label {
             Some(crate::refdata::VSubregionLabel::Fwr1) => {
                 rec.n_fwr1_observable_mutations += 1
@@ -578,6 +571,29 @@ pub fn build_airr_record(
         rec.np2 = rec.sequence[start..end].to_string();
         rec.np2_length = (end - start) as i64;
     }
+    // Partition each np interval by what wrote each base. The three counts
+    // sum to the region length because a base with no germline coordinate is
+    // a P addition, a TdT addition or a later polymerase insertion and
+    // exactly one of those, which
+    // `tests/biology/junction/test_base_provenance_exposure.py` checks per
+    // position rather than assuming.
+    //
+    // Counted here rather than from the np string: case would be the only
+    // signal there, and case is overloaded -- `sequencing_errors` lowercases
+    // what it corrupts and hypermutation writes uppercase, so a corrupted TdT
+    // addition reads as palindromic.
+    if let Some((start, end)) = np1_bounds {
+        let (tdt, p, inserted) = np_origin_counts(sim, start, end);
+        rec.np1_n_tdt = tdt;
+        rec.np1_n_p = p;
+        rec.np1_n_inserted = inserted;
+    }
+    if let Some((start, end)) = np2_bounds {
+        let (tdt, p, inserted) = np_origin_counts(sim, start, end);
+        rec.np2_n_tdt = tdt;
+        rec.np2_n_p = p;
+        rec.np2_n_inserted = inserted;
+    }
     if let Some(frame) = crate::coding::coding_frame(sim, refdata) {
         if let Some((start, end)) = np1_bounds {
             rec.np1_aa = aa_slice_for_region(start, end, frame.phase, &rec.sequence_aa);
@@ -663,7 +679,7 @@ pub fn build_airr_record(
 /// A non-overlapping inter-segment interval in the emitted sequence.
 /// Missing alignments do not establish an NP interval, and overlapping
 /// segment hypotheses have no intervening nucleotides.
-fn np_interval(
+pub(crate) fn np_interval(
     left_end: Option<i64>,
     right_start: Option<i64>,
     sequence_len: usize,
@@ -782,6 +798,79 @@ fn original_v_call_from_assignment(
 ///   not recoverable and is not counted.
 /// - A position masked with `N`, on either side, carries no recoverable
 ///   substitution: `N` is the absence of a call, not a base that differs.
+/// `(tdt, p, inserted)` over a pool span, from each nucleotide's flags.
+///
+/// Shared by the builder and the record validator so the two cannot disagree
+/// about which bucket owns a base. A position carrying none of the three
+/// flags is counted in none of them, which is correct and is why the
+/// validator checks the sum against the region length rather than trusting
+/// it: a templated base inside the np interval would be a real finding, not
+/// something to silently absorb into a bucket.
+pub(crate) fn np_origin_counts(
+    sim: &crate::ir::Simulation,
+    start: usize,
+    end: usize,
+) -> (i64, i64, i64) {
+    use crate::ir::flag;
+    let mut tdt = 0i64;
+    let mut p = 0i64;
+    let mut inserted = 0i64;
+    for index in start..end {
+        let Some(nuc) = sim.pool.get(crate::ir::NucHandle::new(index as u32)) else {
+            continue;
+        };
+        if nuc.flags.contains(flag::INDEL_INSERTED) {
+            inserted += 1;
+        } else if nuc.flags.contains(flag::P_NUC) {
+            p += 1;
+        } else if nuc.flags.contains(flag::N_NUC) {
+            tdt += 1;
+        }
+    }
+    (tdt, p, inserted)
+}
+
+/// Route a V germline position into its IMGT subregion.
+///
+/// `None` is the catch-all bucket -- `n_v_unannotated_*` -- and it covers
+/// four distinct situations deliberately lumped together, because none of
+/// them licenses attributing the base change to a named region: no V allele
+/// assigned, an allele with an empty `subregions` table, an event with no
+/// germline coordinate (an indel-inserted base), and a position in the
+/// V-side CDR3 stretch beyond FWR3.
+///
+/// Shared so that the three callers cannot disagree. It was written twice in
+/// this file -- once over events, once over the recoverable sites -- and a
+/// third time was needed in `duplex_repair::observation`, which had been
+/// omitting all twelve subregion counters as a result.
+pub(crate) fn v_subregion_label(
+    subregions: Option<&[crate::refdata::VSubregion]>,
+    germline_pos: Option<u16>,
+) -> Option<crate::refdata::VSubregionLabel> {
+    subregions.and_then(|subs| {
+        germline_pos.and_then(|pos| {
+            subs.iter()
+                .find(|s| s.start <= pos && pos < s.end)
+                .map(|s| s.label)
+        })
+    })
+}
+
+/// The field-name stem a subregion bucket contributes to, so a caller
+/// holding field names as strings -- the duplex projection -- spells them
+/// the same way the record struct does.
+pub(crate) fn v_subregion_stem(label: Option<crate::refdata::VSubregionLabel>) -> &'static str {
+    use crate::refdata::VSubregionLabel;
+    match label {
+        Some(VSubregionLabel::Fwr1) => "fwr1",
+        Some(VSubregionLabel::Cdr1) => "cdr1",
+        Some(VSubregionLabel::Fwr2) => "fwr2",
+        Some(VSubregionLabel::Cdr2) => "cdr2",
+        Some(VSubregionLabel::Fwr3) => "fwr3",
+        None => "v_unannotated",
+    }
+}
+
 pub(crate) fn observable_mutations(sim: &crate::ir::Simulation, shm_written: &mut Vec<(u8, u16)>) -> i64 {
     observable_sites(sim, shm_written).len() as i64
 }

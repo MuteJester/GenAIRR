@@ -214,7 +214,7 @@ impl Contract for AnchorPreserved {
                 return if a.accepted == Some(true) {
                     Ok(())
                 } else {
-                    Err(ContractViolation::new(self.name(), a.reason))
+                    Err(ContractViolation::new(self.name(), a.reason.as_str()))
                 };
             }
         }

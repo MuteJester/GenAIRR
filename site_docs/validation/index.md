@@ -141,7 +141,9 @@ GenAIRR's reproducibility model rests on two facts:
   Across runs, machines, and platforms. The `seed=` argument on
   `run_records(...)` is the canonical surface; `n` records use
   seeds `[seed, seed+1, …, seed+n-1]`, so batches stitch together
-  if you offset the starting seed.
+  if you offset the starting seed **by at least `n`**. Offsetting by
+  less overlaps instead of replicating — see
+  [a seed names a record](../guides/trace-replay.md#a-seed-names-a-record-not-a-run).
 - **Every random draw is recorded on the outcome's trace.** Each
   draw lives at a stable hierarchical address (e.g.
   `"sample_allele.v"`, `"np.np1.length"`, `"np.np1.bases[3]"`).

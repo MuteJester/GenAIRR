@@ -72,7 +72,7 @@ REPORTS = {
         "an inverted segment's byte == complement of the reference base",
     ),
     "untemplated_runs": (),
-    "split_by_case": (),
+    "split_by_origin": (),
     "observable_substitutions": (
         "observable_substitutions == the engine's n_observable_mutations",),
     "reverse_complement": (),
@@ -256,26 +256,57 @@ def templated_check(simulation, refdata, *, inverted=(),
 def untemplated_runs(simulation) -> tuple[UntemplatedRun, ...]:
     """Contiguous stretches with no germline coordinate, classified P or N.
 
-    Case is the channel: lowercase is a P nucleotide, uppercase an N addition.
-    A run reported as ``mixed`` spans both, which happens where a P abuts an N.
+    Classified from the engine's own per-base flags, via
+    ``p_nucleotide_mask`` and ``tdt_addition_mask``. A run reported as
+    ``mixed`` spans both, which happens where a P abuts an N.
+
+    **This used to read letter case**, on the convention that a P nucleotide
+    is written lowercase and a TdT addition uppercase. That convention holds
+    at the moment the recombination writes the base and not afterwards:
+    ``sequencing_errors`` lowercases every base it corrupts, so a corrupted
+    TdT addition read as palindromic, and hypermutation writes uppercase, so
+    a mutated palindrome read as TdT. Measured over 200 human IGH records,
+    adding ``sequencing_errors(count=8)`` turned 54 of 382 correctly pure-N
+    runs into apparently mixed ones -- phantom palindromes the recombination
+    never wrote. An oracle that changes its answer because a later pass
+    rewrote the display encoding is not reporting provenance.
 
     The splitting itself lives in ``provenance``, which owns per-base origin.
     This adds only the P/N classification, so there is one definition of what
     a run is rather than two that could drift apart.
     """
+    p_mask = simulation.p_nucleotide_mask()
+    n_mask = simulation.tdt_addition_mask()
     runs = []
     for run in provenance.untemplated_runs(simulation):
-        text = run.bases.decode()
-        lower = sum(1 for character in text if character.islower())
-        kind = "P" if lower == len(text) else "N" if lower == 0 else "mixed"
-        runs.append(UntemplatedRun(start=run.start, bases=text, kind=kind))
+        span = range(run.start, run.start + len(run.bases))
+        p_count = sum(1 for index in span if p_mask[index])
+        n_count = sum(1 for index in span if n_mask[index])
+        if p_count and not n_count:
+            kind = "P"
+        elif n_count and not p_count:
+            kind = "N"
+        else:
+            kind = "mixed"
+        runs.append(UntemplatedRun(start=run.start, bases=run.bases.decode(),
+                                   kind=kind))
     return tuple(runs)
 
 
-def split_by_case(run: UntemplatedRun) -> tuple[str, str]:
-    """``(p_part, n_part)`` of a run, by case, preserving order."""
-    return ("".join(c for c in run.bases if c.islower()),
-            "".join(c for c in run.bases if c.isupper()))
+def split_by_origin(simulation, run: UntemplatedRun) -> tuple[str, str]:
+    """``(p_part, n_part)`` of a run, by recorded origin, preserving order.
+
+    Was ``split_by_case``, which partitioned on letter case and so carried
+    the same defect :func:`untemplated_runs` describes. The simulation is now
+    a parameter because the answer lives on it rather than in the run's
+    bytes.
+    """
+    p_mask = simulation.p_nucleotide_mask()
+    p_part = "".join(base for offset, base in enumerate(run.bases)
+                     if p_mask[run.start + offset])
+    n_part = "".join(base for offset, base in enumerate(run.bases)
+                     if not p_mask[run.start + offset])
+    return (p_part, n_part)
 
 
 def observable_substitutions(simulation) -> tuple[int, ...]:

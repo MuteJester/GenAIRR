@@ -193,18 +193,18 @@ separate counters - they're library/sequencing-stage noise, not
 biological mutation.
 
 Like `n_mutations`, the two error counters report the substitutions that
-**changed a base**, not the number requested: `pcr_amplify(count=5)`
-typically reports three or four, because a replacement is drawn from
-A/C/G/T including the base already present. `ambiguous_base_calls()` masks
-positions with `N` and is not reported on either counter; its count is
-available from the trace (`corrupt.ns.count`).
+**changed a base** - which is every one requested, since a replacement is
+drawn from the three bases the position does not already hold.
+`pcr_amplify(count=5)` reports five. `ambiguous_base_calls()` masks
+positions with `N` and is reported on `n_ambiguous_bases` rather than on
+either error counter.
 
-It counts the substitutions that **changed a base**. A uniform
-replacement is drawn from A/C/G/T including the base already present,
-and those draws are not counted — so `mutate(model="uniform", count=7)`
-typically reports five or six, because `count` is the number of attempts.
-No single `model="s5f"` write is ever a no-op: that kernel does not draw
-the base already present.
+It counts the substitutions that **changed a base**, which is all of
+them: the replacement is drawn from the three bases the position does not
+already hold, under both models, so `mutate(model="uniform", count=7)`
+reports seven. In GenAIRR 2.3.1 and earlier the uniform draw included the base
+already present and `count` was a number of attempts, so the same call
+typically reported five or six.
 
 `n_observable_mutations` is the number a mutation caller can recover from
 `sequence`, and it is the field to score a caller against. It is below

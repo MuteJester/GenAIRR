@@ -13,3 +13,4 @@ mod junction_anchor;
 mod mutation_effects;
 mod np_extension;
 mod trim_ambiguity;
+mod validator_rejects_tampering;

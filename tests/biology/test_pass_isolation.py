@@ -18,37 +18,43 @@ record by record. What is asserted:
 - every field the registry declares it may move actually moved, so a
   declaration cannot rot into a blanket allowance;
 - a pass with an off switch, set to off, leaves every exported field
-  identical to a run without the pass **when nothing draws after it** --
-  unless the registry declares otherwise with a measurement;
-- with a drawing pass after it, an off pass still shifts that pass's draws,
-  because the engine has one RNG stream and no substreams. The rearrangement
-  survives; the final sequence does not. That is pinned rather than asserted
-  away, because it is the thing a seeded ablation runs into;
+  identical to a run without the pass -- with a drawing pass behind it as
+  well as without one;
 - a pass moves no counter belonging to a mechanism it does not exercise,
   which is a property only expressible because the registry knows each pass's
   mechanisms and the catalog knows each mechanism's fields.
 
-That last one found the exception: `invert_d(prob=0.0)` is not the same as no
-`invert_d`. See `zero_differs` in the registry for the measurement and the
-mechanism.
+**What makes the comparison valid.** Every pass draws from its own random
+substream, keyed by the pass's identity rather than its position in the
+pipeline, so toggling one pass does not move what any other pass draws.
+"Same seed, pass toggled" is therefore a controlled experiment about the
+molecule and not only about the rearrangement.
 
-**What makes the comparison valid, and its limit.** The recombination facts
-survive a pass being toggled -- measured 200 of 200 on the two-pass form
-below -- so "same seed, pass toggled" is a controlled experiment about the
-rearrangement. It is NOT one about the bases: `engine_rs/src/rng.rs` holds a
-single u64 stream and says so itself ("When we need parallel batches across
-rayon worker threads we'll add `Rng::split()` for sub-stream generation. Not
-needed yet"), so any pass's presence consumes words and shifts every draw
-after it.
+That took two corrections to get right, both worth keeping here, because the
+module asserted the wrong thing twice in the same place. The first version
+claimed the engine already addressed its choices per pass, with `invert_d`
+as the single exception -- wrong in the direction that flatters the engine,
+because `receptor_revision(prob=0.0)` looked clean only while nothing drew
+after it. The second version pinned the true state: one shared stream, so
+any pass's presence shifted every later draw, and with a `mutate` behind
+either pass the sequence differed on 200 of 200 records. It said in its own
+docstring that per-pass substreams would make the sequence half start
+passing and that the test should then be replaced by the stronger claim.
+That is what happened, and what the last test in this module now asserts.
 
-An earlier version of this module claimed the engine addressed its choices
-per pass and that `invert_d` was the one exception. That was wrong, and wrong
-in the direction that flatters the engine: `receptor_revision(prob=0.0)`
-looked clean only because the pipelines here are single-pass and nothing drew
-after it. Put a `mutate` behind either pass and the final sequence differs on
-200 of 200 records. `invert_d` is distinctive only in failing the single-pass
-form too, because its coin flip is inlined upstream of a draw that
-`recombine()` itself makes.
+**What this comparison is not sensitive to.** It runs one seed. A pass whose
+effect depends on where its draws land is measured only in the cases that seed
+produces, and `polymerase_indels` is where that shows: it moves `np1_length`
+and `np2_length` -- documented behaviour, since those fields are the interval
+between the segment bounds and an insertion joins it -- and seed 17 put no
+indel in an NP interval, so nothing here noticed until per-pass substreams
+moved where the indels land. 9 of the first 20 seeds move them.
+
+What that exposes is in `RECOMBINATION_FACTS`, not in the engine: the set
+holds the two np lengths, which the product documents as observed intervals,
+and holds no field for the amount TdT added at generation time. There is none
+to hold -- `np1_n_tdt` counts the TdT bases still present, so a deletion moves
+it too, on 30 of 400 records. See `polymerase_indels` in the registry.
 """
 from __future__ import annotations
 
@@ -155,6 +161,13 @@ def test_the_library_prep_passes_leave_the_rearrangement_alone():
     the germline truth it is scored against. Asserted as a group so the
     *number* of such passes is visible -- if it fell to one, the parametrized
     test above would still pass while the guarantee had quietly narrowed.
+
+    The number is at its floor, and it got there the honest way: the group
+    held eight until `polymerase_indels` was measured moving `np1_length` and
+    `np2_length` -- documented behaviour for an interval an insertion can join
+    -- and had to declare them. So the next pass that declares anything fails
+    this assertion, which is the point of writing the count down rather than
+    deriving it.
     """
     library_prep = [one for one in COMPARABLE if not one.may_move]
     assert len(library_prep) >= 7, (
@@ -181,15 +194,16 @@ def test_a_pass_configured_off_is_the_same_as_no_pass(one):
     and without one pass -- which is how anyone studies the effect of one
     pass, and how several tests in this suite build their controls.
 
-    This is the SINGLE-PASS form: nothing draws after the pass under test, so
-    a pass that fires nothing consumes nothing anyone can see. The two-pass
-    form below is where the engine's single RNG stream shows, and it is the
-    form a real ablation takes.
+    This is the SINGLE-PASS form: nothing draws after the pass under test.
+    The two-pass form below is the one a real ablation takes, and it is the
+    one that used to fail.
 
-    `invert_d` is the one pass that fails even here, and the registry says so
-    with the measurement. The assertion is inverted for it rather than
-    skipped: if it ever starts behaving like the others, this fails and the
-    declaration comes out.
+    There is no longer an exception. `invert_d(prob=0.0)` was one: with a
+    single random stream shared by the plan, its coin flip fell between the
+    two NP generations and NP2 was re-drawn whether or not anything inverted.
+    Per-pass substreams removed it, so the assertion is now unconditional --
+    which is why the registry's `zero_differs` field and the branch that read
+    it are gone, along with the test that pinned the exception exactly.
     """
     keyword, off = one.zero_setting
     kwargs = _loud_arguments(one)
@@ -197,48 +211,10 @@ def test_a_pass_configured_off_is_the_same_as_no_pass(one):
     baseline = _records(())
     after = _records(((one.name, kwargs),))
     moved = sorted(_moved(baseline, after))
-    if one.zero_differs:
-        assert moved, (
-            f"{one.name} at {keyword}={off} is now indistinguishable from its "
-            "absence. That is the better behaviour -- delete the "
-            "`zero_differs` declaration and this branch with it.")
-        return
     assert moved == [], (
         f"{one.name} at {keyword}={off} still changed {moved}. A pass "
         "configured off should be indistinguishable from a pass that is not "
         "there, or no seeded comparison against it means anything.")
-
-
-def test_the_one_pass_whose_off_switch_is_not_absence_is_pinned_exactly():
-    """`invert_d(prob=0.0)` re-draws NP2, measured.
-
-    The inversion coin flip is inlined into the V-NP1-D-NP2-J sequence
-    immediately before `assemble(D)`, so its draw falls between the two NP
-    generations and NP2 is re-drawn whether or not anything inverts. The V,
-    the D and NP1 are untouched, which is what identifies the cause.
-
-    Pinned at this precision because the consequence is narrow and specific: a
-    seeded ablation over inversion is comparing different rearrangements, and
-    nothing else about either record is wrong.
-    """
-    baseline = _records(())
-    off = _records((("invert_d", {"prob": 0.0}),))
-
-    assert all(record["d_inverted"] is False for record in off), (
-        "prob=0.0 inverted a D, which is a different and worse problem")
-    untouched = ["v_call", "d_call", "j_call", "np1_length",
-                 "d_sequence_start", "d_sequence_end",
-                 "d_germline_start", "d_germline_end", "d_trim_5", "d_trim_3"]
-    for field in untouched:
-        assert all(a[field] == b[field] for a, b in zip(baseline, off)), (
-            f"{field} moved too, so the cause is not confined to the NP2 draw")
-    moved = _moved(baseline, off)
-    assert "np2_length" in moved, (
-        "np2_length no longer moves, so the finding this pins is fixed -- "
-        "delete this test and invert_d's `zero_differs` declaration")
-    assert moved & RECOMBINATION_FACTS == {"np2_length"}, (
-        f"the re-draw now reaches further than NP2: "
-        f"{sorted(moved & RECOMBINATION_FACTS)}")
 
 
 def _counter_owners():
@@ -287,30 +263,59 @@ def test_a_pass_moves_no_counter_belonging_to_another_mechanism(one):
         "does.")
 
 
-def test_the_pass_with_no_counter_of_its_own_moves_none():
-    """`ambiguous_base_calls` masks bases and is reported on no counter.
+def test_the_masking_pass_moves_its_own_counter_and_no_other():
+    """`ambiguous_base_calls` masks bases and now reports how many.
 
-    Its count lives in the trace (`corrupt.ns.count`) and nowhere in the
-    record, which is a declared truth gap on `assay.ambiguous_calls` rather
-    than an oversight -- an N is not a mutation and the suite is explicit that
-    counting it as one would be wrong. Asserted here because the property
-    above is satisfied trivially by a pass that moves no counter at all, and
-    the reason it moves none should be visible rather than inferred.
+    This test used to assert the opposite. `assay.ambiguous_calls` declared a
+    truth gap -- its count lived in the trace (`corrupt.ns.count`) and nowhere
+    in the record -- and the assertion was that no counter moved at all, with
+    a message saying that if the gap ever closed this test should check the
+    count moves instead. The gap has closed: `n_ambiguous_bases` is exported,
+    so this is that test.
+
+    The counter is *realized*, not requested, which is the part worth pinning.
+    A site drawn twice writes `N` over an `N` and masks nothing new, so a
+    record can report fewer than the count asked for -- and asking for `N`
+    where the reference already holds one is not a masking either. Counting
+    the `N`s in the sequence is a different number again, because an allele
+    may carry an `N` of its own.
     """
     from tests.biology import catalog
 
     mechanism = catalog.by_id("assay.ambiguous_calls")
-    assert mechanism.truth_gap, (
-        "assay.ambiguous_calls no longer declares a truth gap, so its count "
-        "may now be exported -- in which case this test should check it moves")
+    assert not mechanism.truth_gap, (
+        "assay.ambiguous_calls declares a truth gap again, so its count is no "
+        "longer exported and this test is asserting against a field that has "
+        "gone away")
+    assert "n_ambiguous_bases" in mechanism.truth_fields, (
+        "the mechanism no longer owns n_ambiguous_bases, so this test is no "
+        "longer checking the counter that belongs to it")
+
     owners = _counter_owners()
     baseline = _records(())
     after = _records((("ambiguous_base_calls", {"count": 4}),))
     moved = _moved(baseline, after)
     assert moved, "masking four bases changed nothing at all"
-    assert moved & set(owners) == set(), (
-        f"a counter moved for a pass that has none: "
-        f"{sorted(moved & set(owners))}")
+
+    counters_moved = moved & set(owners)
+    assert counters_moved == {"n_ambiguous_bases"}, (
+        f"masking moved {sorted(counters_moved)}; it owns n_ambiguous_bases "
+        "and nothing else, so anything more means the pass is reaching into "
+        "another mechanism's truth and anything less means its own counter "
+        "stopped reporting")
+
+    # Realized, not requested: every record's count is the number of
+    # positions that actually differ from the unmasked run, which is at most
+    # what was asked for and is frequently less.
+    for before, after_record in zip(baseline, after):
+        realized = sum(1 for old, new in zip(before["sequence"], after_record["sequence"])
+                       if old != new)
+        assert after_record["n_ambiguous_bases"] == realized, (
+            f"n_ambiguous_bases reports {after_record['n_ambiguous_bases']} "
+            f"where {realized} positions changed")
+        assert after_record["n_ambiguous_bases"] <= 4, (
+            "the realized count exceeded the requested count, which no "
+            "sequence of draws can produce")
 
 
 #: A pass that draws per base, placed after the pass under test, so anything
@@ -321,32 +326,33 @@ DOWNSTREAM = ("mutate", {"model": "uniform", "count": 4})
 
 
 @pytest.mark.parametrize("one", ZEROABLE, ids=[one.name for one in ZEROABLE])
-def test_an_off_pass_keeps_the_rearrangement_but_shifts_the_draws_after_it(one):
+def test_an_off_pass_is_indistinguishable_from_its_absence_with_a_pass_behind_it(one):
     """The two-pass form, which is the form an ablation actually takes.
 
-    `engine_rs/src/rng.rs` holds a single u64 stream and no `split()` -- its
-    own documentation says sub-streams are "not needed yet" -- so every pass's
-    presence consumes words and shifts every draw after it, whether or not the
-    pass does anything. Put a `mutate` behind a pass configured off and the
-    molecule differs.
+    The single-pass form above can pass for an uninteresting reason: with
+    nothing drawing after the pass under test, a pass that fires nothing has
+    nothing to disturb. This form puts a `mutate` behind it, so anything the
+    earlier pass did to the shared state of the run shows up as a different
+    molecule.
 
-    Both halves are asserted because the split is the useful fact:
+    This test used to assert the opposite, and said so: the engine held one
+    random stream, every pass's presence consumed words from it, and the
+    sequence therefore differed on every record. Measured then over 200
+    human_igh records, for both passes with an off switch at the recombination
+    stage: rearrangement identical 200/200, final sequence identical **0/200**.
+    The docstring ended by saying that if per-pass substreams were ever added
+    the sequence half would start passing and the test should be replaced by
+    the stronger claim. They were, and this is that claim.
 
-    - the REARRANGEMENT survives, on every record. Which alleles were drawn,
-      how they were trimmed and how long the NP regions are do not depend on
-      a later pass's stream position. That is what makes an ablation valid
-      *about the rearrangement*.
-    - the MOLECULE does not. A seeded ablation that compares sequences, or
-      anything derived from them, is comparing two different draws.
+    Both halves are asserted, because the pair is the useful statement:
 
-    Measured on human_igh over 200 records, for both passes with an off
-    switch at the recombination stage: rearrangement identical 200/200, final
-    sequence identical 0/200.
+    - the REARRANGEMENT survives, as it always did;
+    - the MOLECULE survives too, on every record. A seeded ablation now
+      compares two runs that differ by the pass under test and by nothing
+      else, which is what makes the comparison mean anything.
 
-    Pinned rather than asserted away. If per-pass substreams are ever added --
-    `Rng::split()` is the module's own stated plan -- the sequence half starts
-    passing, this test fails, and it should be replaced by the stronger claim
-    rather than quietly kept.
+    Measured after the change on the same configuration: both passes identical
+    on 40/40 records, every exported field included.
     """
     keyword, off = one.zero_setting
     if one.stage not in ("post_recombine", "recombination"):
@@ -372,16 +378,20 @@ def test_an_off_pass_keeps_the_rearrangement_but_shifts_the_draws_after_it(one):
         moved = [index for index, (a, b) in enumerate(zip(without, with_off))
                  if a[field] != b[field]]
         assert moved == [], (
-            f"{one.name} at {keyword}={off} moved {field} on records {moved[:5]} "
-            "once a drawing pass followed it. The rearrangement is supposed to "
-            "survive a pass being toggled even though the stream position does "
-            "not.")
+            f"{one.name} at {keyword}={off} moved {field} on records "
+            f"{moved[:5]} once a drawing pass followed it.")
 
-    same_sequence = sum(a["sequence"] == b["sequence"]
-                        for a, b in zip(without, with_off))
-    assert same_sequence == 0, (
-        f"{one.name} at {keyword}={off} left {same_sequence} of "
-        f"{len(without)} molecules identical with a drawing pass behind it. "
-        "If the engine has gained per-pass RNG substreams, that is better "
-        "behaviour than this test describes: replace it with the stronger "
-        "claim that an off pass is indistinguishable from absence.")
+    differing = [index for index, (a, b) in enumerate(zip(without, with_off))
+                 if a["sequence"] != b["sequence"]]
+    assert differing == [], (
+        f"{one.name} at {keyword}={off} changed the molecule on records "
+        f"{differing[:5]} of {len(without)} with a drawing pass behind it. A "
+        "pass configured off has to be indistinguishable from a pass that is "
+        "not there, molecule included, or a seeded ablation over it is "
+        "comparing two different draws rather than two different pipelines.")
+
+    moved = sorted(_moved(without, with_off) - set(one.may_move))
+    assert moved == [], (
+        f"{one.name} at {keyword}={off} moved {moved}, which the sequence "
+        "comparison above did not catch -- so the pass is reaching something "
+        "that is not derived from the bases.")

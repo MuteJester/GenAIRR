@@ -31,6 +31,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 
 use crate::ir::Segment;
+use crate::rng::substream::SubstreamLabel;
 
 use super::{Pass, PassCompileEffect, PassEffect, PassRequirement};
 
@@ -107,6 +108,15 @@ pub struct Schedule {
     /// User-declared set-to-set edges. Expanded into node-level
     /// edges at compile time.
     set_edges: Vec<(&'static str, &'static str)>,
+    /// Cached random-substream label per node. A pass's stream is
+    /// keyed by its identity rather than its position, so this is
+    /// assigned when the pass joins the plan and never recomputed —
+    /// per record it would be the same string hash a million times.
+    substream_labels: Vec<SubstreamLabel>,
+    /// How many passes of each name have been pushed, so the n-th
+    /// pass named `X` is labelled as occurrence n and two
+    /// `corrupt.pcr` steps in one plan draw different words.
+    name_occurrences: HashMap<String, u32>,
 }
 
 impl Schedule {
@@ -119,6 +129,8 @@ impl Schedule {
             explicit_edges: Vec::new(),
             sets: HashMap::new(),
             set_edges: Vec::new(),
+            substream_labels: Vec::new(),
+            name_occurrences: HashMap::new(),
         }
     }
 
@@ -130,9 +142,16 @@ impl Schedule {
         let id = NodeId(self.nodes.len() as u32);
         let reqs = pass.requirements();
         let effs = pass.effects();
+        let occurrence = self
+            .name_occurrences
+            .entry(pass.name().to_string())
+            .or_insert(0);
+        let label = SubstreamLabel::for_pass(pass.name(), *occurrence);
+        *occurrence += 1;
         self.nodes.push(pass);
         self.requirements.push(reqs);
         self.compile_effects.push(effs);
+        self.substream_labels.push(label);
         id
     }
 
@@ -221,6 +240,14 @@ impl Schedule {
     #[allow(dead_code)]
     pub(crate) fn requirements_of(&self, id: NodeId) -> &[PassRequirement] {
         &self.requirements[id.index()]
+    }
+
+    /// The node's random-substream label, assigned at `push` time.
+    /// The run loop derives the pass's stream from this and the run
+    /// seed, which is why the pass's draws survive another pass being
+    /// added or removed in front of it.
+    pub(crate) fn substream_label(&self, id: NodeId) -> SubstreamLabel {
+        self.substream_labels[id.index()]
     }
 
     /// Cached effects for a node, in declaration order. Used by
@@ -487,6 +514,84 @@ mod tests {
             vec![PassEffect::AssembleSegment(Segment::V)],
         )));
         s
+    }
+
+    fn stub(name: &str) -> Box<dyn Pass> {
+        Box::new(StubPass::new(
+            name,
+            vec![PassRequirement::RefData],
+            vec![PassEffect::AssignAllele(Segment::V)],
+        ))
+    }
+
+    #[test]
+    fn a_pass_is_labelled_by_its_name_and_which_occurrence_of_it_this_is() {
+        // Two `corrupt.pcr` steps in one plan are two different passes
+        // and must not draw the same words, so the label counts
+        // occurrences of the name.
+        let mut s = Schedule::new();
+        let first = s.push(stub("corrupt.pcr"));
+        let other = s.push(stub("mutate.uniform"));
+        let second = s.push(stub("corrupt.pcr"));
+        assert_eq!(
+            s.substream_label(first),
+            SubstreamLabel::for_pass("corrupt.pcr", 0)
+        );
+        assert_eq!(
+            s.substream_label(second),
+            SubstreamLabel::for_pass("corrupt.pcr", 1)
+        );
+        assert_eq!(
+            s.substream_label(other),
+            SubstreamLabel::for_pass("mutate.uniform", 0)
+        );
+    }
+
+    #[test]
+    fn removing_a_pass_leaves_every_other_passs_label_where_it_was() {
+        // This is the property the labels exist for. Keying a stream on
+        // the pass's index would satisfy "derived from its position in
+        // the plan" and break exactly here: drop `invert_d` and every
+        // later index moves, so every later stream moves with it, which
+        // is the coupling per-pass substreams are for removing.
+        let mut with = Schedule::new();
+        for name in ["recombine", "invert_d", "mutate.uniform", "corrupt.pcr"] {
+            with.push(stub(name));
+        }
+        let mut without = Schedule::new();
+        for name in ["recombine", "mutate.uniform", "corrupt.pcr"] {
+            without.push(stub(name));
+        }
+        assert_eq!(
+            with.substream_label(NodeId(2)),
+            without.substream_label(NodeId(1)),
+            "`mutate.uniform` changed stream when a pass in front of it went away"
+        );
+        assert_eq!(
+            with.substream_label(NodeId(3)),
+            without.substream_label(NodeId(2)),
+            "`corrupt.pcr` changed stream when a pass in front of it went away"
+        );
+    }
+
+    #[test]
+    fn reordering_two_passes_leaves_both_labels_where_they_were() {
+        // Insertion order decides which `corrupt.pcr` is the first one,
+        // but it decides nothing for passes with distinct names.
+        let mut forward = Schedule::new();
+        forward.push(stub("mutate.uniform"));
+        forward.push(stub("corrupt.pcr"));
+        let mut reversed = Schedule::new();
+        reversed.push(stub("corrupt.pcr"));
+        reversed.push(stub("mutate.uniform"));
+        assert_eq!(
+            forward.substream_label(NodeId(0)),
+            reversed.substream_label(NodeId(1))
+        );
+        assert_eq!(
+            forward.substream_label(NodeId(1)),
+            reversed.substream_label(NodeId(0))
+        );
     }
 
     #[test]

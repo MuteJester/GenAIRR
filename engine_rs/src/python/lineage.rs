@@ -15,10 +15,10 @@ use crate::lineage::{
     sim_to_aa, simulate_family, simulate_family_sims, simulate_family_with_affinity, AffinityModel,
     BranchingParams,
 };
+use crate::lineage::streams;
 use crate::live_call::{refresh_live_calls, ReferenceMatchIndex};
 use crate::pass::{Outcome, PassCompileEffect};
 use crate::passes::S5FMutationPass;
-use crate::rng::Rng;
 use crate::s5f::S5FKernel;
 
 use super::outcome::{airr_record_to_pydict, PyOutcome};
@@ -262,7 +262,7 @@ pub(crate) fn simulate_lineage(
                 None => make_mature_target(
                     &aa,
                     mature_substitutions,
-                    &mut Rng::new(seed ^ 0x7461_7267_6574_0001),
+                    &mut streams::stream(seed, streams::TARGET),
                 ),
             };
             Some(AffinityModel::new(
@@ -298,7 +298,7 @@ pub(crate) fn simulate_lineage(
         Some(s) => s.into_bytes(),
         None => {
             // Deterministic auto "mature" target derived from the seed.
-            let mut trng = Rng::new(seed ^ 0x7461_7267_6574_0001); // "target\0\1"
+            let mut trng = streams::stream(seed, streams::TARGET);
             make_mature_target(&founder_aa, mature_substitutions, &mut trng)
         }
     };
@@ -896,7 +896,7 @@ pub(crate) fn simulate_family_outcomes(
         let target = match target_aa {
             Some(s) => s.into_bytes(),
             None => {
-                let mut trng = Rng::new(seed ^ 0x7461_7267_6574_0001);
+                let mut trng = streams::stream(seed, streams::TARGET);
                 make_mature_target(&founder_aa, mature_substitutions, &mut trng)
             }
         };

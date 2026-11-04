@@ -589,18 +589,26 @@ def _assert_counts_realized_not_drawn(field, changed, reported, *, draws):
         assert got == expected, (
             f"{field}: record {index} reports {got} where the pass changed "
             f"{expected} positions")
-    # The gap is the point: if every draw changed a base the two numbers would
-    # coincide and this would establish nothing about which one is counted.
-    assert sum(changed) < draws, (
-        f"{field}: every one of {draws} draws changed a base, so a draw count "
-        f"and a realized count are indistinguishable on this fixture")
+    # Every draw lands on a base the site does not already hold, so every
+    # requested error is an error. This asserted `sum(changed) < draws` while
+    # the draw included the incumbent: the gap was what told a realized count
+    # apart from a drawn one on this fixture, and closing it is the point of
+    # the fix rather than a weakening here. What the per-record equality above
+    # still establishes is the stronger half -- the counter equals a count of
+    # changed positions measured by diffing two runs, not a number the record
+    # also happens to carry.
+    assert sum(changed) == draws, (
+        f"{field}: {sum(changed)} of {draws} requested errors changed a base; "
+        f"a requested error that writes the base already there is not an "
+        f"error and must not be requestable")
 
 
 @verifies("assay.pcr_error",
           claim="n_pcr_errors counts the amplification errors that changed a "
-                "base, not the number of error draws. A replacement is drawn "
-                "from A/C/G/T including the base already present, so a draw "
-                "landing on it writes a byte and introduces no error",
+                "base, measured against a second run of the same seed without "
+                "the pass. Every requested error changes one, because the "
+                "replacement is drawn from the bases the site does not "
+                "already hold",
           fields=("n_pcr_errors",),
           basis="cross-run")
 def test_pcr_error_counter_counts_realized_errors_not_draws():
@@ -746,3 +754,54 @@ def test_segment_indels_account_for_everything_when_there_is_no_np_region():
     assert unattributed, (
         "no record lost an indel to an NP region, so this comparison does not "
         "establish where the shortfall comes from")
+
+
+@verifies("assay.ambiguous_calls",
+          claim="n_ambiguous_bases reports the positions that actually became "
+                "N, not the count requested: against the same seed without "
+                "the pass it equals the number of differing positions, on "
+                "every record, and it is strictly below the requested total "
+                "across a run because a draw can land on a position already "
+                "masked",
+          fields=("n_ambiguous_bases",),
+          basis="cross-run")
+def test_the_ambiguous_base_count_is_realized_rather_than_requested():
+    """The field the mechanism's truth gap said did not exist.
+
+    The requested count is not recoverable from the sequence -- sites are
+    drawn with replacement, so 20 requested produced 18 Ns -- and until now
+    nothing in the record carried the realized figure either. The claim that
+    an N is not a mutation had to be made against `sequence` alone.
+
+    The expected value here comes from a second run rather than from the
+    record: with no ambiguous-call pass the same seed produces no N anywhere,
+    so every position that differs between the two runs is one this pass
+    masked, and that number is what the field must say. A field echoing
+    `count` back would fail on the repeat hits; a field counting Ns in the
+    sequence would agree here and is not what is asserted -- the comparison is
+    against the other run.
+    """
+    requested = 6
+    plain = experiment_builder.recombined()
+    masked = experiment_builder.recombined().ambiguous_base_calls(count=requested)
+    clean = [outcome.airr_record(plain.refdata)["sequence"]
+             for outcome in plain.run(n=40, seed=5)]
+    records = [outcome.airr_record(masked.refdata)
+               for outcome in masked.run(n=40, seed=5)]
+    total = 0
+    for index, (before, record) in enumerate(zip(clean, records)):
+        after = record["sequence"]
+        assert len(before) == len(after), (
+            f"record {index}: masking changed the molecule's length")
+        expected = sum(1 for position in range(len(before))
+                       if before[position].upper() != after[position].upper())
+        assert record["n_ambiguous_bases"] == expected, (
+            f"record {index}: n_ambiguous_bases is "
+            f"{record['n_ambiguous_bases']} where {expected} positions "
+            f"differ from the unmasked run")
+        assert record["n_mutations"] == 0, (
+            "an ambiguous position was counted as a mutation as well")
+        total += expected
+    assert total < requested * 40, (
+        f"every draw masked a fresh position ({total} of {requested * 40}), "
+        "so this run cannot tell a realized count from the requested one")

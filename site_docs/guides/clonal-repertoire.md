@@ -144,9 +144,10 @@ collapses by emitted `sequence`. `clone_id` is the ground-truth clone index;
 `duplicate_count` is the post-collapse abundance.
 
 **Determinism.** Everything is keyed on `seed`: clone sizes come from a seeded draw,
-clone *c* recombines from `seed + c × 1_000_000`, and each read within a clone draws
-from a derived sub-seed. Re-running with the same `seed` reproduces the records and
-`duplicate_count`s byte-for-byte.
+and each clone's founder and each read within it derive their own seeds from the run
+seed by folding in which axis they are and their index along it. Re-running with the
+same `seed` reproduces the records and `duplicate_count`s byte-for-byte; running at
+another seed draws an independent repertoire rather than a reshuffling of this one.
 
 **Read-count cost.** When post-fork passes are present, the **total reads simulated
 is roughly the sum of the drawn clone sizes** (before collapse). A heavy tail with a

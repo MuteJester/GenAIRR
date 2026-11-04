@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
 from GenAIRR import _engine  # private Rust extension submodule
 
 from .._pipeline_ir import _LineageForkStep
+from .._seed_schedule import CURRENT as _schedule
 
 if TYPE_CHECKING:
     from ..dataconfig import DataConfig
@@ -82,8 +83,11 @@ class CompiledLineageExperiment:
     ) -> "SimulationResultWithLineages":
         """Grow lineage trees and return per-observed-node AIRR records.
 
-        Each clone is seeded at ``seed + clone_idx * 1_000_000`` so
-        independent clones are reproducible and non-overlapping. Declared
+        Each clone, each survival retry and each observed node takes
+        its own seed from the run's, through the keyed schedule in
+        :mod:`GenAIRR._seed_schedule`, so independent clones are
+        reproducible and share no draws with each other or with the
+        same clone of another run. Declared
         productivity contracts constrain each division's mutation support,
         as well as the founder and any post-lineage observation passes.
 
@@ -152,16 +156,17 @@ class CompiledLineageExperiment:
         # Bound on founder-survival retries. Sampling draws from the LIVING
         # final-generation population, so an extinct founder (drew 0 offspring)
         # yields zero observed cells. With ``allow_extinction=False`` (default)
-        # we condition each clone on survival by re-growing the family with a
-        # fresh deterministic sub-seed until it survives or we exhaust the
-        # bound. The sub-seed offset (a prime times the attempt index) keeps the
-        # retries deterministic — same top-level seed => same result.
+        # we condition each clone on survival by re-growing the family under a
+        # fresh attempt seed until it survives or we exhaust the bound. The
+        # attempt seed comes from the schedule, keyed on the attempt index, so
+        # the retries stay deterministic — same top-level seed => same result —
+        # and a retry's stream cannot be some node's observation stream, which
+        # a stride added to the clone seed could not promise.
         _MAX_SURVIVAL_ATTEMPTS = 50
-        _SUBSEED_STRIDE = 7_919  # prime; keeps retry sub-seeds well-separated
         allow_extinction = getattr(step, "allow_extinction", False)
 
         for clone_idx in range(step.n_clones):
-            clone_seed = int(seed) + clone_idx * 1_000_000
+            clone_seed = _schedule.clone(seed, clone_idx)
             # Repair is a once-per-founder choice. Conditioning duplex growth
             # on survival must not reweight the source history by redrawing it.
             if capture is not None:
@@ -175,7 +180,7 @@ class CompiledLineageExperiment:
             fam = None
             tree = None
             for attempt in range(_MAX_SURVIVAL_ATTEMPTS):
-                family_seed = clone_seed + attempt * _SUBSEED_STRIDE
+                family_seed = _schedule.attempt(clone_seed, attempt)
                 # _pre.run() returns a single Outcome (not a list) — mirror
                 # CompiledClonalExperiment which calls self._pre.run(seed=...).
                 if not duplex:
@@ -295,7 +300,7 @@ class CompiledLineageExperiment:
             for node, base_outcome in zip(tree.nodes(), node_outcomes):
                 if base_outcome is None:
                     continue
-                node_seed = clone_seed + 1 + node.id
+                node_seed = _schedule.node(clone_seed, node.id)
                 if capture is not None:
                     initial = _native(f"clones[{clone_idx}].observations[{node.id}]",
                                       _eng._family_replay_final_simulation, base_outcome, budget=capture.budget)

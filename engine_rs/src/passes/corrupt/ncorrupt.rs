@@ -167,14 +167,32 @@ mod tests {
         sim
     }
 
-    fn run_ns(count: i64) -> Simulation {
+    fn run_ns_outcome(count: i64) -> crate::pass::Outcome {
         let initial = ns_test_sim();
         let mut plan = PassPlan::new();
         plan.push(Box::new(NCorruptionPass::new(Box::new(
             EmpiricalLengthDist::from_pairs(vec![(count, 1.0)]),
         ))));
-        let outcome = PassRuntime::execute(&plan, initial, 0);
-        outcome.final_simulation().clone()
+        PassRuntime::execute(&plan, initial, 0)
+    }
+
+    fn run_ns(count: i64) -> Simulation {
+        run_ns_outcome(count).final_simulation().clone()
+    }
+
+    /// The distinct pool positions the pass drew, read from the trace
+    /// it recorded them in.
+    fn drawn_sites(outcome: &crate::pass::Outcome) -> std::collections::BTreeSet<i64> {
+        outcome
+            .trace
+            .choices()
+            .iter()
+            .filter(|choice| choice.address.starts_with("corrupt.ns.site"))
+            .map(|choice| match choice.value {
+                ChoiceValue::Int(site) => site,
+                ref other => panic!("corrupt.ns.site recorded {:?}, not an Int", other),
+            })
+            .collect()
     }
 
     fn n_count(sim: &Simulation) -> usize {
@@ -192,9 +210,48 @@ mod tests {
     }
 
     #[test]
-    fn ncorrupt_count_5_writes_5_ns() {
-        let result = run_ns(5);
-        assert_eq!(n_count(&result), 5);
+    fn ncorrupt_masks_one_base_per_distinct_site_it_draws() {
+        // The count is how many sites the pass draws, not how many
+        // `N`s the sequence ends up holding: a site drawn twice is
+        // masked once, because the second write puts an `N` where
+        // there is already an `N`.
+        //
+        // This used to assert five `N`s for a count of five, which is
+        // true only when the five draws are distinct. On this
+        // fixture's twelve-base pool that happens 38% of the time, so
+        // the assertion rested on the seed's good manners rather than
+        // on anything the pass promises -- and it went red the moment
+        // per-pass substreams moved which words the pass sees. The
+        // property it was reaching for is the one asserted here.
+        let outcome = run_ns_outcome(5);
+        let sites = drawn_sites(&outcome);
+        let site_records = outcome
+            .trace
+            .choices()
+            .iter()
+            .filter(|choice| choice.address.starts_with("corrupt.ns.site"))
+            .count();
+        assert_eq!(site_records, 5, "the pass drew {site_records} sites, not 5");
+        assert!(!sites.is_empty() && sites.len() <= 5);
+
+        let result = outcome.final_simulation();
+        assert_eq!(
+            n_count(result),
+            sites.len(),
+            "{} `N`s for {} distinct sites drawn ({:?})",
+            n_count(result),
+            sites.len(),
+            sites
+        );
+        let masked: std::collections::BTreeSet<i64> = result
+            .pool
+            .as_slice()
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.base == b'N')
+            .map(|(i, _)| i as i64)
+            .collect();
+        assert_eq!(masked, sites, "an `N` landed somewhere the pass never drew");
     }
 
     #[test]

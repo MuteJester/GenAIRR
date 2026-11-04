@@ -496,7 +496,7 @@ def check_junction(record, mapped: dict, alleles: dict) -> str:
     j_codon = [q for q in (mapped["J"].get(j.anchor + k) for k in range(3)) if q is not None]
     if not (v_codon and j_codon):
         assert (record["junction"], record["junction_start"]) == ("", None), record["sequence_id"]
-        assert "anchor_removed" in record["productivity_reasons"]
+        assert "v_anchor_removed" in record["productivity_reasons"]
         return "undefined"
     assert (record["junction_start"], record["junction_end"]) == (v_codon[0], j_codon[-1] + 1), record["sequence_id"]
     intact = all(len(c) == 3 and c[2] - c[0] == 2 for c in (v_codon, j_codon))
@@ -534,7 +534,25 @@ def check_record(record, alleles: dict, segments: str, outcome, native, *, indel
         "canonical_observed_vdj_v1", "observed_coding_span")
     assert record["productive"] in (True, False)                           # never unknown: landmarks are known
     first, last = segments[0], segments[-1]                                # no end loss in any scenario here
-    assert (record[f"{first}_sequence_start"], record[f"{last}_sequence_end"]) == (0, len(record["sequence"]))
+    start, end = record[f"{first}_sequence_start"], record[f"{last}_sequence_end"]
+    outside = record["n_indels"] - sum(record[f"n_{s}_indels"] for s in segments)
+    if not indels:
+        assert (start, end) == (0, len(record["sequence"]))
+    else:
+        # An insertion can land outside every segment -- before the V's first
+        # base, or past the J's last -- and then the segments cover less than
+        # the whole molecule. That is not end loss: the germline spans are
+        # intact, the J still aligns `63M`, and the alignment carries the
+        # inserted base. Bounded by the indels no per-segment counter claims,
+        # so a span that falls short for any other reason still fails.
+        #
+        # This was an unconditional equality, which held until per-pass RNG
+        # substreams moved where the indels land and one record of the 300
+        # below put an insertion past the J. The claim was never true for this
+        # scenario; nothing had drawn the case.
+        assert 0 <= start <= outside, f"{first} starts at {start}, {outside=}"
+        assert 0 <= len(record["sequence"]) - end <= outside, (
+            f"{last} ends at {end} of {len(record['sequence'])}, {outside=}")
     assert record["sequence_length"] == len(record["sequence"])
     walks = {s.upper(): walk(record, s, alleles[record[f"{s}_call"]]) for s in segments}
     for s in segments:

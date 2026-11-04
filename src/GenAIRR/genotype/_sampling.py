@@ -8,6 +8,7 @@ import math
 from collections.abc import Mapping
 from typing import Dict, List, Optional, TYPE_CHECKING, Tuple
 
+from .._seed_schedule import sub_seed as _sub_seed
 from ._common import _SEGMENTS, _alleles_by_gene
 
 # Imported for the quoted return annotations below only. At runtime this
@@ -284,8 +285,6 @@ class _GenotypeSampling:
         rejected), not the unconditional HW distribution. Use
         ``ensure_viable=False`` for the raw (possibly infeasible) HW draw.
         """
-        import random
-
         if isinstance(max_resamples, bool) or not isinstance(max_resamples, int) or max_resamples < 1:
             raise ValueError(f"max_resamples must be an int >= 1, got {max_resamples!r}")
         if not isinstance(use_cartridge_priors, bool):
@@ -356,9 +355,6 @@ class _GenotypeSampling:
         # Compute the cartridge content hash ONCE (it rebuilds refdata + hashes);
         # reuse it across all draws instead of recomputing per attempt.
         source_hash = cfg.cartridge_manifest()["hashes"]["refdata_content_hash"]
-        # Derive each attempt's sub-seed from a base RNG so a failed attempt at
-        # `seed` cannot collide with a direct draw at `seed + 1`.
-        base_rng = random.Random(seed)
 
         provenance = {
             "allele_frequencies": freq_src,
@@ -371,8 +367,12 @@ class _GenotypeSampling:
 
         attempts = max_resamples if ensure_viable else 1
         for _attempt in range(attempts):
-            sub_seed = base_rng.getrandbits(63)
-            g = cls._draw_one(sampling_cfg, sub_seed, segs, freqs, delp, cw, subject_id, source_hash)
+            # Each attempt is its own named draw off the requested seed, so a
+            # failed attempt at `seed` cannot land on what a direct draw at
+            # `seed + 1` would get.
+            attempt_seed = _sub_seed(seed, "genotype_attempt", _attempt)
+            g = cls._draw_one(
+                sampling_cfg, attempt_seed, segs, freqs, delp, cw, subject_id, source_hash)
             if not ensure_viable or g._is_viable(cfg, cw):
                 cls._rebind_to_base(g, cfg, novel_helper)
                 g.prior_provenance = dict(provenance)

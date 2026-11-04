@@ -7,24 +7,22 @@ use crate::rng::Rng;
 use super::affinity::AffinityModel;
 use super::branching::{grow_lineage_retaining_sims, BranchingParams};
 use super::sampling::sample_and_collapse;
+use super::streams;
 use super::tree::LineageTree;
-
-/// Salt mixed into `params.seed` to give sampling an independent RNG stream
-/// from growth, while staying deterministic for a given seed.
-const SAMPLE_SEED_SALT: u64 = 0x5341_4D50_4C45_0001; // "SAMPLE\0\1"
 
 /// Grow a clonal family from `founder` and sample observed cells.
 ///
-/// Deterministic for `params.seed`. Growth and sampling use separate RNG
-/// streams (the sampling stream is `params.seed ^ SAMPLE_SEED_SALT`), so the
-/// whole family reproduces byte-for-byte across runs.
+/// Deterministic for `params.seed`. Growth and sampling draw from separate
+/// named substreams of that seed (see [`streams`]), so the whole
+/// family reproduces byte-for-byte across runs and neither role's draws
+/// move when the other's change.
 pub fn simulate_family(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: &dyn Pass,
 ) -> LineageTree {
     let (mut tree, _sims, live) = grow_lineage_retaining_sims(founder, params, mutator, None);
-    let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    let mut sample_rng = streams::stream(params.seed, streams::SAMPLING);
     sample_observed(&mut tree, &live, params, founder, &mut sample_rng);
     tree
 }
@@ -38,7 +36,7 @@ pub fn simulate_family_with_affinity(
 ) -> LineageTree {
     let (mut tree, _sims, live) =
         grow_lineage_retaining_sims(founder, params, mutator, Some(model));
-    let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    let mut sample_rng = streams::stream(params.seed, streams::SAMPLING);
     sample_observed(&mut tree, &live, params, founder, &mut sample_rng);
     tree
 }
@@ -54,7 +52,7 @@ pub fn simulate_family_sims(
     affinity: Option<&AffinityModel>,
 ) -> (LineageTree, Vec<Simulation>) {
     let (mut tree, sims, live) = grow_lineage_retaining_sims(founder, params, mutator, affinity);
-    let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    let mut sample_rng = streams::stream(params.seed, streams::SAMPLING);
     sample_observed(&mut tree, &live, params, founder, &mut sample_rng);
     (tree, sims)
 }
@@ -70,7 +68,7 @@ pub fn simulate_family_sims_with_context(
     let (mut tree, sims, live) = super::branching::grow_lineage_retaining_sims_with_context(
         founder, params, mutator, affinity, context,
     )?;
-    let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    let mut sample_rng = streams::stream(params.seed, streams::SAMPLING);
     sample_observed(&mut tree, &live, params, founder, &mut sample_rng);
     Ok((tree, sims))
 }
@@ -107,7 +105,7 @@ pub fn simulate_family_edges_with_context(
         super::branching::grow_lineage_retaining_edges_with_context(
             founder, params, mutator, affinity, context,
         )?;
-    let mut rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    let mut rng = streams::stream(params.seed, streams::SAMPLING);
     sample_observed(&mut tree, &live, params, founder, &mut rng);
     Ok((tree, sims, edges))
 }
@@ -149,7 +147,7 @@ pub fn simulate_family_receipt(
     let mut driver = FamilyReplayDriver::new(config.clone(), founder, expected, budget)?;
     let sim = founder.final_simulation();
     super::branching::validate_duplex_founder(sim, Some(&context), Some(&mutator))?;
-    let mut target_rng = Rng::new(params.seed ^ 0x7461_7267_6574_0001);
+    let mut target_rng = streams::stream(params.seed, streams::TARGET);
     let model = if config.selection_strength.get() == 0.0 && config.target_aa.is_none() {
         driver.resolved_target(None)?;
         None
@@ -185,7 +183,7 @@ pub fn simulate_family_receipt(
         &context,
         &mut driver,
     )?;
-    let mut sample_rng = Rng::new(params.seed ^ SAMPLE_SEED_SALT);
+    let mut sample_rng = streams::stream(params.seed, streams::SAMPLING);
     super::sampling::sample_cells_with_choices(&mut tree, &live, params.n_sample, |live| {
         driver.sample(live, &mut sample_rng)
     })

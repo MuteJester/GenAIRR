@@ -326,6 +326,15 @@ pub(crate) fn airr_record_to_pydict<'py>(
         dict.set_item("coding_end_processing", json_value_to_py(py, metadata)?)?;
     }
 
+    // Which sampling model drew this row. Stamped here rather than
+    // carried on `AirrRecord`, because this is the boundary where a
+    // molecule becomes a row of a dataset, and the engine that drew a
+    // molecule is a fact about the run and not about the molecule.
+    dict.set_item(
+        "determinism_version",
+        crate::determinism::DETERMINISM_VERSION,
+    )?;
+
     // AIRR metadata
     dict.set_item("sequence_id", &rec.sequence_id)?;
     dict.set_item("sequence", &rec.sequence)?;
@@ -402,6 +411,12 @@ pub(crate) fn airr_record_to_pydict<'py>(
     dict.set_item("np2", &rec.np2)?;
     dict.set_item("np2_aa", &rec.np2_aa)?;
     dict.set_item("np2_length", rec.np2_length)?;
+    dict.set_item("np1_n_tdt", rec.np1_n_tdt)?;
+    dict.set_item("np1_n_p", rec.np1_n_p)?;
+    dict.set_item("np1_n_inserted", rec.np1_n_inserted)?;
+    dict.set_item("np2_n_tdt", rec.np2_n_tdt)?;
+    dict.set_item("np2_n_p", rec.np2_n_p)?;
+    dict.set_item("np2_n_inserted", rec.np2_n_inserted)?;
 
     // Per-end P-nucleotide length counters (Slice —
     // P-nucleotide v1). Counts of templated palindromic
@@ -437,6 +452,7 @@ pub(crate) fn airr_record_to_pydict<'py>(
     dict.set_item("mutation_rate", rec.mutation_rate)?;
     dict.set_item("n_pcr_errors", rec.n_pcr_errors)?;
     dict.set_item("n_quality_errors", rec.n_quality_errors)?;
+    dict.set_item("n_ambiguous_bases", rec.n_ambiguous_bases)?;
     dict.set_item("n_indels", rec.n_indels)?;
     // Per-segment indel counters (audit §6.2 fix). Count
     // `IndelInserted` + `IndelDeleted` events attributed to V/D/J
@@ -783,6 +799,40 @@ fn issue_to_pydict<'py>(
             d.set_item("reported", reported)?;
             d.set_item("expected", trace_count)?;
             details.set_item("source", "trace:corrupt.quality.count")?;
+        }
+        RecordValidationIssue::NAmbiguousBasesMismatch {
+            reported,
+            event_count,
+        } => {
+            d.set_item("kind", "NAmbiguousBasesMismatch")?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", event_count)?;
+            details.set_item("source", "events:corrupt.ns")?;
+        }
+        RecordValidationIssue::NpPartitionMismatch {
+            region,
+            bucket,
+            reported,
+            flag_count,
+        } => {
+            d.set_item("kind", "NpPartitionMismatch")?;
+            d.set_item("field", format!("{region}_n_{bucket}"))?;
+            d.set_item("reported", reported)?;
+            d.set_item("expected", flag_count)?;
+            details.set_item("source", "pool:flags{P_NUC,N_NUC,INDEL_INSERTED}")?;
+            details.set_item("region", region)?;
+        }
+        RecordValidationIssue::NpPartitionOriginAmbiguous {
+            region,
+            position,
+            flags,
+        } => {
+            d.set_item("kind", "NpPartitionOriginAmbiguous")?;
+            d.set_item("field", format!("{region}_n_tdt"))?;
+            details.set_item("source", "pool:flags{P_NUC,N_NUC,INDEL_INSERTED}")?;
+            details.set_item("region", region)?;
+            details.set_item("position", position)?;
+            details.set_item("flags", flags)?;
         }
         RecordValidationIssue::NIndelsMismatch {
             reported,

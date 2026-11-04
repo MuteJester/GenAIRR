@@ -19,8 +19,9 @@ What is pinned here:
 - every V and J anchor codon in the bundled BCR references is canonical;
 - exactly six TCRB alleles are not, by name;
 - for those six, the engine emits no junction at all and says
-  `reference_anchor_unresolved` rather than computing a window from an anchor
-  it does not trust.
+  `v_reference_anchor_unresolved` or `j_reference_anchor_unresolved` -- naming
+  the segment -- rather than computing a window from an anchor it does not
+  trust.
 
 The third is the one that matters for truthfulness. A reference whose
 annotation is incomplete is a data problem; a record that invents a junction
@@ -100,7 +101,8 @@ def test_the_bundled_anchor_codons_are_canonical_except_where_pinned(locus, segm
           claim="an allele whose anchor codon the reference does not resolve "
                 "produces no junction at all -- the bounds, the string, the "
                 "length and the frame flag all null or empty, with "
-                "reference_anchor_unresolved in the reasons -- rather than a "
+                "<segment>_reference_anchor_unresolved in the reasons -- "
+                "rather than a "
                 "window computed from an anchor the engine does not trust. "
                 "Asserted on all six such alleles in the bundled TCRB "
                 "reference, drawn deliberately by weighting",
@@ -136,27 +138,31 @@ def test_an_unresolvable_anchor_produces_no_junction_rather_than_a_wrong_one(
         assert record["vj_in_frame"] is None, (
             f"{name}: vj_in_frame is {record['vj_in_frame']!r}, which a "
             "consumer reads as out-of-frame rather than as unresolved")
-        assert "reference_anchor_unresolved" in (record["productivity_reasons"] or ()), (
-            f"{name}: nothing in the record says why there is no junction: "
+        expected_reason = f"{segment.lower()}_reference_anchor_unresolved"
+        assert expected_reason in (record["productivity_reasons"] or ()), (
+            f"{name}: nothing in the record says why there is no junction, or "
+            f"it does not name the {segment} anchor: "
             f"{record['productivity_reasons']}")
     assert checked >= 5, (
         f"only {checked} of 25 records drew {name}; the weighting is not "
         "forcing the allele and this test is passing on an empty loop")
 
 
-def test_the_reason_counts_one_unresolved_anchor_per_segment():
-    """How much a consumer can tell from the reasons, stated exactly.
+def test_the_reason_names_which_anchor_is_unresolved():
+    """Which anchor, not just how many.
 
-    `reference_anchor_unresolved` appears once per unresolved anchor -- twice
-    when both the V and the J are. Measured over 200 TCRB records: 172 with
-    neither, 25 with the J alone, 3 with the V alone, each carrying exactly
-    that many occurrences.
+    The reason used to be `reference_anchor_unresolved` for both segments, so
+    it appeared once per unresolved anchor and twice when both were -- the
+    count was information and the attribution was missing. Measured over 200
+    TCRB records: 172 with neither, 25 with the J alone, 3 with the V alone. A
+    consumer seeing one occurrence could not tell a V problem from a J problem
+    without looking the alleles up itself, which is the lookup the record
+    exists to spare it.
 
-    What the record does NOT say is WHICH anchor. The count is information and
-    the attribution is missing, so a consumer seeing one occurrence cannot
-    tell a V problem from a J problem without looking the alleles up itself.
-    Pinned here because it is a limit of the exported metadata, not a defect in
-    it, and a reader of this suite should be able to find it stated.
+    Now every anchor reason carries its segment, so the reasons list is read
+    directly: `v_reference_anchor_unresolved` and
+    `j_reference_anchor_unresolved` are distinct, and the set of segments the
+    reasons name equals the set whose allele is unresolved.
     """
     experiment = experiment_builder.recombined(locus="human_tcrb")
     unresolved_v = NON_CANONICAL_ANCHORS[("human_tcrb", "V")]
@@ -165,15 +171,20 @@ def test_the_reason_counts_one_unresolved_anchor_per_segment():
     for outcome in experiment.run(n=200, seed=4):
         record = outcome.airr_record(experiment.refdata)
         reasons = record["productivity_reasons"] or ()
-        occurrences = sum(1 for reason in reasons
-                          if reason == "reference_anchor_unresolved")
-        expected = ((record["v_call"] in unresolved_v)
-                    + (record["j_call"] in unresolved_j))
-        assert occurrences == expected, (
-            f"{record['v_call']}/{record['j_call']}: the reason appears "
-            f"{occurrences} times where {expected} anchors are unresolved")
-        seen[expected] = seen.get(expected, 0) + 1
+        named = {segment for segment in ("v", "j")
+                 if f"{segment}_reference_anchor_unresolved" in reasons}
+        unresolved = {segment for segment, alleles in
+                      (("v", unresolved_v), ("j", unresolved_j))
+                      if record[f"{segment}_call"] in alleles}
+        assert named == unresolved, (
+            f"{record['v_call']}/{record['j_call']}: the reasons name "
+            f"{named or 'no'} unresolved anchor(s) where {unresolved or 'none'} "
+            f"is unresolved: {list(reasons)}")
+        assert "reference_anchor_unresolved" not in reasons, (
+            "the unattributed spelling is still emitted, so a consumer "
+            f"cannot rely on the segment being named: {list(reasons)}")
+        seen[len(unresolved)] = seen.get(len(unresolved), 0) + 1
     assert seen.get(1, 0) >= 10, (
         f"only {seen.get(1, 0)} of 200 records had exactly one unresolved "
-        "anchor, so the per-segment count was barely exercised")
+        "anchor, so the per-segment attribution was barely exercised")
     assert seen.get(0, 0) >= 100, f"the run was mostly unresolved: {seen}"

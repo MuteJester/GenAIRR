@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from GenAIRR import _engine  # private Rust extension submodule
 
 from .._pipeline_ir import _RepertoireForkStep
+from .._seed_schedule import CURRENT as _schedule
 
 if TYPE_CHECKING:
     from ..dataconfig import DataConfig
@@ -103,7 +104,7 @@ class CompiledRepertoireExperiment:
         duplex = "duplex.recombine" in self._pre.pass_names()
         parents = [] if duplex else None
         for clone_idx, size in enumerate(sizes):
-            clone_seed = int(seed) + clone_idx * 1_000_000
+            clone_seed = _schedule.clone(seed, clone_idx)
             founder = self._pre.run(seed=clone_seed, strict=strict)
             parent_id = len(parents) if parents is not None else None
             if parents is not None:
@@ -131,7 +132,7 @@ class CompiledRepertoireExperiment:
             by_seq: Dict[str, list] = {}
             for read_idx in range(int(size)):
                 desc = self._post.run_from(
-                    founder_sim, clone_seed + 1 + read_idx, strict=strict
+                    founder_sim, _schedule.read(clone_seed, read_idx), strict=strict
                 )
                 desc = _engine.merge_outcomes(founder, desc)
                 rec = outcome_to_airr_record(

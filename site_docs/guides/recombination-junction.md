@@ -278,7 +278,8 @@ here:
 
 - **N additions** - random bases sampled from the cartridge's
   `np_lengths` + `np_bases` planes. The final `np1` / `np2`
-  intervals combine intervening N and P bases between alignments.
+  intervals combine intervening N and P bases between alignments,
+  so read `np1_n_tdt` rather than `np1_length` for the N amount.
 - **P additions** - deterministic palindromic bases derived from
   each coding end. Realised lengths on `p_v_3_length` /
   `p_d_5_length` / `p_d_3_length` / `p_j_5_length`.
@@ -288,6 +289,23 @@ here:
 They include P bases remaining in those gaps. The P-length fields
 instead preserve emitted recombination history, including bases
 later removed by read loss.
+
+**`np1_length` is not the TdT amount.** The interval also holds
+the P bases, as above, *and* any polymerase insertion that landed
+between the two segments - so with `polymerase_indels` running,
+some records' np lengths move by the insertion. Six fields
+partition each interval by what wrote each base:
+
+```python
+rec["np1_n_tdt"]       # TdT additions
+rec["np1_n_p"]         # palindromic additions
+rec["np1_n_inserted"]  # polymerase insertions that landed here
+# the three sum to rec["np1_length"]; likewise for np2
+```
+
+These come from the engine's per-base provenance, not from letter
+case, so they stay correct on a read whose bases a sequencing
+error has lowercased or hypermutation has uppercased.
 
 ## Productivity
 
@@ -307,7 +325,12 @@ The versioned policy is `canonical_observed_vdj_v1`, with scope
 produces `False`; otherwise unresolved required evidence produces `None`.
 Ambiguous codons are evaluated over their possible canonical resolutions:
 `NNN` can hide a stop, `GCN` cannot, and `TAR` is definitely stop.
-`productivity_reasons` gives stable diagnostic codes.
+`productivity_reasons` gives stable diagnostic codes. Codes about a conserved
+anchor name the segment they are about — `v_reference_anchor_unresolved`,
+`j_anchor_residue_rejected` — so a record carrying one says which anchor to
+look at rather than only that an anchor failed. Codes about the reading frame
+or the coding span (`coding_phase_unresolved`, `coding_stop`,
+`j_tail_out_of_frame`) describe the molecule as a whole and carry no prefix.
 
 Invalid reference annotations never supply a guessed coding frame. Independent
 phase evidence can support a stop assessment even when a landmark is unknown.
@@ -363,6 +386,10 @@ rec["v_trim_3"], rec["d_trim_5"], rec["d_trim_3"], rec["j_trim_5"]
 # NP regions
 rec["np1"], rec["np1_length"]
 rec["np2"], rec["np2_length"]      # VDJ only
+
+# What wrote each base of those intervals (each triple sums to the length)
+rec["np1_n_tdt"], rec["np1_n_p"], rec["np1_n_inserted"]
+rec["np2_n_tdt"], rec["np2_n_p"], rec["np2_n_inserted"]
 
 # P-nucleotide lengths
 rec["p_v_3_length"], rec["p_d_5_length"], rec["p_d_3_length"], rec["p_j_5_length"]

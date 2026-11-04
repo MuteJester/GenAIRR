@@ -55,8 +55,13 @@ class _CorruptionMixin:
         ``(count, weight)`` list). Useful for benchmark scripts.
 
         Each error samples a uniform position in the assembled pool
-        and replaces the base with a uniform A/C/G/T draw. Trace
-        addresses: ``corrupt.pcr.{count, error_site[i], error_base[i]}``.
+        and replaces the base with a uniform draw over the three
+        bases that position does not already hold -- so ``count``
+        is a number of errors rather than of attempts, and
+        ``n_pcr_errors`` equals it. In GenAIRR 2.3.1 and earlier the
+        draw included the base already present, so ``count=8``
+        delivered about six. Trace addresses:
+        ``corrupt.pcr.{count, error_site[i], error_base[i]}``.
 
         Passing both ``count`` and ``rate`` raises ``ValueError``.
         Passing neither raises ``ValueError``.

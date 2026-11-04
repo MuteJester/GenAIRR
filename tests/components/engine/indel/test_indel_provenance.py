@@ -714,15 +714,21 @@ def test_single_indel_inside_np1_excluded_from_per_segment_counters() -> None:
     has no V/D/J ownership) counts toward `n_indels` but not toward
     `n_v_indels` / `n_d_indels` / `n_j_indels`.
 
-    Seed=16 on the baseline + insertion-only fixture lands an
-    insertion in NP1: sequence grows by 1, no V/J CIGAR shows an I
-    op (the inserted base is in NP1, between V's end and J's
-    start), and all three per-segment counters stay zero."""
-    rec = _record(
-        _baseline_experiment().polymerase_indels(count=1, insertion_prob=1.0),
-        seed=16,
-    )
-    assert rec["n_indels"] == 1
+    The premise is an insertion that landed in NP1 rather than in V or J,
+    which is where the single drawn site happened to fall. Searched rather
+    than pinned: seed 16 put it in NP1 under one draw order and in V under
+    the next, and the premise is the case, not the number."""
+    exp = _baseline_experiment().polymerase_indels(count=1, insertion_prob=1.0)
+    for seed in range(300):
+        rec = _record(exp, seed=seed)
+        if (rec["n_indels"] == 1
+                and len(rec["sequence"]) == BASELINE_LEN + 1
+                and "I" not in rec["v_cigar"] and "I" not in rec["j_cigar"]):
+            break
+    else:
+        raise AssertionError(
+            "no seed in 300 inserted a base between the segments, so the "
+            "boundary case this test is about was never drawn")
     assert rec["n_v_indels"] == 0
     assert rec["n_d_indels"] == 0
     assert rec["n_j_indels"] == 0

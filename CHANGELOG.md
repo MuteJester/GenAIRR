@@ -6,6 +6,26 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
+- `determinism_version` on a trace file as well as on every exported record.
+  A trace recorded a seed and a plan signature, which together say what to
+  draw and from where, but not which model does the drawing: replaying a file
+  from another engine produced a different molecule and nothing in the
+  artifact disagreed. Trace-file schema version 5 carries the number, and a
+  replay whose number disagrees with the installed engine now fails by name.
+  Files written before the stamp report `0`, meaning "unknown", and keep the
+  treatment they have always had.
+- `determinism_version` on every exported record, and
+  `GenAIRR.DETERMINISM_VERSION` to read the same number without running
+  anything. The engine's reproducibility promise is that one seed and one
+  determinism version give one answer, on every supported platform; two
+  different versions promise each other nothing at all. The number increments
+  whenever a released change moves what a seed produces, and it travels on the
+  record rather than in a sidecar because a dataset leaves this library as a
+  file of rows and is then passed on by itself. It is `2`; a dataset with no
+  such column was produced by the unnumbered model that preceded it, which is
+  why the numbering does not start at 1. The two changes below are what
+  separates version 2 from that model.
+
 - Six per-V-subregion recoverable mutation counters —
   `n_fwr1_observable_mutations`, `n_cdr1_observable_mutations`,
   `n_fwr2_observable_mutations`, `n_cdr2_observable_mutations`,
@@ -86,6 +106,100 @@ All notable changes to GenAIRR are documented here.
   microscopic hairpin-opening probabilities.
 
 ### Changed
+
+- **Every pass now draws from its own random substream.** The engine held one
+  random stream for the whole pipeline, so each pass's draws began wherever the
+  passes in front of it had left off. Adding a pass, removing one, or
+  configuring one to do nothing therefore moved every draw after it: measured
+  over 200 human IGH records with a `mutate` behind it,
+  `receptor_revision(prob=0.0)` left the rearrangement identical on 200 of 200
+  records and the final sequence identical on **0 of 200**. A seeded ablation —
+  the same repertoire with and without one step, which is how anyone measures
+  what a step does — was therefore a valid comparison about which alleles were
+  drawn and an invalid one about the molecule.
+
+  Each pass is now handed a stream derived from the run seed and the pass's own
+  identity: its name and which occurrence of that name it is. Two
+  `pcr_amplify` steps in one pipeline stay independent, and `mutate` draws the
+  same words whether or not an `invert_d` sits in front of it. A pass
+  configured off is now indistinguishable from a pass that is not there, the
+  molecule included.
+
+  The same derivation now covers a clonal family's three roles — growth,
+  sampling and affinity-target selection. Those were separated by salting the
+  family's seed with XOR, which separates nothing: XOR is invertible, so a
+  salted stream is the plain stream of another seed, and for the two salts in
+  use there was an offset (`0x27203f3729310000`) at which one family's
+  sampling draws were another family's target draws, word for word. Folding a
+  role's name into the seed has no such offset.
+
+  **This changes the output of every seeded run.** Not only runs that use a
+  particular pass: the stream every pass draws from has moved. A dataset
+  produced before this change cannot be reproduced after it, which is what
+  `determinism_version` below exists to make visible.
+
+- **A clonal run's clone, retry and read seeds are derived, not offset.** Each
+  sub-simulation of a clonal run took its seed by adding to the run seed: clone
+  *c* used `seed + c × 1_000_000`, a survival retry used
+  `clone_seed + attempt × 7919`, a read or an observed node used
+  `clone_seed + 1 + index`. Addition is a translation, so every run seed shared
+  one lattice and a different seed reused streams instead of drawing new ones.
+  Clone 1 of a run at seed 0 was the same simulation as clone 0 of a run at
+  seed 1,000,000 — identical founder, identical `v_call`/`d_call`/`j_call`,
+  identical junction, and with one read per clone the identical corrupted read;
+  on the lineage path a whole family repeated, mutations included. **Replicate
+  runs at nearby seeds were therefore not independent replicates.** Two further
+  collisions came from the same arithmetic: a node's observation seed met a
+  retry's seed inside one clone (node 7918 and attempt 1), and nothing bounded
+  a clone's node offsets from crossing into the next clone's block.
+
+  Every axis is now a keyed substream of the run seed with the axis as its
+  role, through the same primitive the passes use. The run seed is folded in
+  rather than translated, `read` and `attempt` cannot meet, and no axis has a
+  block to overflow. This changes the output of every seeded clonal run.
+
+  A family-replay bundle records which scheme drew its seeds, and a bundle
+  written under the previous one still replays: the recorded label picks the
+  scheme instead of being compared against the current one.
+
+- **A cohort subject's seed and a genotype attempt's seed come from the same
+  primitive as everything else.** Both were drawn from
+  `random.Random(run_seed).getrandbits(63)`. That mixes, so neither had the
+  collision described above — subject 1 of one cohort was not subject 0 of
+  another. What it did have was a second generator in the derivation chain:
+  CPython's Mersenne Twister decided engine seeds, somewhere the engine's
+  determinism version does not reach and neither seed-discipline guard could
+  see, so "how does GenAIRR turn a seed into a sub-simulation's seed" had two
+  answers. `run_cohort(..., seed=S)` now seeds subject *i* with a substream of
+  *S* named `subject`, and `Genotype.sample(..., seed=S)` seeds viability
+  attempt *a* with one named `genotype_attempt`; a failed attempt still cannot
+  land on what a direct draw at `S + 1` would get, which is what the base
+  generator was there for. **This changes which genotype a given seed draws
+  and which records a given cohort seed produces.** A package-wide guard now
+  fails if a seed is assigned from anything but that primitive.
+
+- **`count` is now a count of events, not of attempts, for `mutate(model="uniform")`,
+  `pcr_amplify` and `sequencing_errors`.** Each of the three drew its replacement
+  base from all four bases including the one already at the position, so about a
+  quarter of draws wrote back what was there. Such a write changes nothing and was
+  correctly not counted, which left three of the five corruption budgets delivering
+  roughly 76% of their nominal value with nothing in the record or the documentation
+  saying so: `pcr_amplify(count=8)` produced about six errors. The replacement is now
+  drawn from the three bases the position does not hold, so `n_pcr_errors`,
+  `n_quality_errors` and `n_mutations` equal the configured count. Measured
+  realized/requested on human_igh, 300 records: `pcr_amplify` 0.757 → 1.000,
+  `sequencing_errors` 0.757 → 1.000, `mutate(model="uniform")` 0.780 → 1.000.
+  `mutate(model="s5f")` and `ambiguous_base_calls` were already at 1.000 and are
+  unchanged — the S5F kernel's substitution row carries no mass on the base at the
+  site, and `ambiguous_base_calls` pins its write to `N` rather than sampling.
+
+  **This changes the output of every seeded run that uses one of the three.** The
+  sequences differ, not only the counts. A dataset produced before this change
+  cannot be reproduced after it.
+
+  A requested error can still go undelivered, in one case: under a contract such as
+  `productive_only()` a position that admits no replacement is left alone, and the
+  counters report what was applied rather than what was asked for.
 
 - Every simulated `SimulationResult` (bundled references included) now records
   the content hash of the reference it ran against. `validate_records` and
@@ -286,6 +400,25 @@ All notable changes to GenAIRR are documented here.
   keeping NP-extension bounds and allele ties consistent with fresh scoring.
 - Validate returned record fields and record/outcome counts; prevent custom
   metadata from overwriting generated sequence annotations.
+
+### Documentation
+
+- **Documented that a seed names a record, not a run, on the plain path.** `n`
+  records are drawn at `seed` .. `seed + n - 1`, which is what makes a dataset
+  splittable and resumable, and the guides already said to offset the starting
+  seed to stitch two batches. What none of them said is what happens if you
+  offset by less: the batches overlap. Measured on human IGH at `n=200`,
+  `seed=0` and `seed=1` share 199 of 199 comparable records, while `seed=0` and
+  `seed=200` share none. So runs at seeds 0, 1, 2 are *not* three independent
+  replicates of an experiment — they are one dataset read from three starting
+  points, and variance measured across them is almost entirely shared. The
+  behaviour is unchanged and deliberate; `run()`'s docstring,
+  [the builder guide](site_docs/guides/experiment-builder.md),
+  [the validation summary](site_docs/validation/index.md) and a new section of
+  [the trace/replay guide](site_docs/guides/trace-replay.md) now say to step the
+  seed by at least `n` for replicates. A clonal run's own sub-simulations do not
+  work this way and never did after the change above: each takes a keyed
+  substream, so adjacent clonal seeds share nothing.
 
 ### Compatibility
 

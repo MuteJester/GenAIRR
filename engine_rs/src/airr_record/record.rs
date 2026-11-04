@@ -86,6 +86,38 @@ pub struct AirrRecord {
     pub np2_aa: String,
     pub np2_length: i64,
 
+    /// The np intervals partitioned by what wrote each base.
+    ///
+    /// `np1`/`np2` are the stretch between the segment alignment bounds, and
+    /// that is all they promise. The stretch also contains the palindromic
+    /// additions, which the documentation says, and any polymerase insertion
+    /// that landed between the two segments, which nothing said: measured by
+    /// running one seed with and without `polymerase_indels`, 24 of 200
+    /// records had an np length move by the insertion. So `np1_length` was
+    /// not the TdT amount and nothing in the record said by how much it
+    /// differed.
+    ///
+    /// The three counts of each triple sum to that region's length. Counted
+    /// from `P_NUC` / `N_NUC` / `INDEL_INSERTED`, which the engine already
+    /// records per nucleotide -- no new modelling, a projection over
+    /// provenance it had all along.
+    pub np1_n_tdt: i64,
+    /// Palindromic (P) additions inside the np1 interval. See
+    /// [`Self::np1_n_tdt`].
+    pub np1_n_p: i64,
+    /// Polymerase insertions inside the np1 interval, which have no germline
+    /// provenance and are not part of the recombination. See
+    /// [`Self::np1_n_tdt`].
+    pub np1_n_inserted: i64,
+    /// TdT additions inside the np2 interval. See [`Self::np1_n_tdt`].
+    pub np2_n_tdt: i64,
+    /// Palindromic (P) additions inside the np2 interval. See
+    /// [`Self::np1_n_tdt`].
+    pub np2_n_p: i64,
+    /// Polymerase insertions inside the np2 interval. See
+    /// [`Self::np1_n_tdt`].
+    pub np2_n_inserted: i64,
+
     // Per-end P-nucleotide length counters (Slice —
     // P-nucleotide v1). Counts of templated palindromic
     // (P-)nucleotide bytes emitted by `PAdditionPass` at each
@@ -195,6 +227,18 @@ pub struct AirrRecord {
     pub mutation_rate: f64,
     pub n_pcr_errors: i64,
     pub n_quality_errors: i64,
+    /// Positions that actually became `N` under `ambiguous_base_calls`.
+    ///
+    /// Realized, not requested. The pass draws sites with replacement, so a
+    /// draw can land on a position it already masked -- 20 requested
+    /// produced 18 Ns -- and the requested count is not recoverable from the
+    /// sequence either. Counting Ns in [`Self::sequence`] is also not the
+    /// same thing: a reference allele may carry an `N` of its own, and that
+    /// one is not an uncalled position.
+    ///
+    /// An ambiguous position is an absence of information, not a
+    /// substitution, so it is counted here and in no mutation field.
+    pub n_ambiguous_bases: i64,
     pub n_indels: i64,
     /// Per-segment indel counters: the count of `IndelInserted` +
     /// `IndelDeleted` events emitted by the `corrupt.indel` pass
@@ -435,4 +479,82 @@ pub struct AirrRecord {
     /// sentinel reads as "no fragment geometry attached" without
     /// requiring an `Option`.
     pub insert_size: i64,
+}
+
+// ──────────────────────────────────────────────────────────────────
+// The counter vocabulary
+// ──────────────────────────────────────────────────────────────────
+//
+// Every field below is a count this crate derives from the per-pass event
+// ledger rather than reading off the finished molecule. The native builder
+// sets them on [`AirrRecord`], where the compiler guarantees it cannot
+// forget one. The duplex projection does not use the builder -- it walks
+// its own observation ledger and assembles a JSON record field by field --
+// so it needs the field names as data, and it used to carry them as three
+// hand-written string lists that drifted apart.
+//
+// The drift was not hypothetical. `n_observable_mutations` was absent from
+// the duplex lists and "wrote a blank column into every export";
+// `n_ambiguous_bases` was absent, and the ledger had an explicit
+// `Some("corrupt.ns") => ()` arm throwing the pass away because no field
+// existed to receive it; the twelve V-subregion counters were absent from
+// all three lists at once. Each was a column present on one of two record
+// shapes that share an export and a column order.
+//
+// So the names live here, beside the fields themselves, and the duplex
+// paths iterate them. A new counter is still two edits -- the struct field
+// and this list -- but they are adjacent, and
+// `tests/components/duplex/test_duplex_counter_parity.py` compares the two
+// record shapes against each other, so a missed one fails rather than
+// exporting a blank.
+
+/// Counter fields derived from the event ledger, defaulting to `0` and
+/// nullable as a group when a duplex record's observation history cannot be
+/// attributed.
+pub const LEDGER_COUNTER_FIELDS: &[&str] = &[
+    "n_pcr_errors",
+    "n_quality_errors",
+    "n_ambiguous_bases",
+    "n_indels",
+    "n_v_indels",
+    "n_d_indels",
+    "n_j_indels",
+    "n_v_mutations",
+    "n_d_mutations",
+    "n_j_mutations",
+    "n_np_mutations",
+    "n_fwr1_mutations",
+    "n_cdr1_mutations",
+    "n_fwr2_mutations",
+    "n_cdr2_mutations",
+    "n_fwr3_mutations",
+    "n_v_unannotated_mutations",
+    "n_fwr1_observable_mutations",
+    "n_cdr1_observable_mutations",
+    "n_fwr2_observable_mutations",
+    "n_cdr2_observable_mutations",
+    "n_fwr3_observable_mutations",
+    "n_v_unannotated_observable_mutations",
+    "end_loss_5_length",
+    "end_loss_3_length",
+];
+
+/// Counters the finished simulation carries directly rather than the ledger
+/// supplying. Separate from [`LEDGER_COUNTER_FIELDS`] because the duplex
+/// paths set these from `sim` and must not zero them alongside the rest.
+pub const SIM_COUNTER_FIELDS: &[&str] = &[
+    "n_mutations",
+    "n_observable_mutations",
+    "mutation_rate",
+];
+
+/// Every counter field, ledger-derived and simulation-carried alike. This
+/// is the set a duplex record nulls out when it cannot attribute its own
+/// observation history: an unattributed history invalidates the counts it
+/// would have produced, so reporting `0` would assert something false.
+pub fn all_counter_fields() -> impl Iterator<Item = &'static str> {
+    LEDGER_COUNTER_FIELDS
+        .iter()
+        .copied()
+        .chain(SIM_COUNTER_FIELDS.iter().copied())
 }

@@ -25,7 +25,7 @@ mod walk;
 
 pub use builder::{build_airr_record, try_build_airr_record};
 pub(crate) use projection::recalled_call_name;
-pub use record::AirrRecord;
+pub use record::{all_counter_fields, AirrRecord, LEDGER_COUNTER_FIELDS, SIM_COUNTER_FIELDS};
 pub(crate) use validate::validate_duplex_productivity;
 pub use validate::{
     validate_airr_record, AlleleOrderReason, PairedEndField, PairedEndRead, ProductiveDecidedBy,

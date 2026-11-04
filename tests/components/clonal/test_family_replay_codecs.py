@@ -53,7 +53,10 @@ def test_actual_execution_policy_and_prepared_context_are_required(strict):
     raw = json.loads(receipt)
     assert raw["strict"] is strict
     assert raw["productivity_policy"] == "duplex_observed_vdj_v1"
-    assert raw["source_trace"]["schema_version"] == 4
+    # The receipt embeds whatever the engine emits, not a pinned version:
+    # the claim here is that a source trace is embedded at all.
+    from GenAIRR._engine import TraceFile
+    assert raw["source_trace"]["schema_version"] == TraceFile.SCHEMA_VERSION
 
 
 @pytest.mark.parametrize("strict", [False, True])

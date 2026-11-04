@@ -19,6 +19,33 @@ the *exact* same environment to mean anything. Change a single
 default in your `Experiment` and the same seed produces a
 different outcome.
 
+**Which engine, though.** A seed is your half of that promise; the
+sampling model is the engine's half. `GenAIRR.DETERMINISM_VERSION`
+names the model the installed engine implements, and every exported
+record carries the same number as a `determinism_version` column. Two
+runs at the same version with the same seed agree byte for byte. Two
+runs at *different* versions promise each other nothing — a changed
+draw order moves every record in the batch, so there is no "mostly the
+same" to fall back on. Check the column before scoring anything
+against a dataset you did not generate yourself; a dataset with no
+such column was produced by GenAIRR 2.3.1 or earlier, before the stamp
+existed. A trace file carries the same number, and replaying one whose
+number disagrees with the installed engine fails rather than quietly
+reproducing something else.
+
+**One stream per pass.** Each pass draws from its own random
+substream, derived from the run seed and the pass's identity rather
+than taken from a stream the pipeline shares. Two consequences worth
+relying on: adding, removing or switching off one step does not move
+what any other step draws, so a seeded ablation — the same repertoire
+with and without one step — differs only by that step; and two
+`pcr_amplify` steps in one pipeline draw independently instead of
+applying the same errors twice. Before GenAIRR 2.3.1 one stream served
+the whole pipeline, so any step's presence shifted every draw after
+it. The same holds inside a clonal family, whose growth, sampling and
+affinity-target selection each draw from their own named substream of
+the family's seed.
+
 **Trace reproducibility.** A trace is the **record** of choices
 the engine made during one run. It includes the seed, but it
 also includes the resolved plan signature, the cartridge
@@ -36,9 +63,44 @@ The mental model:
 | Reconstruct one specific record from a paper / bug report | **Trace** |
 | Run a regression test that survives a non-breaking refactor | **Trace** |
 | Verify a code change didn't perturb sampling | **Seed** before / **trace** after |
+| Score a prediction against someone else's dataset | **`determinism_version`** first, then seed |
+| Measure what one pipeline step does | **Seed**, with and without the step |
 
 A seed is a promise about RNG output. A trace is a record of
 sampling. Use both.
+
+### A seed names a record, not a run
+
+On the plain (non-clonal) path a seed names a single record. `n`
+records are drawn at `seed`, `seed + 1`, ... `seed + n - 1`, which is
+deliberate: it is what makes a dataset splittable and resumable. Give
+one worker `seed=0, n=10_000` and the next `seed=10_000, n=10_000` and
+the two halves concatenate into exactly the dataset a single
+`seed=0, n=20_000` run would have produced. A run that died at record
+612,000 resumes from there.
+
+!!! warning "Runs at nearby seeds are not replicates"
+    Because the seed indexes the record, two runs whose seeds differ by
+    less than `n` **overlap**:
+
+    ```python
+    a = exp.run_records(n=1000, seed=0)   # records at seeds 0 .. 999
+    b = exp.run_records(n=1000, seed=1)   # records at seeds 1 .. 1000
+    # 999 of the 1000 records are the same molecule.
+    ```
+
+    So `seed=0`, `seed=1`, `seed=2` do not give you three independent
+    replicates of one experiment — they give you one dataset read from
+    three starting points, and any variance you measure across them is
+    almost entirely shared. **Step the seed by at least `n`** (or by a
+    comfortable margin, e.g. `seed=0`, `seed=1_000_000`,
+    `seed=2_000_000`) when you want replicates.
+
+This applies to the record axis only. A clonal run's own
+sub-simulations — its clones, its survival retries, its reads and its
+observed tree nodes — do *not* work this way: each takes a keyed
+substream of the run seed, so two clonal runs at adjacent seeds share
+nothing.
 
 ## Run once, save a trace
 
@@ -137,6 +199,7 @@ the existing signatures:
 | `pass_plan_signature` | Hash of the resolved pass plan (every method-call signature on the `Experiment`) |
 | `refdata_signature` | Identity hash of the refdata (cartridge identity + catalogue shape) |
 | `address_schema_version` | The schema version of the choice-address encoding |
+| `determinism_version` | Which sampling model drew the trace; `0` for a file written before the stamp existed |
 | `refdata_content_hash` | Content hash of every plane the trace depends on |
 | `productivity_policy` | Versioned biological annotation policy |
 | `active_contracts` | Contracts active when the outcome was generated |
@@ -205,6 +268,7 @@ in the file tells you which release wrote it.
 
 | Failure mode | When it fires |
 |---|---|
+| `determinism_version_mismatch` | The trace was drawn by a different sampling model than the installed engine ships |
 | `trace_exhausted` | The replay walked past the last recorded choice |
 | `address_mismatch` | The next address the engine wants doesn't match the next recorded address |
 | `value_kind_mismatch` | The recorded value type doesn't match what the address expects (e.g. an integer where a base draw is required) |

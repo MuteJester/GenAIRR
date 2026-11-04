@@ -29,9 +29,17 @@ use crate::rng::Rng;
 use crate::trace::{ChoiceRecord, Trace};
 
 /// A base distribution that always samples `A` but reports a
-/// 2-element support `{A, C}`. Use to demonstrate that an active
-/// productive-contract filter can divert from the default `A` to
-/// the safe alternative `C` when `A` would create a stop codon.
+/// 3-element support `{A, C, T}`. Use to demonstrate that an active
+/// productive-contract filter can divert from the default `A` to a
+/// safe alternative when `A` would create a stop codon.
+///
+/// `T` is in the support because a substitution now draws only from the
+/// bases a site does not already hold. The support was `{A, C}`, and the
+/// one site the three contract tests target holds `C` in the shared
+/// `TGC` fixture -- so `A` was shut out by the contract, `C` by the site
+/// already holding it, and the site became unreachable. Both safe bases
+/// are Cys-preserving at that position (`TGC` and `TGT`), so a test can
+/// still pin exactly which one the filter diverts to.
 #[derive(Clone, Debug)]
 pub(crate) struct StopThenSafeMutationBaseDist;
 
@@ -43,7 +51,7 @@ impl Distribution for StopThenSafeMutationBaseDist {
     }
 
     fn support(&self) -> Option<Vec<(u8, f64)>> {
-        Some(vec![(b'A', 1.0), (b'C', 1.0)])
+        Some(vec![(b'A', 1.0), (b'C', 1.0), (b'T', 1.0)])
     }
 }
 

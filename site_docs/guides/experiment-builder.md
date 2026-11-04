@@ -237,7 +237,9 @@ Two flags carry most of the reproducibility story:
 - **`seed=`** - same seed → byte-identical output across runs and
   platforms. `n` consecutive seeded records use seeds
   `[seed, seed+1, …, seed+n-1]`, so batches stitch together if you
-  offset the starting seed.
+  offset the starting seed **by at least `n`**. Offset by less and they
+  overlap: `n=1000, seed=0` and `n=1000, seed=1` share 999 records. See
+  [a seed names a record](trace-replay.md#a-seed-names-a-record-not-a-run).
 - **`validate_records=True`** - runs the postcondition validator
   inline on every record after the run. Off by default;
   release-tier loops opt in. See

@@ -682,7 +682,20 @@ def test_end_to_end_planed_novel_flows_to_records():
     cfg, vg, base, novel = _planed_cfg_with_novel()
     g = Genotype.sample(cfg, seed=1)
     assert novel in g.carried_alleles("V", vg)
+    # 400 records, because the novel can only be called on a record that draws
+    # its gene and the reference carries 52 of them: at 50 records the gene is
+    # missed about 38% of the time, so this assertion was a coin flip that
+    # happened to land until per-pass substreams reshuffled the draws.
     res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
-        n=50, seed=3, expose_provenance=True)
-    # the novel can legitimately appear as a V truth call
-    assert any(r["truth_v_call"] == novel for r in res)
+        n=400, seed=3, expose_provenance=True)
+    drew_gene = [r for r in res if (r.get("truth_v_call") or "").split("*")[0] == vg]
+    assert drew_gene, (
+        f"no record drew {vg} in 400, so this says nothing about whether a "
+        "planed novel reaches the records")
+    # The novel is carried, so it has to be reachable -- on a heterozygous
+    # chromosome it competes with the base allele, which is why this is "at
+    # least one" rather than "all".
+    assert any(r["truth_v_call"] == novel for r in drew_gene), (
+        f"{vg} was drawn {len(drew_gene)} times and never called {novel}, "
+        f"which the genotype carries: "
+        f"{sorted({r['truth_v_call'] for r in drew_gene})}")

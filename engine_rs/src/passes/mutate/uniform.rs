@@ -465,23 +465,23 @@ mod tests {
             assert!(trace.find(&format!("mutate.uniform.base[{}]", i)).is_some());
         }
         // The subject of this test is the RNG consumption and trace SHAPE,
-        // which the three recorded site/base pairs above establish and which
-        // this change does not touch. The count is a different statement:
-        // `count=3` is three attempts and a draw landing on the base already
-        // there is no longer counted, so the realised total is at most three.
+        // which the three recorded site/base pairs above establish. The
+        // consumption is unchanged by the three-base replacement draw --
+        // one word for the site, one for the base, either way -- which is
+        // the reason the numbers above are still 1 + 3 * 2.
         let changed = final_sim
             .pool
             .as_slice()
             .iter()
             .filter(|n| !n.base.eq_ignore_ascii_case(&n.germline))
             .count();
-        // Pinned, not bounded: `count=3` is three attempts, two of which
-        // land on the base already there at this seed. A bound of "at most
-        // three" would have been satisfied by zero realised mutations, and
-        // would not have caught the count drifting away from the number of
-        // positions that actually changed -- which is the claim the field
-        // makes and is asserted here as the second half of the pair.
-        assert_eq!((final_sim.mutation_count, changed), (1, 1));
+        // Pinned, not bounded. It was `(1, 1)` -- three attempts, two of them
+        // landing on the base already there at this seed. A bound of "at most
+        // three" would be satisfied by zero realised mutations, and would not
+        // catch the count drifting away from the number of positions that
+        // actually changed -- which is the claim the field makes and is
+        // asserted here as the second half of the pair.
+        assert_eq!((final_sim.mutation_count, changed), (3, 3));
     }
 
     #[test]
@@ -699,7 +699,7 @@ mod tests {
                 .find("mutate.uniform.base[0]")
                 .unwrap()
                 .value,
-            ChoiceValue::Base(b'C')
+            ChoiceValue::Base(b'T')
         );
         assert!(contracts
             .verify(constrained.final_simulation(), Some(&cfg))
@@ -712,14 +712,20 @@ mod tests {
             Some(&cfg),
             None,
         );
-        assert_eq!(
-            unconstrained
-                .trace
-                .find("mutate.uniform.base[0]")
-                .unwrap()
-                .value,
-            ChoiceValue::Base(b'A')
-        );
+        // Not the base the unfiltered draw writes -- which it was, pinned to
+        // `A` -- because a replacement is now drawn from the distribution's
+        // enumerated support minus the base at the site, so `sample()` is
+        // consulted only when a distribution cannot enumerate itself. This
+        // fixture's `sample()` returns `A` and its support does not single it
+        // out, so an unfiltered draw at this site is `A` or `T`.
+        //
+        // What survives is the half the claim needs, and it is a guard on the
+        // premise rather than a finding: the seed was selected for it. The
+        // diversion above is only worth asserting if the undiverted run at
+        // the same seed would have been rejected.
+        assert!(contracts
+            .verify(unconstrained.final_simulation(), Some(&cfg))
+            .is_err());
         // Conditioning also changes site weights, so the same seed need
         // not choose the same unconstrained site. Independently evaluate the
         // rejected target-2 candidate: TGC -> TGA is a coding stop.

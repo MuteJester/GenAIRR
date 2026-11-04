@@ -104,8 +104,29 @@ def test_budget_and_compatibility_options_are_checked(option, value):
         experiment(**{option: value})
 
 
-@pytest.mark.parametrize("seed", [509, 560, 693, 787])
-def test_five_edit_support_survives_the_initial_rejection_phase(seed):
+#: How many examples of the hard case the test insists on seeing, and how far
+#: it looks for them. About one seed in 900 draws a five-edit count whose
+#: independent-tuple rejection phase runs out and hands the problem to the
+#: exact search -- 8 in the first 7,000 -- so the case has to be hunted. The
+#: hunt costs about two seconds; the seeds used to be hunted by hand and
+#: written in, and then per-pass substreams moved every one of them.
+FIVE_EDIT_CASES = 4
+FIVE_EDIT_SCAN = 10_000
+
+
+def test_five_edit_support_survives_the_initial_rejection_phase():
+    """The exact search finds a five-edit history the rejection phase could not.
+
+    The premise is narrow: the count drawn has to be 5, and the cheap
+    independent-tuple rejection phase has to fail on it, so that the exact
+    search is the thing being tested. Searched rather than pinned, because a
+    pinned seed states the premise in a number that stops being true the next
+    time the draw order moves -- which is exactly what happened to the four
+    seeds this test used to name.
+
+    Every example found is checked in full, including the strict replay
+    round trip, and the test fails if the scan cannot find enough of them.
+    """
     from tests.support.fixtures.budget_experiments import _vdj_recombine
 
     compiled = (
@@ -114,17 +135,32 @@ def test_five_edit_support_survives_the_initial_rejection_phase(seed):
         .productive_only()
         .compile()
     )
-    outcome = compiled.simulator.run(seed=seed, strict=True)
-    row = outcome.airr_record(compiled.refdata)
-    assert row["productive"] is True
-    assert row["n_indels"] == 5
-    report = outcome.trace().diagnostics()[0]
-    assert report["requested_count"] == report["applied_count"] == 5
-    assert report["strategy"] == "exact_search_independent_probe"
-    assert report["attempts"] > 256
-    assert 0 < report["explored_states"] < 20_000_000
-    artifact = compiled.simulator.trace_file_from(outcome, seed=seed)
-    replayed = compiled.simulator.replay_from_trace_file(artifact, strict=True)
-    assert replayed.airr_record(compiled.refdata) == row
-    assert replayed.trace().diagnostics()[0]["strategy"] == "replay"
-    assert replayed.trace().diagnostics()[0]["attempts"] == 0
+    found = []
+    for seed in range(FIVE_EDIT_SCAN):
+        outcome = compiled.simulator.run(seed=seed, strict=True)
+        report = outcome.trace().diagnostics()[0]
+        if not (report["requested_count"] == 5
+                and report["strategy"] == "exact_search_independent_probe"):
+            continue
+        found.append(seed)
+        row = outcome.airr_record(compiled.refdata)
+        assert row["productive"] is True
+        assert row["n_indels"] == 5
+        assert report["applied_count"] == 5
+        assert report["attempts"] > 256, (
+            f"seed {seed}: the exact search ran without the rejection phase "
+            "having been exhausted first, so this is not the case the test is "
+            "about")
+        assert 0 < report["explored_states"] < 20_000_000
+        artifact = compiled.simulator.trace_file_from(outcome, seed=seed)
+        replayed = compiled.simulator.replay_from_trace_file(artifact, strict=True)
+        assert replayed.airr_record(compiled.refdata) == row
+        assert replayed.trace().diagnostics()[0]["strategy"] == "replay"
+        assert replayed.trace().diagnostics()[0]["attempts"] == 0
+        if len(found) == FIVE_EDIT_CASES:
+            break
+    assert len(found) == FIVE_EDIT_CASES, (
+        f"only {len(found)} of {FIVE_EDIT_CASES} five-edit histories outlived "
+        f"the rejection phase in {FIVE_EDIT_SCAN} seeds (found {found}). "
+        "Either the case got rarer or the rejection phase now solves it, and "
+        "either way the exact search is no longer being exercised here.")

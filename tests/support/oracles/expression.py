@@ -145,6 +145,17 @@ def anchors_intact(record) -> tuple[bool, bool]:
     Read off the junction window rather than the reference, because the
     question is whether the anchor SURVIVED into this record -- a mutation can
     destroy a cysteine the reference declares.
+
+    **Its blind spot.** When a trim or a deletion takes the germline anchor
+    away entirely, the engine reports `v_anchor_removed` / `j_anchor_removed`
+    and still exports a junction window with a fallback end. The last codon of
+    that window is then some other codon, and it can translate to W or F by
+    coincidence -- so this returns True for an anchor that is not there.
+    Measured: 4 of 600 human_igh records with no indel are anchor-removed with
+    a junction still exported. Answering it properly needs the reference
+    anchor offset against the trims, which the record does not carry; callers
+    that care read the engine's productivity reasons alongside this, as
+    tests/biology/expression/test_frame_under_indels.py does.
     """
     body = subject(record)
     start, end = record["junction_start"], record["junction_end"]

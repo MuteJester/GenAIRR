@@ -4,6 +4,7 @@ use super::bindings::DuplexReferenceBindings;
 use super::*;
 use crate::codon::translate_codon;
 use crate::ir::Segment;
+use crate::productivity::{AnchorReason, AnchorSite, Reason};
 use crate::refdata::RefDataConfig;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -223,7 +224,7 @@ struct Landmark {
     codon_start: Option<usize>,
     codon_end: Option<usize>,
     accepted: Option<bool>,
-    reason: &'static str,
+    reason: AnchorReason,
 }
 
 /// The query span of whatever survives of the codon at reference `anchor..anchor + 3`, or `None`
@@ -265,10 +266,10 @@ fn landmark(
         reason,
     };
     if !source.landmark_ready {
-        return unknown("reference_anchor_unresolved");
+        return unknown(AnchorReason::ReferenceAnchorUnresolved);
     }
     let Some(anchor) = source.anchor else {
-        return unknown("reference_anchor_unresolved");
+        return unknown(AnchorReason::ReferenceAnchorUnresolved);
     };
     let (codon_start, codon_end) = codon_span(path, anchor).unzip();
     let mut positions = Vec::new();
@@ -283,11 +284,11 @@ fn landmark(
                 codon_start,
                 codon_end,
                 accepted: Some(false),
-                reason: "anchor_removed",
+                reason: AnchorReason::Removed,
             };
         }
         if matches.len() != 1 {
-            return unknown("anchor_placement_ambiguous");
+            return unknown(AnchorReason::PlacementAmbiguous);
         }
         let q = matches[0].query_position;
         if path
@@ -295,7 +296,7 @@ fn landmark(
             .iter()
             .any(|b| b.query_position == q && b.reference_position != g)
         {
-            return unknown("anchor_placement_ambiguous");
+            return unknown(AnchorReason::PlacementAmbiguous);
         }
         positions.push(q);
     }
@@ -304,7 +305,7 @@ fn landmark(
             codon_start,
             codon_end,
             accepted: Some(false),
-            reason: "anchor_provenance_disrupted",
+            reason: AnchorReason::ProvenanceDisrupted,
         };
     }
     let q = positions[0];
@@ -317,9 +318,9 @@ fn landmark(
         codon_end,
         accepted,
         reason: match accepted {
-            Some(true) => "anchor_accepted",
-            Some(false) => "anchor_residue_rejected",
-            None => "anchor_ambiguous",
+            Some(true) => AnchorReason::Accepted,
+            Some(false) => AnchorReason::ResidueRejected,
+            None => AnchorReason::Ambiguous,
         },
     }
 }
@@ -383,31 +384,31 @@ fn assess(
     };
     let mut reasons = Vec::new();
     if v.accepted != Some(true) {
-        reasons.push(v.reason);
+        reasons.push(Reason::Anchor(AnchorSite::V, v.reason));
     }
     if j.accepted != Some(true) {
-        reasons.push(j.reason);
+        reasons.push(Reason::Anchor(AnchorSite::J, j.reason));
     }
     if frame.is_none() {
-        reasons.push("coding_phase_unresolved");
+        reasons.push(Reason::CodingPhaseUnresolved);
     }
     match in_frame {
-        Some(false) => reasons.push("vj_out_of_frame"),
-        None => reasons.push("vj_frame_unresolved"),
+        Some(false) => reasons.push(Reason::VjOutOfFrame),
+        None => reasons.push(Reason::VjFrameUnresolved),
         _ => (),
     }
     match stop {
-        Some(true) => reasons.push("coding_stop"),
-        None => reasons.push("coding_stop_unresolved"),
+        Some(true) => reasons.push(Reason::CodingStop),
+        None => reasons.push(Reason::CodingStopUnresolved),
         _ => (),
     }
     match tail {
-        Some(false) => reasons.push("j_tail_out_of_frame"),
-        None => reasons.push("j_tail_unresolved"),
+        Some(false) => reasons.push(Reason::JTailOutOfFrame),
+        None => reasons.push(Reason::JTailUnresolved),
         _ => (),
     }
     if productive == Some(true) {
-        reasons.push("accepted");
+        reasons.push(Reason::Accepted);
     }
     for (field, value) in [
         ("productive", json!(productive)),
@@ -438,7 +439,10 @@ fn assess(
         "productivity_scope".into(),
         json!(crate::productivity::SCOPE),
     );
-    record.insert("productivity_reasons".into(), json!(reasons));
+    record.insert(
+        "productivity_reasons".into(),
+        json!(reasons.iter().map(|r| r.to_field()).collect::<Vec<_>>()),
+    );
     set(
         record,
         availability,
@@ -807,24 +811,17 @@ pub(super) fn render_projection(
         );
     }
     // Repair is not SHM, PCR damage or a later polymerase indel.
-    for field in [
-        "n_mutations",
-        "n_observable_mutations",
-        "n_pcr_errors",
-        "n_quality_errors",
-        "n_indels",
-        "n_v_indels",
-        "n_d_indels",
-        "n_j_indels",
-        "n_v_mutations",
-        "n_d_mutations",
-        "n_j_mutations",
-        "n_np_mutations",
-        "end_loss_5_length",
-        "end_loss_3_length",
-    ] {
-        record.insert(field.into(), json!(0));
+    // `0` is the truth here, not a default: a repaired molecule carries no
+    // SHM, no PCR damage and no later polymerase indel, so every counter is
+    // genuinely zero. The names come from the shared vocabulary so that a
+    // counter added to the record cannot be left out of this record shape --
+    // the third hand-written copy of this list is what let the twelve
+    // V-subregion counters go missing from duplex records entirely.
+    for field in crate::airr_record::LEDGER_COUNTER_FIELDS {
+        record.insert((*field).into(), json!(0));
     }
+    record.insert("n_mutations".into(), json!(0));
+    record.insert("n_observable_mutations".into(), json!(0));
     record.insert("mutation_rate".into(), json!(0.0));
     let mut roles = Map::new();
     for column in &product.columns {

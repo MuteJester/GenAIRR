@@ -36,6 +36,7 @@ from __future__ import annotations
 import pytest
 
 import GenAIRR as ga
+from GenAIRR._seed_schedule import CURRENT as _schedule
 from GenAIRR.result import SimulationResult
 
 pytestmark = pytest.mark.behavior
@@ -198,7 +199,14 @@ def test_parent_outcome_carries_pre_branch_trace() -> None:
 
 def test_descendant_trace_contains_parent_prefix_once_and_its_own_mutations() -> None:
     """Complete history has the same shape as a full recombine/SHM run,
-    with the actual shared parent choices followed by child mutations."""
+    with the actual shared parent choices followed by child mutations.
+
+    The comparison run is seeded with the clone's *founder* seed, which
+    the schedule derives from the run seed. It used to be the run seed
+    itself, because clone 0 took ``seed + 0 * 1_000_000``; a clonal
+    run's first clone was then literally a plain run at the same seed,
+    which is the coupling between runs that the schedule removes.
+    """
     clonal_result = _make_clonal(
         n_clones=1, per_clone=2, with_mutate=True
     ).run_records(seed=0)
@@ -210,7 +218,7 @@ def test_descendant_trace_contains_parent_prefix_once_and_its_own_mutations() ->
     non_clonal = (
         ga.Experiment.on("human_igh").recombine().mutate(count=5).compile()
     )
-    non_clonal_outcome = non_clonal.run(n=1, seed=0)[0]
+    non_clonal_outcome = non_clonal.run(n=1, seed=_schedule.clone(0, 0))[0]
     non_clonal_event_count = non_clonal_outcome.event_count()
     non_clonal_trace_len = len(non_clonal_outcome.trace())
 

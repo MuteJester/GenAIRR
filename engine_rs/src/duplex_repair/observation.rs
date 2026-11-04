@@ -425,7 +425,7 @@ pub fn project_duplex_simulation(
         "sequence_id".into(),
         json!(format!("duplex-observation:{:x}", Sha256::digest(identity))),
     );
-    project_counters(sim, record, &mut availability);
+    project_counters(sim, refdata, record, &mut availability);
     let observation = json!({"model":"duplex_observation_v1","founder_id":founder_id,
         "coordinate_system":"zero_based_coding_oriented","links":p.links,"removed":p.removed,
         "edits":p.edits,"attempt_stages":p.attempt_stages,"rev_comp":p.rev_comp,"insertion_identity_scope":"observation_branch_local"});
@@ -444,10 +444,20 @@ pub fn project_duplex_simulation(
 
 fn project_counters(
     sim: &Simulation,
+    refdata: &RefDataConfig,
     record: &mut Map<String, Value>,
     availability: &mut Map<String, Value>,
 ) {
     let p = sim.duplex_provenance.as_ref().unwrap();
+    // The assigned V allele's subregion table, hoisted out of the edit loop
+    // exactly as the native builder hoists it: it is invariant within a
+    // record, and `None` routes every V base change to the unannotated
+    // bucket rather than to no bucket at all.
+    let v_subregions: Option<&[crate::refdata::VSubregion]> = sim
+        .assignments
+        .get(Segment::V)
+        .and_then(|inst| refdata.v_pool.get(inst.allele_id))
+        .map(|allele| allele.subregions.as_slice());
     let mut counts = Map::<String, Value>::new();
     let mut unknown = BTreeSet::new();
     let mut shm_written: Vec<(u8, u16)> = Vec::new();
@@ -483,6 +493,22 @@ fn project_counters(
                         _ => "np",
                     };
                     increment(format!("n_{s}_mutations"));
+                    // The V-subregion partition of `n_v_mutations`, routed
+                    // through the same helper the native builder uses. All
+                    // twelve subregion counters were absent from this
+                    // projection, so every duplex record exported a blank
+                    // column for each of them -- the same omission that had
+                    // already happened to `n_observable_mutations` and
+                    // `n_ambiguous_bases`.
+                    if segment.as_str() == "V" {
+                        let stem = crate::airr_record::builder::v_subregion_stem(
+                            crate::airr_record::builder::v_subregion_label(
+                                v_subregions,
+                                *germline_pos,
+                            ),
+                        );
+                        increment(format!("n_{stem}_mutations"));
+                    }
                     // Remember the germline position for the recoverable
                     // count below. The NP segments carry no germline
                     // coordinate, so the three templated segments are the
@@ -500,7 +526,13 @@ fn project_counters(
                 }
                 Some("corrupt.pcr") => increment("applied_pcr_substitutions".into()),
                 Some("corrupt.quality") => increment("applied_quality_substitutions".into()),
-                Some("corrupt.ns") => (),
+                // Masking a position that was already masked changed nothing,
+                // the same rule the mutation arm above applies. This arm
+                // discarded the pass outright while no field carried its
+                // count; `n_ambiguous_bases` is that field, so a duplex record
+                // reports it rather than a silent zero.
+                Some("corrupt.ns") if old_base.eq_ignore_ascii_case(new_base) => {}
+                Some("corrupt.ns") => increment("applied_ambiguous_bases".into()),
                 _ => {
                     unknown.insert("unattributed_substitution");
                 }
@@ -537,21 +569,11 @@ fn project_counters(
         }
     }
     drop(increment);
-    for field in [
-        "n_pcr_errors",
-        "n_quality_errors",
-        "n_indels",
-        "n_v_indels",
-        "n_d_indels",
-        "n_j_indels",
-        "n_v_mutations",
-        "n_d_mutations",
-        "n_j_mutations",
-        "n_np_mutations",
-        "end_loss_5_length",
-        "end_loss_3_length",
-    ] {
-        record.insert(field.into(), counts.remove(field).unwrap_or(json!(0)));
+    // One vocabulary, held beside the record struct's own fields. This was a
+    // hand-written list of twelve names; see `LEDGER_COUNTER_FIELDS` for what
+    // drifted out of it and why the list is no longer written here.
+    for field in crate::airr_record::LEDGER_COUNTER_FIELDS {
+        record.insert((*field).into(), counts.remove(*field).unwrap_or(json!(0)));
     }
     // The applied substitutions, not `sampled_attempts`. This ledger already
     // separated the two -- the applied counts are published under
@@ -565,8 +587,12 @@ fn project_counters(
     let applied_quality = counts
         .remove("applied_quality_substitutions")
         .unwrap_or(json!(0));
+    let applied_ambiguous = counts
+        .remove("applied_ambiguous_bases")
+        .unwrap_or(json!(0));
     record.insert("n_pcr_errors".into(), applied_pcr.clone());
     record.insert("n_quality_errors".into(), applied_quality.clone());
+    record.insert("n_ambiguous_bases".into(), applied_ambiguous);
     // Retained so a consumer can see how many draws were made against how
     // many landed; `sampled_attempts` is the pass's intent, not its effect.
     record["duplex_repair"]["sampled_error_attempts"] = json!({
@@ -580,31 +606,37 @@ fn project_counters(
     // does it, from the SHM sites this ledger attributes to a mutation pass.
     // The field is in the default column order, so a duplex record that
     // omitted it wrote a blank column into every export.
-    record.insert(
-        "n_observable_mutations".into(),
-        json!(crate::airr_record::builder::observable_mutations(
-            sim,
-            &mut shm_written
-        )),
-    );
+    // The recoverable sites, then the same subregion routing applied to what
+    // survived rather than to what happened. Two different numbers once a
+    // position is hit twice or the read loses the base, and a CDR/FWR ratio
+    // computed from a read wants this one.
+    let observable = crate::airr_record::builder::observable_sites(sim, &mut shm_written);
+    record.insert("n_observable_mutations".into(), json!(observable.len() as i64));
+    let mut observable_by_subregion: Map<String, Value> = Map::new();
+    for (segment_code, position) in &observable {
+        if *segment_code != Segment::V as u8 {
+            continue;
+        }
+        let stem = crate::airr_record::builder::v_subregion_stem(
+            crate::airr_record::builder::v_subregion_label(v_subregions, Some(*position)),
+        );
+        let field = format!("n_{stem}_observable_mutations");
+        let n = observable_by_subregion
+            .get(&field)
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        observable_by_subregion.insert(field, json!(n + 1));
+    }
+    for (field, value) in observable_by_subregion {
+        record.insert(field, value);
+    }
     record.insert("mutation_rate".into(), json!(sim.mutation_burden));
     if !unknown.is_empty() {
-        for field in [
-            "n_mutations",
-            "mutation_rate",
-            "n_pcr_errors",
-            "n_quality_errors",
-            "n_indels",
-            "n_v_indels",
-            "n_d_indels",
-            "n_j_indels",
-            "n_v_mutations",
-            "n_d_mutations",
-            "n_j_mutations",
-            "n_np_mutations",
-            "end_loss_5_length",
-            "end_loss_3_length",
-        ] {
+        // Every counter, ledger-derived and simulation-carried alike: an
+        // observation history this projection cannot attribute invalidates
+        // the counts that would have come out of it, so each becomes `null`
+        // with a reason rather than a `0` that asserts something false.
+        for field in crate::airr_record::all_counter_fields() {
             record.insert(field.into(), Value::Null);
             availability.insert(field.into(), json!("unattributed_observation_history"));
         }

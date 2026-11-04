@@ -11,6 +11,15 @@ use crate::trace::Trace;
 #[non_exhaustive]
 pub struct PassContext<'a> {
     pub trace: &'a mut Trace,
+    /// This pass's own random substream, derived from the run seed and
+    /// the pass's identity by [`crate::rng::substream`]. It belongs to
+    /// this pass instance and to this record: drawing from it cannot
+    /// move any other pass's draws, and no other pass's draws can move
+    /// it. A pass may consume as much of it as it likes.
+    ///
+    /// The run loop derives it per pass and holds no generator of its
+    /// own, so there is no shared stream for a pass to reach even by
+    /// accident.
     pub rng: &'a mut Rng,
     /// Zero-based index of the pass currently executing inside the plan.
     pub pass_index: usize,

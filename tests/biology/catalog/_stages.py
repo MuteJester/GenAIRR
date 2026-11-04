@@ -53,6 +53,12 @@ UNCLAIMED_FIELDS = {
                      "maturation.hypermutation rather than separately",
     "c_call": "always empty: no isotype or class-switch recombination is "
               "modelled. See maturation.class_switching's truth_gap",
+    "determinism_version": "which sampling model drew the row -- provenance of "
+                           "the run, not of the molecule. No mechanism can own "
+                           "it, because it is the same number on every record "
+                           "the installed engine ever produces, and it is "
+                           "answerable to the reproducibility claim rather than "
+                           "to any biology. See engine_rs/src/determinism.rs",
     # The fourth kind of unclaimed field, and the only one that is unclaimable
     # by the nature of the tool rather than by a modelling decision: an
     # inference output of a search that never happens.
@@ -168,23 +174,12 @@ MECHANISMS = (
         stage="junction",
         summary="TdT-mediated untemplated nucleotide addition at the V-D and "
                 "D-J joins. The np fields report the INTERVAL between the "
-                "segment bounds, which is not the same thing: see truth_gap.",
-        truth_fields=("np1", "np2", "np1_length", "np2_length", "np1_aa", "np2_aa"),
-        truth_gap="The TdT-added amount is not exported separately. np1 and np2 "
-                  "are the stretch of the molecule between the V and D (and D "
-                  "and J) alignment bounds -- that identity holds exactly, "
-                  "measured 100 of 100 records with and without an indel pass "
-                  "-- and that stretch contains the P nucleotides as well, "
-                  "which the documentation says. It also contains any "
-                  "polymerase insertion that lands between the segments: "
-                  "measured by running one seed with and without "
-                  "polymerase_indels, 24 of 200 records had an np length move "
-                  "by the insertion, np1 27 -> 28 and np2 2 -> 3 among them. So "
-                  "a consumer reading np1_length as the TdT contribution is "
-                  "wrong by the number of insertions that fell in the junction, "
-                  "and nothing in the record says by how much. The fields are "
-                  "right for what they promise; this mechanism's own claim is "
-                  "the part that cannot be established from them.",
+                "segment bounds, which is not the same thing; the np*_n_* "
+                "triples partition that interval by what wrote each base, "
+                "which is.",
+        truth_fields=("np1", "np2", "np1_length", "np2_length", "np1_aa", "np2_aa",
+                      "np1_n_tdt", "np1_n_p", "np1_n_inserted",
+                      "np2_n_tdt", "np2_n_p", "np2_n_inserted"),
         engine_passes=("GenerateNPPass",),
     ),
     Mechanism(
@@ -393,13 +388,8 @@ MECHANISMS = (
         stage="assay",
         summary="Positions the instrument could not call, which appear as N and "
                 "must not be read as mutations.",
-        truth_fields=("sequence",),
+        truth_fields=("sequence", "n_ambiguous_bases"),
         engine_passes=("NCorruptionPass",),
-        truth_gap="No N-count field is exported, and because the sites are drawn "
-                  "with replacement the requested count is not recoverable from "
-                  "the sequence either (20 requested produced 18 Ns). The claim "
-                  "that matters -- ambiguous positions must not be read as "
-                  "mutations -- has no field of its own to carry it.",
     ),
     Mechanism(
         id="assay.contamination",

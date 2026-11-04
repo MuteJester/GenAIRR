@@ -192,7 +192,9 @@ end-loss describes the sequencer (the read ran short).
 | `np1` | Bases between the final V and D alignment bounds (V–J on VJ chains), including intervening N and P bases |
 | `np2` | Bases between the final D and J alignment bounds, including intervening N and P bases (VDJ only; empty on VJ) |
 | `np1_aa`, `np2_aa` | Complete codons within those intervals, translated in the retained V coding frame |
-| `np1_length`, `np2_length` | Lengths in nucleotides |
+| `np1_length`, `np2_length` | Lengths in nucleotides -- the interval between the segment bounds, which also holds P bases and any polymerase insertion that landed there |
+| `np1_n_tdt`, `np1_n_p`, `np1_n_inserted` | That interval partitioned by what wrote each base; the three sum to `np1_length` |
+| `np2_n_tdt`, `np2_n_p`, `np2_n_inserted` | The same for NP2 |
 
 The NP strings are slices of the coding-oriented sequence between
 the final segment alignments. Their lengths equal the lengths of
@@ -256,10 +258,12 @@ n_np_mutations          ← NP1 + NP2 combined SHM
 mutation_rate           ← cumulative realized SHM event burden per input-molecule base
 ```
 
-`n_mutations` counts substitutions that changed a base, not substitution
-attempts. A uniform replacement is drawn from A/C/G/T including the base
-already present, and such a draw is not a mutation: `mutate(model="uniform",
-count=7)` typically reports five or six.
+`n_mutations` counts substitutions that changed a base, which under both
+kernels is every one the configuration asked for: the replacement is drawn
+from the three bases the position does not already hold, so
+`mutate(model="uniform", count=7)` reports seven. In GenAIRR 2.3.1 and earlier the
+uniform draw included the base already present, such a draw was not a
+mutation, and the same call typically reported five or six.
 
 ### Scoring a mutation caller
 
@@ -357,7 +361,8 @@ it is absent from the whole-record count. They sum to the V part of
 
 ```text
 n_pcr_errors           ← bases mutated by PcrAmplifyPass
-n_quality_errors       ← bases corrupted by SequencingErrorsPass / AmbiguousBaseCallsPass
+n_quality_errors       ← bases corrupted by SequencingErrorsPass
+n_ambiguous_bases      ← positions masked with N by AmbiguousBaseCallsPass
 n_indels               ← total indels across all PolymeraseIndelsPass passes
 n_v_indels             ← indels landing in the V segment
 n_d_indels             ← indels landing in the D segment
@@ -474,16 +479,19 @@ and ones a later mutation reversed. `n_observable_mutations`
 is the recoverable number; see
 [Scoring a mutation caller](#scoring-a-mutation-caller).
 
-**Reading `count=N` as a promise of `n_mutations == N`.** For
-`model="uniform"`, `count` is the number of attempts and
-roughly a quarter of them draw the base already present.
+**Reading a GenAIRR 2.3.1 or earlier dataset's
+`n_mutations` as `count`.** Under `model="uniform"` the
+replacement was drawn from all four bases, so roughly a
+quarter of draws wrote the base already present and were
+not counted. The draw now excludes it and
+`n_mutations == count`.
 
 **Treating all `n_*` counters as biological mutations.** Only
 the SHM partition (`n_mutations`, `n_observable_mutations`,
 `n_v_mutations`, `n_d_mutations`, `n_j_mutations`,
 `n_np_mutations`, the six V-subregion fields) describes biology. `n_pcr_errors`,
-`n_quality_errors`, `n_indels`, and the end-loss lengths
-describe library / sequencer artefacts. They live on the same
+`n_quality_errors`, `n_ambiguous_bases`, `n_indels`, and the
+end-loss lengths describe library / sequencer artefacts. They live on the same
 record by design - they don't share a counter.
 
 **Confusing inferred calls with generating alleles.** Standard calls are

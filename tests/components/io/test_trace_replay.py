@@ -16,6 +16,8 @@ plan so the migrated-pass path is exercised.
 from __future__ import annotations
 
 import json
+import pathlib
+import tempfile
 
 import pytest
 
@@ -74,7 +76,7 @@ MIGRATED_ADDRESS_PREFIXES = (
 
 
 def _all_records_have_migrated_prefix(outcome) -> bool:
-    """Sanity check used by the full-stack golden test: every trace
+    """Sanity check used by the full-stack round-trip test: every trace
     record must fall under one of the migrated prefixes. If a future
     pass emits a non-migrated record, this assertion catches the
     drift before the strict-positional cursor breaks at replay."""
@@ -407,34 +409,29 @@ def test_replay_trim_runs_validation_path_on_bad_recorded_value(vj_compiled):
 
 
 # ──────────────────────────────────────────────────────────────────
-# Golden full-stack replay-from-trace-file
+# Full-stack replay-from-trace-file round trip
 #
 # Builds a plan exercising EVERY migrated sampling site — allele,
 # trim, NP length+bases, SHM count+site+base, PCR count+site+base,
-# rev-comp coin, end-loss, contaminant, indel tuple — then commits
-# the produced trace as a golden artifact. Replay-from-trace-file
-# against the golden must reproduce the trace byte-for-byte under
-# the strict-positional cursor with the drained-cursor assertion
-# enabled.
+# rev-comp coin, end-loss, contaminant, indel tuple — writes the
+# produced trace to a file, reads it back and replays it.
+# Replay-from-trace-file must reproduce the trace byte-for-byte
+# under the strict-positional cursor with the drained-cursor
+# assertion enabled.
 #
-# A failure here means either:
-#   1. A new sampling site was added but its replay path wasn't
-#      migrated, OR
-#   2. An existing pass's record shape changed in a way that
-#      diverges from the committed golden.
+# A failure here means a new sampling site was added but its replay
+# path wasn't migrated.
 #
-# Either case warrants explicit investigation before regenerating
-# the golden.
+# The file is written per run rather than committed. A committed one
+# diverges whenever a sampling model deliberately changes, and the
+# frozen artifacts under tests/golden/trace_files/ are the compat
+# suite's schema anchors -- regenerating them to settle a model
+# change is what test_v1_fixtures_exist_in_committed_set warns
+# against.
 # ──────────────────────────────────────────────────────────────────
 
 
-from tests.support import paths
-
 pytestmark = pytest.mark.behavior
-
-FULL_STACK_GOLDEN = (
-    paths.golden("trace_files", "full_stack_seed4242.trace.json")
-)
 
 
 @pytest.fixture(scope="module")
@@ -455,14 +452,28 @@ def full_stack_compiled():
     )
 
 
-def test_full_stack_replay_reproduces_committed_golden_trace(full_stack_compiled):
-    """Emit-once / compare-thereafter golden test for the full
-    trace-injected replay surface.
+def test_full_stack_replay_round_trips_through_a_trace_file(full_stack_compiled):
+    """A live full-stack run, written to a trace file, read back and replayed,
+    reproduces its own trace record for record.
 
-    On first run with no committed golden, the test emits the file
-    and skips with a note. On subsequent runs, it verifies the live
-    engine reproduces the trace and that replaying the committed
-    golden through `replay_from_trace_file` also reproduces it.
+    This used to compare the live run against a trace file committed under
+    `tests/golden/trace_files/`, which made it fail whenever a sampling model
+    deliberately changed -- the replacement base draw excluding the base
+    already at the site did exactly that. Regenerating the committed file to
+    fix it would have cost more than it bought: that file is the compat
+    suite's frozen v1 anchor, and `test_v1_fixtures_exist_in_committed_set`
+    exists precisely to stop it being replaced by something newer.
+
+    So the two concerns are separated. Durability of the on-disk artifact --
+    an old file still loads, its addresses still parse, and replaying it
+    still reproduces it record for record -- is
+    `test_trace_file_compat.py`'s job, over the frozen fixtures. What is
+    left here is the round trip, which needs no committed artifact and is
+    the part a new unmigrated sampling site would break.
+
+    Cross-platform determinism of the *values* is the reproducibility
+    goldens' job (`tests/acceptance/test_reproducibility.py`), not this
+    file's.
     """
     seed = 4242
     outcome = full_stack_compiled.simulator.run(seed=seed)
@@ -474,27 +485,20 @@ def test_full_stack_replay_reproduces_committed_golden_trace(full_stack_compiled
     assert _all_records_have_migrated_prefix(outcome), (
         "Some sampling site emitted a non-migrated trace address. "
         "Update MIGRATED_ADDRESS_PREFIXES or migrate the site to "
-        "the consume-trace path before regenerating the golden."
+        "the consume-trace path."
     )
 
-    # Read or emit the golden artifact.
-    FULL_STACK_GOLDEN.parent.mkdir(parents=True, exist_ok=True)
-    if not FULL_STACK_GOLDEN.exists():
-        tf.write_to(str(FULL_STACK_GOLDEN))
-        pytest.skip(f"Emitted fresh full-stack golden at {FULL_STACK_GOLDEN}")
+    with tempfile.TemporaryDirectory() as directory:
+        path = str(pathlib.Path(directory) / "full_stack_seed4242.trace.json")
+        tf.write_to(path)
+        loaded = eng.TraceFile.read_from(path)
 
-    loaded = eng.TraceFile.read_from(str(FULL_STACK_GOLDEN))
-    # The fixture is preserved as a v1 backwards-compat anchor
-    # (see test_trace_file_compat.py). When its schema is older
-    # than the live one, the plan-signature field cannot be equal
-    # by construction — the schema-version-aware comparator
-    # inside `replay_from_trace_file` handles cross-schema replay
-    # transparently. The determinism check is the per-choice
-    # address+value equality below, which is what this test is
-    # actually pinning.
+    # The file survived the round trip as the same artifact. Asserted before
+    # the replay, so a write/read defect reads as one rather than as a replay
+    # divergence.
     assert loaded.refdata_signature == tf.refdata_signature
-    if loaded.schema_version == tf.schema_version:
-        assert loaded.pass_plan_signature == tf.pass_plan_signature
+    assert loaded.schema_version == tf.schema_version
+    assert loaded.pass_plan_signature == tf.pass_plan_signature
 
     # Replay via the trace-injected path — RNG bypassed, every
     # value comes from the cursor, drained-cursor assertion runs
@@ -508,6 +512,7 @@ def test_full_stack_replay_reproduces_committed_golden_trace(full_stack_compiled
     assert len(a_choices) == len(b_choices), (
         f"trace length mismatch: live={len(a_choices)} replayed={len(b_choices)}"
     )
+    assert a_choices, "the full-stack plan recorded no choices at all"
     for i, (a, b) in enumerate(zip(a_choices, b_choices)):
         assert a.address == b.address, f"address mismatch at index {i}: {a.address} vs {b.address}"
         assert a.value == b.value, f"value mismatch at index {i} (addr={a.address})"

@@ -63,7 +63,10 @@ pub(crate) fn validate_duplex_productivity(
             json!(crate::productivity::DUPLEX_POLICY),
         ),
         ("productivity_scope", json!(crate::productivity::SCOPE)),
-        ("productivity_reasons", json!(expected.reasons)),
+        (
+            "productivity_reasons",
+            json!(expected.reasons.iter().map(|r| r.to_field()).collect::<Vec<_>>()),
+        ),
     ]
     .into_iter()
     .filter_map(|(field, value)| {
@@ -167,6 +170,29 @@ pub enum RecordValidationIssue {
     NQualityErrorsMismatch {
         reported: i64,
         trace_count: i64,
+    },
+    NAmbiguousBasesMismatch {
+        reported: i64,
+        event_count: i64,
+    },
+    /// One bucket of an np interval's origin partition disagrees with the
+    /// per-nucleotide flags over that interval.
+    NpPartitionMismatch {
+        region: &'static str,
+        bucket: &'static str,
+        reported: i64,
+        flag_count: i64,
+    },
+    /// A position inside an np interval carries no origin flag, or more than
+    /// one. The np interval is by construction the stretch no segment
+    /// alignment covers, so every base in it was written by the
+    /// recombination or by a later insertion -- a templated base there, or a
+    /// base claimed by two origins, means the partition cannot be trusted
+    /// even though its three counts may still sum to the region length.
+    NpPartitionOriginAmbiguous {
+        region: &'static str,
+        position: usize,
+        flags: u8,
     },
     NIndelsMismatch {
         reported: i64,

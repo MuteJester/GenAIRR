@@ -13,6 +13,7 @@ pub(super) fn check_counters(
     issues: &mut Vec<RecordValidationIssue>,
 ) {
     let sim = outcome.final_simulation();
+    check_np_origin_partition(record, sim, refdata, issues);
 
     // n_mutations comes from sim.mutation_count (set by S5F / Uniform
     // at seal). Direct equality.
@@ -143,6 +144,36 @@ pub(super) fn check_counters(
         issues.push(RecordValidationIssue::NQualityErrorsMismatch {
             reported: record.n_quality_errors,
             trace_count: quality_realized,
+        });
+    }
+
+    // Walked here rather than through `realized_substitutions`, which the two
+    // checks above share with the builder and so can only catch tampering.
+    // This one asserts more than the builder does: that the pass wrote `N` and
+    // nothing else. A pass that masked a position with a definite base would
+    // satisfy the builder's count and be caught here.
+    let mut ambiguous_realized = 0i64;
+    for pass_record in outcome.events() {
+        if pass_record.pass_name != crate::address::CORRUPT_NS {
+            continue;
+        }
+        for event in &pass_record.simulation_events {
+            if let crate::ir::SimulationEvent::BaseChanged {
+                old_base, new_base, ..
+            } = event
+            {
+                if new_base.eq_ignore_ascii_case(&b'N')
+                    && !old_base.eq_ignore_ascii_case(new_base)
+                {
+                    ambiguous_realized += 1;
+                }
+            }
+        }
+    }
+    if record.n_ambiguous_bases != ambiguous_realized {
+        issues.push(RecordValidationIssue::NAmbiguousBasesMismatch {
+            reported: record.n_ambiguous_bases,
+            event_count: ambiguous_realized,
         });
     }
 
@@ -559,4 +590,121 @@ fn original_v_name_from_assignment(
         .get(Segment::V, original_id)
         .map(|a| a.name.clone())
         .unwrap_or_default()
+}
+
+/// The np origin partition, re-derived from the pool.
+///
+/// Walked here rather than through `builder::np_origin_counts`, which the
+/// builder uses: a helper shared with the thing it checks can only catch a
+/// tampered record, never a wrong projection. This walk also asserts more
+/// than the builder does -- that every position inside an np interval
+/// carries exactly one origin flag.
+///
+/// That extra assertion is the one the sum cannot make. Three counts adding
+/// to the region length is satisfied by any mis-bucketing among the three, and
+/// by a templated base absorbed into one of them. The np interval is the
+/// stretch no segment alignment covers, so a templated base there is a real
+/// finding about the alignment bounds, not noise to round away.
+fn check_np_origin_partition(
+    record: &AirrRecord,
+    sim: &crate::ir::Simulation,
+    refdata: &RefDataConfig,
+    issues: &mut Vec<RecordValidationIssue>,
+) {
+    use crate::ir::flag;
+
+    let np1 = crate::airr_record::builder::np_interval(
+        record.v_sequence_end,
+        if refdata.chain_type.has_d() {
+            record.d_sequence_start
+        } else {
+            record.j_sequence_start
+        },
+        record.sequence.len(),
+    );
+    let np2 = if refdata.chain_type.has_d() {
+        crate::airr_record::builder::np_interval(
+            record.d_sequence_end,
+            record.j_sequence_start,
+            record.sequence.len(),
+        )
+    } else {
+        None
+    };
+
+    for (name, bounds, reported) in [
+        (
+            "np1",
+            np1,
+            (record.np1_n_tdt, record.np1_n_p, record.np1_n_inserted),
+        ),
+        (
+            "np2",
+            np2,
+            (record.np2_n_tdt, record.np2_n_p, record.np2_n_inserted),
+        ),
+    ] {
+        let Some((start, end)) = bounds else {
+            // No interval means no bases to attribute. A non-zero count here
+            // is reporting an origin for a region that does not exist.
+            for (bucket, value) in [
+                ("tdt", reported.0),
+                ("p", reported.1),
+                ("inserted", reported.2),
+            ] {
+                if value != 0 {
+                    issues.push(RecordValidationIssue::NpPartitionMismatch {
+                        region: name,
+                        bucket,
+                        reported: value,
+                        flag_count: 0,
+                    });
+                }
+            }
+            continue;
+        };
+
+        let mut tdt = 0i64;
+        let mut p = 0i64;
+        let mut inserted = 0i64;
+        for index in start..end {
+            let Some(nuc) = sim.pool.get(crate::ir::NucHandle::new(index as u32)) else {
+                continue;
+            };
+            let is_inserted = nuc.flags.contains(flag::INDEL_INSERTED);
+            let is_p = nuc.flags.contains(flag::P_NUC);
+            let is_n = nuc.flags.contains(flag::N_NUC);
+            let origins = u8::from(is_inserted) + u8::from(is_p) + u8::from(is_n);
+            if origins != 1 {
+                issues.push(RecordValidationIssue::NpPartitionOriginAmbiguous {
+                    region: name,
+                    position: index,
+                    flags: nuc.flags.bits(),
+                });
+                continue;
+            }
+            if is_inserted {
+                inserted += 1;
+            } else if is_p {
+                p += 1;
+            } else {
+                tdt += 1;
+            }
+        }
+
+        for (bucket, value, derived) in [
+            ("tdt", reported.0, tdt),
+            ("p", reported.1, p),
+            ("inserted", reported.2, inserted),
+        ] {
+            if value != derived {
+                issues.push(RecordValidationIssue::NpPartitionMismatch {
+                    region: name,
+                    bucket,
+                    reported: value,
+                    flag_count: derived,
+                });
+            }
+        }
+    }
 }

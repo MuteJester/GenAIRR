@@ -282,9 +282,18 @@ def test_pin_present_authored_p_plane_produces_nonzero_p_lengths() -> None:
 
     With a typed P-plane authored (V_3=[(0,0.5),(1,0.3),
     (2,0.2)] etc.), bundled VDJ cartridges produce
-    non-zero `p_*_length` fields at meaningful rates —
+    non-zero `p_*_length` fields at the authored rates —
     the estimator running against such data has signal
-    to consume."""
+    to consume.
+
+    The gate used to be "at least 10 of 50 records per end", which is the
+    *mean* of the weakest authored rate (J_5 at 0.2), so it failed about half
+    the time by construction: the measured 8 of 50 that per-pass RNG
+    substreams produced is 0.7 standard deviations from the expectation, not
+    a defect. One thousand records instead, against the authored probability
+    with a 0.05 tolerance -- more than three standard deviations at every one
+    of these rates, and a stronger claim than a floor, because it now catches
+    a plane that reaches the engine too *strongly* as well as too weakly."""
     cfg = copy.deepcopy(ga.HUMAN_IGH_OGRDB)
     cfg.reference_models = ReferenceEmpiricalModels(
         p_nucleotide_lengths={
@@ -294,23 +303,24 @@ def test_pin_present_authored_p_plane_produces_nonzero_p_lengths() -> None:
             "J_5": EmpiricalDistributionSpec([(0, 0.8), (1, 0.2)]),
         },
     )
+    records = 1000
     result = (
         ga.Experiment.on(cfg)
         .recombine()
-        .run_records(n=50, seed=42)
+        .run_records(n=records, seed=42)
     )
-    counts = {
-        col: sum(1 for r in result.records if r.get(col, 0) != 0)
-        for col in ("p_v_3_length", "p_d_5_length",
-                    "p_d_3_length", "p_j_5_length")
-    }
-    # Expect ≥ 10/50 nonzero per end at the authored distributions.
-    for col, n in counts.items():
-        assert n >= 10, (
-            f"P-plane authored but {col} nonzero on only {n}/50 "
-            f"records (expected ≥ 10). STOP AND REPORT — the "
-            f"authored plane is not reaching the engine at "
-            f"expected rates."
+    #: The authored probability of a non-zero length at each end: one minus
+    #: the weight the plane puts on zero.
+    authored = {"p_v_3_length": 0.5, "p_d_5_length": 0.3,
+                "p_d_3_length": 0.3, "p_j_5_length": 0.2}
+    tolerance = 0.05
+    for col, expected in authored.items():
+        rate = sum(1 for r in result.records if r.get(col, 0) != 0) / records
+        assert abs(rate - expected) <= tolerance, (
+            f"P-plane authored at {expected:.2f} for {col} but realized "
+            f"{rate:.3f} over {records} records, outside ±{tolerance}. "
+            f"STOP AND REPORT — the authored plane is not reaching the engine "
+            f"at the rate it specifies."
         )
 
 
