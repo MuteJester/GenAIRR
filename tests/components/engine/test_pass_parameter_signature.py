@@ -200,16 +200,26 @@ def test_s5f_kernel_name_participates_in_signature() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_fresh_emission_carries_schema_version_4() -> None:
-    """Slice A bumps the on-disk schema to v3. Fresh emissions
-    write v3 by default and the plan signature uses the new
-    `name(params)` envelope on every pass."""
+def test_fresh_emission_carries_the_schema_version_this_engine_emits() -> None:
+    """A fresh emission is at the engine's current schema version, and its
+    plan signature uses the `name(params)` envelope on every pass.
+
+    This used to assert the literal 4, under a docstring about v3 -- the
+    number had already moved once without the prose following it. Naming a
+    version in a test is how a test about an envelope becomes a test about an
+    integer: it fails on every bump, says nothing about what it is for, and
+    the fix is to retype the number. Compared against the constant it is
+    unconditionally true and still catches an emission that writes a stale
+    version.
+    """
+    from GenAIRR._engine import TraceFile
+
     exp = ga.Experiment.on("human_igh").recombine()
     compiled = exp.compile()
     outcome = compiled.simulator.run(seed=42)
     tf = compiled.simulator.trace_file_from(outcome, seed=42)
     doc = json.loads(tf.to_json())
-    assert doc["schema_version"] == 4
+    assert doc["schema_version"] == TraceFile.SCHEMA_VERSION
     # Envelope is observable: every pass renders as `name(...)`.
     sig = doc["pass_plan_signature"]
     assert "(" in sig

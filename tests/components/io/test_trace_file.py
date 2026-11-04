@@ -285,12 +285,13 @@ def test_an_emitted_trace_file_reruns_to_the_same_choices(tmp_path, vj_compiled)
     fixtures, which load and replay there. **Round-tripping** is this test,
     over a file it writes itself, which can never go stale.
 
-    What a determinism change costs, and what nothing here catches: a trace
-    file records a seed and a plan signature but not which sampling model drew
-    it, so `rerun_from_trace_file` on a file written by an older engine
-    re-draws a different molecule and reports no mismatch. The record column
-    `determinism_version` says it for a dataset; the trace file has no such
-    field yet.
+    What a determinism change used to cost, and what nothing here caught: a
+    trace file recorded a seed and a plan signature but not which sampling
+    model drew it, so `rerun_from_trace_file` on a file written by an older
+    engine re-drew a different molecule and reported no mismatch. Schema
+    version 5 carries `determinism_version` and the gate is in
+    `tests/acceptance/test_determinism_version.py`, which owns the claim for
+    both artifacts a version has to travel on.
     """
     seed = 4242
     outcome = vj_compiled.simulator.run(seed=seed)

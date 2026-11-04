@@ -6,6 +6,14 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
+- `determinism_version` on a trace file as well as on every exported record.
+  A trace recorded a seed and a plan signature, which together say what to
+  draw and from where, but not which model does the drawing: replaying a file
+  from another engine produced a different molecule and nothing in the
+  artifact disagreed. Trace-file schema version 5 carries the number, and a
+  replay whose number disagrees with the installed engine now fails by name.
+  Files written before the stamp report `0`, meaning "unknown", and keep the
+  treatment they have always had.
 - `determinism_version` on every exported record, and
   `GenAIRR.DETERMINISM_VERSION` to read the same number without running
   anything. The engine's reproducibility promise is that one seed and one

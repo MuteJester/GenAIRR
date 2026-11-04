@@ -21,10 +21,17 @@ def trace(compiled):
     return compiled.simulator.trace_file_from(out, seed=17)
 
 
-def test_v4_records_policy_and_actual_contract_context():
+def test_a_fresh_emission_records_policy_and_actual_contract_context():
+    """Named `test_v4_...` and pinned to schema version 4 when those two
+    fields were introduced. The claim is that a fresh emission carries them,
+    which is true at v4 and at every version after it; pinning the number
+    made the test fail on the next bump without anything having gone wrong.
+    """
+    from GenAIRR._engine import TraceFile
+
     compiled = experiment().productive_only().compile()
     artifact = trace(compiled)
-    assert artifact.schema_version == 4
+    assert artifact.schema_version == TraceFile.SCHEMA_VERSION >= 4
     assert artifact.productivity_policy == "canonical_observed_vdj_v1"
     assert artifact.active_contracts == compiled.simulator.active_contracts()
     for method in (compiled.simulator.replay_from_trace_file, compiled.simulator.rerun_from_trace_file):

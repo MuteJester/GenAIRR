@@ -29,7 +29,9 @@ draw order moves every record in the batch, so there is no "mostly the
 same" to fall back on. Check the column before scoring anything
 against a dataset you did not generate yourself; a dataset with no
 such column was produced by GenAIRR 2.3.1 or earlier, before the stamp
-existed.
+existed. A trace file carries the same number, and replaying one whose
+number disagrees with the installed engine fails rather than quietly
+reproducing something else.
 
 **One stream per pass.** Each pass draws from its own random
 substream, derived from the run seed and the pass's identity rather
@@ -40,7 +42,9 @@ with and without one step — differs only by that step; and two
 `pcr_amplify` steps in one pipeline draw independently instead of
 applying the same errors twice. Before GenAIRR 2.3.1 one stream served
 the whole pipeline, so any step's presence shifted every draw after
-it.
+it. The same holds inside a clonal family, whose growth, sampling and
+affinity-target selection each draw from their own named substream of
+the family's seed.
 
 **Trace reproducibility.** A trace is the **record** of choices
 the engine made during one run. It includes the seed, but it
@@ -162,6 +166,7 @@ the existing signatures:
 | `pass_plan_signature` | Hash of the resolved pass plan (every method-call signature on the `Experiment`) |
 | `refdata_signature` | Identity hash of the refdata (cartridge identity + catalogue shape) |
 | `address_schema_version` | The schema version of the choice-address encoding |
+| `determinism_version` | Which sampling model drew the trace; `0` for a file written before the stamp existed |
 | `refdata_content_hash` | Content hash of every plane the trace depends on |
 | `productivity_policy` | Versioned biological annotation policy |
 | `active_contracts` | Contracts active when the outcome was generated |
@@ -230,6 +235,7 @@ in the file tells you which release wrote it.
 
 | Failure mode | When it fires |
 |---|---|
+| `determinism_version_mismatch` | The trace was drawn by a different sampling model than the installed engine ships |
 | `trace_exhausted` | The replay walked past the last recorded choice |
 | `address_mismatch` | The next address the engine wants doesn't match the next recorded address |
 | `value_kind_mismatch` | The recorded value type doesn't match what the address expects (e.g. an integer where a base draw is required) |

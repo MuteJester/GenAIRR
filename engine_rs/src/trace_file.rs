@@ -17,6 +17,9 @@
 //!   `pass_plan_signature`, `refdata_signature` (structural only —
 //!   chain type + per-pool counts), `trace`. No content hash. No
 //!   address-vocabulary version field.
+//! - **v5**: adds `determinism_version` (which sampling model drew
+//!   the trace). A file emitted before the stamp existed reports `0`
+//!   and falls back to the signature gates, exactly as it does today.
 //! - **v2** (legacy): adds `address_schema_version` (the revision
 //!   of the persisted [`crate::address::ChoiceAddress`] vocabulary)
 //!   and `refdata_content_hash` (`"sha256:{hex}"` over the
@@ -107,7 +110,7 @@ use crate::trace::Trace;
 /// Current on-disk schema version the engine emits. Bumped when a
 /// new required field or wire-format change ships. See module docs
 /// for the bump policy.
-pub const TRACE_FILE_SCHEMA_VERSION: u32 = 4;
+pub const TRACE_FILE_SCHEMA_VERSION: u32 = 5;
 
 /// Schema versions this engine knows how to load. Loading a file
 /// whose `schema_version` is outside this set surfaces as
@@ -124,7 +127,12 @@ pub const TRACE_FILE_SCHEMA_VERSION: u32 = 4;
 ///       signature gate instead of silently sampling different
 ///       output at the same addresses (Slice A — Pass Parameter
 ///       Signature). The other v2 fields stay unchanged.
-pub const KNOWN_TRACE_FILE_SCHEMA_VERSIONS: &[u32] = &[1, 2, 3, 4];
+/// v5 → adds `determinism_version`. A trace recorded a seed and a
+///       plan, which together say what to draw and from where, but
+///       not which sampling model would draw it. Rerunning a file
+///       from another engine therefore produced a different molecule
+///       and reported no mismatch.
+pub const KNOWN_TRACE_FILE_SCHEMA_VERSIONS: &[u32] = &[1, 2, 3, 4, 5];
 
 /// Durable artifact bundling a simulation's [`Trace`] with the
 /// metadata needed to verify and rerun it. See the module docs.
@@ -155,6 +163,18 @@ pub struct TraceFile {
     /// [`refdata_content_hash`].
     #[serde(default)]
     pub refdata_content_hash: Option<String>,
+    /// Which sampling model drew this trace --
+    /// [`crate::determinism::DETERMINISM_VERSION`] at the time of
+    /// writing. v5 traces emit the live constant; everything earlier
+    /// predates the stamp and reports `0`, which means "unknown", not
+    /// "version zero".
+    ///
+    /// The seed and the plan signature between them say what to draw
+    /// and from where. Neither says which model does the drawing, so
+    /// without this field a file written by another engine reruns to
+    /// a different molecule and nothing in the artifact disagrees.
+    #[serde(default)]
+    pub determinism_version: u32,
     /// v4 identifies the biological annotation semantics independently of
     /// reference data and pass parameters. Older traces have no such claim.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -188,6 +208,10 @@ pub enum TraceFileError {
     /// loaded by an engine that ships `M ≠ N` — the spelling /
     /// parse pair has shifted underneath it.
     AddressSchemaVersionMismatch { got: u32, expected: u32 },
+    /// The trace was drawn by a different sampling model than this
+    /// engine ships. A rerun would diverge; see
+    /// [`crate::determinism`].
+    DeterminismVersionMismatch { got: u32, expected: u32 },
     ProductivityPolicyMismatch {
         got: Option<String>,
         expected: String,
@@ -227,6 +251,11 @@ impl std::fmt::Display for TraceFileError {
             Self::AddressSchemaVersionMismatch { got, expected } => write!(
                 f,
                 "trace-file address schema version mismatch: got {got}, this engine speaks {expected}",
+            ),
+            Self::DeterminismVersionMismatch { got, expected } => write!(
+                f,
+                "trace-file determinism version mismatch: drawn by sampling model {got}, \
+                 this engine ships {expected}. A rerun would not reproduce the trace.",
             ),
             Self::UnknownAddress { address } => {
                 write!(f, "trace-file contains non-built-in address {address:?}; pass allow_custom_addresses=true to accept it")
@@ -532,6 +561,7 @@ impl TraceFile {
             pass_plan_signature: pass_plan_signature(plan),
             refdata_signature: refdata_signature(refdata),
             address_schema_version: crate::address::ADDRESS_SCHEMA_VERSION,
+            determinism_version: crate::determinism::DETERMINISM_VERSION,
             refdata_content_hash: Some(refdata_content_hash(refdata)),
             productivity_policy: Some(plan_productivity_policy(plan).to_string()),
             active_contracts: Some(Vec::new()),
@@ -750,6 +780,21 @@ impl TraceFile {
             return Err(TraceFileError::AddressSchemaVersionMismatch {
                 got: self.address_schema_version,
                 expected: crate::address::ADDRESS_SCHEMA_VERSION,
+            });
+        }
+        // Same shape, for the same reason: a file written before the
+        // stamp existed reports `0` and cannot say which model drew
+        // it, so it keeps the treatment it has always had -- the
+        // signature gates and nothing more. A file that does say
+        // must agree, on a seed rerun and on a choice replay alike:
+        // a changed model moves which draws happen, so the recorded
+        // choices no longer line up with the draws asking for them.
+        if self.determinism_version != 0
+            && self.determinism_version != crate::determinism::DETERMINISM_VERSION
+        {
+            return Err(TraceFileError::DeterminismVersionMismatch {
+                got: self.determinism_version,
+                expected: crate::determinism::DETERMINISM_VERSION,
             });
         }
         Ok(())
@@ -1104,25 +1149,44 @@ mod tests {
     // ── Schema policy compatibility tests ─────────────────────────
 
     #[test]
-    fn schema_version_constant_is_4() {
-        // Pinned so a downstream consumer adding a new optional
-        // field can't accidentally bump the version. Bumping must
-        // come with explicit documentation + KNOWN list update.
-        // (Slice A — Pass Parameter Signature — bumped to v3.)
-        assert_eq!(TRACE_FILE_SCHEMA_VERSION, 4);
-        assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&1));
-        assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&2));
-        assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&3));
-        assert!(KNOWN_TRACE_FILE_SCHEMA_VERSIONS.contains(&4));
+    fn a_bump_brings_every_earlier_version_with_it() {
+        // This used to be `schema_version_constant_is_4`, asserting
+        // the literal 4. What it was guarding is that a bump is
+        // deliberate and complete -- a downstream consumer adding an
+        // optional field must not move the version, and a real bump
+        // must extend the KNOWN list so every older file still
+        // loads. Naming the number in the test meant the name went
+        // stale on the first bump and the assertion had to be
+        // rewritten to say the same thing about a different integer.
+        //
+        // Stated structurally instead: the emitted version is the
+        // newest version this engine knows, and it knows every
+        // version from 1 up to it with no gaps. A bump that forgets
+        // the KNOWN list fails; a bump that is documented and
+        // complete passes without touching this test.
+        assert_eq!(
+            Some(&TRACE_FILE_SCHEMA_VERSION),
+            KNOWN_TRACE_FILE_SCHEMA_VERSIONS.iter().max(),
+            "the emitted version must be the newest known one"
+        );
+        assert_eq!(
+            KNOWN_TRACE_FILE_SCHEMA_VERSIONS,
+            (1..=TRACE_FILE_SCHEMA_VERSION).collect::<Vec<_>>(),
+            "every version from 1 up must still load, in order and without gaps"
+        );
     }
 
     #[test]
-    fn fresh_emit_carries_v4_metadata() {
+    fn a_fresh_emit_carries_every_field_the_current_schema_requires() {
         let plan = make_plan(&["sample_allele.v"]);
         let refdata = make_refdata();
         let file = TraceFile::build(&plan, &refdata, 0, Trace::new());
 
-        assert_eq!(file.schema_version, 4);
+        assert_eq!(file.schema_version, TRACE_FILE_SCHEMA_VERSION);
+        assert_eq!(
+            file.determinism_version,
+            crate::determinism::DETERMINISM_VERSION
+        );
         assert_eq!(
             file.productivity_policy.as_deref(),
             Some(crate::productivity::POLICY)
@@ -1180,12 +1244,79 @@ mod tests {
             pass_plan_signature: pass_plan_signature_names_only(&plan),
             refdata_signature: refdata_signature(&refdata),
             address_schema_version: 0,
+            // A v1 file predates the stamp and cannot say which
+            // model drew it, which is the one case the determinism
+            // gate yields to.
+            determinism_version: 0,
             refdata_content_hash: None,
             productivity_policy: None,
             active_contracts: None,
             trace: Trace::new(),
         };
         assert!(v1.validate_against(&plan, &refdata).is_ok());
+    }
+
+    #[test]
+    fn a_file_this_engine_wrote_says_which_model_drew_it() {
+        let plan = make_plan(&["a"]);
+        let refdata = make_refdata();
+        let file = TraceFile::build(&plan, &refdata, 0, Trace::new());
+        assert_eq!(
+            file.determinism_version,
+            crate::determinism::DETERMINISM_VERSION
+        );
+        assert_eq!(file.schema_version, 5);
+    }
+
+    #[test]
+    fn a_file_drawn_by_another_model_is_refused_by_name() {
+        // The defect this field exists for: without it the seed and
+        // the plan signature both match, so validation passed and the
+        // rerun produced a different molecule in silence.
+        let plan = make_plan(&["a"]);
+        let refdata = make_refdata();
+        let mut file = TraceFile::build(&plan, &refdata, 0, Trace::new());
+        file.determinism_version = crate::determinism::DETERMINISM_VERSION + 1;
+        match file.validate_against(&plan, &refdata) {
+            Err(TraceFileError::DeterminismVersionMismatch { got, expected }) => {
+                assert_eq!(got, crate::determinism::DETERMINISM_VERSION + 1);
+                assert_eq!(expected, crate::determinism::DETERMINISM_VERSION);
+            }
+            other => panic!("expected DeterminismVersionMismatch, got {other:?}"),
+        }
+        // A choice replay is refused too: a changed model moves which
+        // draws happen, so the recorded choices no longer line up
+        // with the draws asking for them.
+        assert!(file.validate_for_replay(&plan, &refdata).is_err());
+    }
+
+    #[test]
+    fn a_file_written_before_the_stamp_keeps_the_treatment_it_had() {
+        let plan = make_plan(&["a"]);
+        let refdata = make_refdata();
+        let mut file = TraceFile::build(&plan, &refdata, 0, Trace::new());
+        file.determinism_version = 0;
+        assert!(file.validate_against(&plan, &refdata).is_ok());
+    }
+
+    #[test]
+    fn an_absent_determinism_version_deserialises_as_unknown() {
+        // The wire half of the same claim: the field is
+        // `#[serde(default)]`, so a file that never had it reads as
+        // 0 rather than failing to parse.
+        let plan = make_plan(&["a"]);
+        let refdata = make_refdata();
+        let json = TraceFile::build(&plan, &refdata, 0, Trace::new())
+            .to_json_pretty()
+            .expect("serialises");
+        let mut body: serde_json::Value = serde_json::from_str(&json).expect("parses");
+        assert!(body
+            .as_object_mut()
+            .expect("object")
+            .remove("determinism_version")
+            .is_some());
+        let reloaded = TraceFile::from_json(&body.to_string()).expect("loads without the field");
+        assert_eq!(reloaded.determinism_version, 0);
     }
 
     #[test]
