@@ -264,136 +264,46 @@ impl<'a, 'idx> MutationTransaction<'a, 'idx> {
 
 #[cfg(test)]
 mod boundary_lockdown {
-    //! Guard test that enforces the pass-author convention encoded
-    //! in [`crate::ir::builder::SimulationBuilder`]: no file under
-    //! `src/passes/` other than the `mutation_transaction/` module
-    //! tree may call `.change_base(`, `.insert_indel(`, or
-    //! `.delete_indel(` directly. New passes must route mutations
-    //! through [`MutationTransaction`](super::MutationTransaction).
+    //! Two guards over the pass-author convention encoded in
+    //! [`crate::ir::builder::SimulationBuilder`]. Both are policy
+    //! only: the source walk, the test-scope tracking and the
+    //! test-file conventions live in [`crate::source_guard`], shared
+    //! with the other guards in this crate.
     //!
-    //! Visibility lockdown via `pub(super)` isn't an option because
-    //! `MutationTransaction` itself lives in `src/passes/`, not in
-    //! `src/ir/`. So we enforce the rule with a grep-style assertion
-    //! that runs in CI.
+    //! Visibility lockdown via `pub(super)` isn't an option for
+    //! either, because `MutationTransaction` itself lives in
+    //! `src/passes/`, not in `src/ir/`.
     //!
-    //! Walks `src/passes/` from the manifest dir, skipping the
-    //! whole `mutation_transaction/` subtree (the only legitimate
-    //! callers), and asserts the forbidden call patterns are
-    //! absent. Doc-comment references are excluded by matching
-    //! only lines that contain `.` immediately followed by the
-    //! method name and `(`.
-    use std::fs;
-    use std::path::Path;
+    //! **The low-level guard**: no file under `src/passes/` other
+    //! than the `mutation_transaction/` tree may call
+    //! `.change_base(`, `.insert_indel(` or `.delete_indel(` at all.
+    //! New passes route mutations through
+    //! [`MutationTransaction`](super::MutationTransaction). Test
+    //! scaffolds are not exempt — there is no legitimate reason to
+    //! reach these from a pass file.
+    //!
+    //! **The persistent-mutator guard**: no *production* code under
+    //! `src/passes/` may call the `Simulation::with_*` mutators that
+    //! now have event-emitting builder equivalents. The runtime
+    //! live-call refresh trusts those events, not
+    //! `PassCompileEffect` declarations, so a pass that calls
+    //! `sim.with_allele_assigned(...)` directly silently skips the
+    //! refresh. Unlike the low-level guard this one does exempt test
+    //! scope: every `#[cfg(test)] mod tests` block builds fixtures
+    //! through `Simulation::with_*`, which is what those methods are
+    //! for. The full-stack policy-conformance test catches the same
+    //! mistake at run time; this catches it at code shape, before a
+    //! pass reaches the audit plan.
 
+    use crate::source_guard::{mentions, Mention};
+
+    /// Low-level builder mutators, forbidden outright in pass files.
     const FORBIDDEN: &[&str] = &[".change_base(", ".insert_indel(", ".delete_indel("];
-
-    /// Returns `true` if `path` is anywhere under
-    /// `src/passes/mutation_transaction/` (or is the legacy
-    /// `mutation_transaction.rs` flat file — guard for compatibility
-    /// during in-progress splits).
-    fn is_inside_mutation_transaction(path: &Path) -> bool {
-        let mut components = path.components();
-        let mut prev: Option<std::path::Component<'_>> = None;
-        while let Some(component) = components.next() {
-            if let std::path::Component::Normal(name) = component {
-                let s = name.to_string_lossy();
-                if s == "mutation_transaction" || s == "mutation_transaction.rs" {
-                    // Confirm the previous component (if any) was
-                    // a directory named `passes` — defends against
-                    // a hypothetical homonym elsewhere.
-                    if let Some(std::path::Component::Normal(prev_name)) = prev {
-                        if prev_name.to_string_lossy() == "passes" {
-                            return true;
-                        }
-                    }
-                }
-            }
-            prev = Some(component);
-        }
-        false
-    }
-
-    fn visit(dir: &Path, violations: &mut Vec<String>) {
-        for entry in fs::read_dir(dir).expect("read_dir under src/passes") {
-            let entry = entry.expect("dir entry");
-            let path = entry.path();
-            if is_inside_mutation_transaction(&path) {
-                continue;
-            }
-            if path.is_dir() {
-                visit(&path, violations);
-                continue;
-            }
-            if path.extension().and_then(|s| s.to_str()) != Some("rs") {
-                continue;
-            }
-            let body = match fs::read_to_string(&path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            for (line_no, line) in body.lines().enumerate() {
-                let trimmed = line.trim_start();
-                // Skip doc-comment references like `builder.change_base()`.
-                if trimmed.starts_with("//") || trimmed.starts_with("///") {
-                    continue;
-                }
-                for pattern in FORBIDDEN {
-                    if line.contains(pattern) {
-                        violations.push(format!(
-                            "{}:{} → {}",
-                            path.display(),
-                            line_no + 1,
-                            line.trim()
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn no_pass_calls_low_level_builder_mutators_directly() {
-        let passes_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/passes");
-        let mut violations = Vec::new();
-        visit(&passes_dir, &mut violations);
-        assert!(
-            violations.is_empty(),
-            "Pass files calling SimulationBuilder mutation methods directly — \
-             use MutationTransaction instead. Offenders:\n{}",
-            violations.join("\n")
-        );
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // Production-path lockdown for persistent `Simulation::with_*`
-    // mutators that now have event-emitting `SimulationBuilder`
-    // equivalents.
-    //
-    // The previous slice landed builder methods that emit
-    // `SimulationEvent`s (`assign_allele`, `update_trim`,
-    // `add_region`, `replace_region`, `set_mutation_count`). The
-    // runtime live-call refresh trusts those events — not
-    // `PassCompileEffect` declarations — so a production pass that
-    // calls `sim.with_allele_assigned(...)` directly silently
-    // skips the refresh.
-    //
-    // The full-stack policy-conformance test catches this at run
-    // time. This lockdown catches it at *code shape* before a pass
-    // even reaches the audit plan.
-    //
-    // Unlike the low-level lockdown above, the forbidden methods
-    // here ARE legitimately used in test scaffolding (every
-    // `#[cfg(test)] mod tests` block builds fixtures via
-    // `Simulation::with_*`). So the scanner skips lines inside
-    // `#[cfg(test)]`-gated regions, identified via a simple
-    // brace-depth tracker keyed off the attribute.
-    // ──────────────────────────────────────────────────────────────
 
     /// Persistent `Simulation::with_*` mutators that have event-
     /// emitting `SimulationBuilder` equivalents. Production code in
-    /// `src/passes/` (outside `mutation_transaction/`) must route
-    /// through the builder; the test scaffolds are still free to
-    /// build initial fixtures via these.
+    /// `src/passes/` must route through the builder; test scaffolds
+    /// are still free to build initial fixtures with these.
     const FORBIDDEN_PERSISTENT_MUTATORS: &[&str] = &[
         ".with_allele_assigned(",
         ".with_trim(",
@@ -402,163 +312,36 @@ mod boundary_lockdown {
         ".with_mutation_count(",
     ];
 
-    /// Strip an inline `//` line comment off a source line. Returns
-    /// the prefix before `//`. Doesn't handle `//` inside string
-    /// literals — that's a rare-enough case in pass code that the
-    /// false-positive risk is negligible, and the scanner's
-    /// downstream pattern check would still need a matching
-    /// `.with_*(` literal in the source line to surface a false
-    /// violation.
-    fn strip_inline_comment(line: &str) -> &str {
-        match line.find("//") {
-            Some(idx) => &line[..idx],
-            None => line,
-        }
+    /// A pass file this module's guards apply to: under
+    /// `src/passes/`, outside the `mutation_transaction/` tree that
+    /// legitimately owns these calls.
+    fn is_guarded_pass_file(mention: &Mention) -> bool {
+        mention.file.starts_with("src/passes/")
+            && !mention.file.starts_with("src/passes/mutation_transaction")
     }
 
-    /// Scan `body` (the file source) for [`FORBIDDEN_PERSISTENT_MUTATORS`]
-    /// outside `#[cfg(test)]`-gated regions, appending one violation
-    /// string per offender to `violations`.
-    ///
-    /// The cfg(test) tracker is a tiny state machine: it counts
-    /// `{` / `}` per line (after stripping inline comments) and
-    /// when it encounters a `#[cfg(test)]` attribute followed by a
-    /// brace-opening item, it pushes the pre-open brace depth onto
-    /// a stack. Lines inside any active test region skip
-    /// enforcement. The region pops when the brace depth returns
-    /// to the pushed value.
-    pub(super) fn scan_for_persistent_mutator_violations(
-        path: &Path,
-        body: &str,
-        violations: &mut Vec<String>,
-    ) {
-        let mut brace_depth: i32 = 0;
-        let mut test_stack: Vec<i32> = Vec::new();
-        let mut pending_test_attr = false;
-
-        for (line_no, line) in body.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            let is_comment = trimmed.starts_with("//");
-
-            // cfg(test) attribute? Defers to the next non-blank
-            // code line, which may or may not open a brace.
-            if !is_comment && trimmed.starts_with("#[cfg(test)]") {
-                pending_test_attr = true;
-                continue;
-            }
-
-            // Snapshot whether this line is inside a test region
-            // BEFORE updating state, so the brace counter on this
-            // line itself doesn't mis-attribute.
-            let line_in_test = !test_stack.is_empty() || pending_test_attr;
-
-            // Brace-count off a comment-stripped copy.
-            let scan = strip_inline_comment(line);
-            let opens = scan.matches('{').count() as i32;
-            let closes = scan.matches('}').count() as i32;
-
-            // If a cfg(test) attribute was pending and this line
-            // opens a brace, the attribute gates the new braced
-            // region. Record the pre-open depth so we know when to
-            // pop. If no brace opens, the attribute gated a non-
-            // braced item (`use`, `mod foo;`) and is simply
-            // consumed.
-            if pending_test_attr && opens > 0 {
-                test_stack.push(brace_depth);
-            }
-            pending_test_attr = false;
-
-            brace_depth += opens;
-            brace_depth -= closes;
-
-            // Pop any test region(s) we just exited (brace depth
-            // dropped back to the depth at which the region
-            // opened).
-            while test_stack.last() == Some(&brace_depth) {
-                test_stack.pop();
-            }
-
-            if is_comment {
-                continue;
-            }
-            if line_in_test {
-                continue;
-            }
-
-            for pattern in FORBIDDEN_PERSISTENT_MUTATORS {
-                if line.contains(pattern) {
-                    violations.push(format!(
-                        "{}:{} → {}",
-                        path.display(),
-                        line_no + 1,
-                        line.trim()
-                    ));
-                }
-            }
-        }
-    }
-
-    /// Returns `true` if `path` is in a directory or file the codebase
-    /// reserves for test code reached only via `#[cfg(test)] mod ...;`
-    /// declarations from production files. The persistent-mutator
-    /// lockdown is a *production-path* guard, so these paths are
-    /// allowed to call `Simulation::with_*` directly for fixture
-    /// setup.
-    ///
-    /// Skip rules:
-    /// - any path component named `tests` (covers `passes/foo/tests/`,
-    ///   `passes/foo/tests/sub/`, etc.)
-    /// - filenames `tests.rs` and `test_support.rs` (the canonical
-    ///   convention for in-file test fixtures across this crate)
-    fn is_test_only_path(path: &Path) -> bool {
-        if path
-            .components()
-            .any(|c| matches!(c, std::path::Component::Normal(n) if n == "tests"))
-        {
-            return true;
-        }
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name == "tests.rs" || name == "test_support.rs" {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn visit_persistent(dir: &Path, violations: &mut Vec<String>) {
-        for entry in fs::read_dir(dir).expect("read_dir under src/passes") {
-            let entry = entry.expect("dir entry");
-            let path = entry.path();
-            if is_inside_mutation_transaction(&path) {
-                continue;
-            }
-            if is_test_only_path(&path) {
-                continue;
-            }
-            if path.is_dir() {
-                visit_persistent(&path, violations);
-                continue;
-            }
-            if path.extension().and_then(|s| s.to_str()) != Some("rs") {
-                continue;
-            }
-            let body = match fs::read_to_string(&path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            scan_for_persistent_mutator_violations(&path, &body, violations);
-        }
+    #[test]
+    fn no_pass_calls_low_level_builder_mutators_directly() {
+        let violations: Vec<String> = mentions(FORBIDDEN)
+            .into_iter()
+            .filter(is_guarded_pass_file)
+            .map(|m| m.to_string())
+            .collect();
+        assert!(
+            violations.is_empty(),
+            "Pass files calling SimulationBuilder mutation methods directly — \
+             use MutationTransaction instead. Offenders:\n{}",
+            violations.join("\n")
+        );
     }
 
     #[test]
     fn no_pass_calls_persistent_with_star_mutators_in_production_code() {
-        let passes_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/passes");
-        let mut violations = Vec::new();
-        visit_persistent(&passes_dir, &mut violations);
+        let violations: Vec<String> = mentions(FORBIDDEN_PERSISTENT_MUTATORS)
+            .into_iter()
+            .filter(|m| !m.in_test_scope && is_guarded_pass_file(m))
+            .map(|m| m.to_string())
+            .collect();
         assert!(
             violations.is_empty(),
             "Production pass code calling persistent `Simulation::with_*` mutators \
@@ -572,92 +355,67 @@ mod boundary_lockdown {
         );
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // Self-test for the scanner itself: it must catch a forbidden
-    // call in production-position and not flag the same call inside
-    // a `#[cfg(test)]` region. Run against synthetic source strings
-    // so this test doesn't depend on the live repo state.
-    // ──────────────────────────────────────────────────────────────
-
+    /// The guards above are policy over [`crate::source_guard`],
+    /// whose scanner is tested against synthetic source in its own
+    /// module. What is left to pin here is that each policy reads
+    /// the `in_test_scope` flag the way its doc comment says: the
+    /// low-level guard ignores it, the persistent-mutator guard
+    /// honours it.
     #[test]
-    fn scanner_flags_persistent_mutator_in_production_position() {
-        let synthetic = r#"
-fn execute(&self, sim: &Simulation) -> Simulation {
-    sim.with_allele_assigned(Segment::V, instance)
-}
-"#;
-        let mut violations = Vec::new();
-        scan_for_persistent_mutator_violations(
-            Path::new("synthetic.rs"),
-            synthetic,
-            &mut violations,
-        );
-        assert_eq!(violations.len(), 1);
-        assert!(violations[0].contains("with_allele_assigned"));
-    }
+    fn the_two_policies_disagree_about_test_scope_by_design() {
+        use crate::source_guard::mentions_in_body;
 
-    #[test]
-    fn scanner_allows_persistent_mutator_inside_cfg_test_block() {
-        let synthetic = r#"
-fn execute(&self, sim: &Simulation) -> Simulation {
-    builder.assign_allele(Segment::V, instance);
-    builder.seal()
-}
-
+        let body = "\
 #[cfg(test)]
 mod tests {
     fn fixture() -> Simulation {
-        let sim = Simulation::new();
-        // Test scaffold — building initial state, not a runtime
-        // mutation, so the lockdown should NOT fire here.
+        builder.change_base(handle, base);
         sim.with_allele_assigned(Segment::V, instance)
-            .with_trim(Segment::V, TrimEnd::Five, 2)
-            .with_region_added(region)
-            .with_mutation_count(3)
     }
 }
-"#;
-        let mut violations = Vec::new();
-        scan_for_persistent_mutator_violations(
-            Path::new("synthetic.rs"),
-            synthetic,
-            &mut violations,
-        );
+";
+        let low_level = mentions_in_body("src/passes/synthetic.rs", body, FORBIDDEN);
+        assert_eq!(low_level.len(), 1, "the fixture calls one forbidden method");
         assert!(
-            violations.is_empty(),
-            "Scanner must not flag persistent mutators inside #[cfg(test)] regions. Got: {:?}",
-            violations
+            low_level.iter().all(is_guarded_pass_file),
+            "a pass file outside mutation_transaction/ is guarded"
+        );
+
+        let persistent = mentions_in_body(
+            "src/passes/synthetic.rs",
+            body,
+            FORBIDDEN_PERSISTENT_MUTATORS,
+        );
+        assert_eq!(persistent.len(), 1);
+        assert!(
+            persistent.iter().all(|m| m.in_test_scope),
+            "the same fixture is test scope, so the persistent guard passes it"
         );
     }
 
     #[test]
-    fn scanner_allows_cfg_test_gated_use_statements() {
-        // `#[cfg(test)] use ...;` does not open a brace and must
-        // not put the scanner into a sticky test-region state.
-        // Subsequent production code in the same file MUST still
-        // be checked.
-        let synthetic = r#"
-#[cfg(test)]
-use crate::ir::NucHandle;
-
-fn production(sim: &Simulation) -> Simulation {
-    sim.with_region_added(region)
-}
-"#;
-        let mut violations = Vec::new();
-        scan_for_persistent_mutator_violations(
-            Path::new("synthetic.rs"),
-            synthetic,
-            &mut violations,
-        );
-        assert_eq!(
-            violations.len(),
-            1,
-            "Scanner must not stay in test-region state after a \
-             cfg(test)-gated `use`. Got: {:?}",
-            violations
-        );
-        assert!(violations[0].contains("with_region_added"));
+    fn the_mutation_transaction_tree_is_the_one_exemption() {
+        let owner = Mention {
+            file: "src/passes/mutation_transaction/substitution.rs".to_string(),
+            line: 1,
+            text: String::new(),
+            in_test_scope: false,
+        };
+        let other_pass = Mention {
+            file: "src/passes/mutate/uniform.rs".to_string(),
+            line: 1,
+            text: String::new(),
+            in_test_scope: false,
+        };
+        let outside_passes = Mention {
+            file: "src/ir/builder.rs".to_string(),
+            line: 1,
+            text: String::new(),
+            in_test_scope: false,
+        };
+        assert!(!is_guarded_pass_file(&owner));
+        assert!(is_guarded_pass_file(&other_pass));
+        assert!(!is_guarded_pass_file(&outside_passes));
     }
 }
 

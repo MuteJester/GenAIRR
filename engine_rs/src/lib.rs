@@ -64,6 +64,11 @@ pub mod s5f;
 pub mod trace;
 pub mod trace_file;
 
+/// Test-time machinery for guards that read this crate's own source,
+/// for invariants that visibility cannot express. Nothing here ships.
+#[cfg(test)]
+mod source_guard;
+
 /// Crate version string. Used as a smoke-test target to confirm the
 /// Cargo → maturin → Python import chain is functional end to end.
 #[pyfunction]
