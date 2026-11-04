@@ -97,3 +97,36 @@ def genotype_truth_rows(genotype) -> List[Dict]:
                     "gene_state": wide["zygosity"],
                 })
     return rows
+
+
+def write_genotype_tsv(path: str, genotypes) -> None:
+    """Write the long truth table for ``genotypes`` to ``path`` as TSV.
+
+    Refuses, before opening the file, when there is nothing to write or when
+    a genotype cannot be joined. Both refusals exist for the same reason: a
+    truth file that is empty, or whose ``subject_id`` is blank, sits beside a
+    records file looking like an export that worked. Raising leaves the
+    caller with an error instead of a plausible artifact.
+    """
+    import csv
+
+    carried = [g for g in genotypes or () if g is not None]
+    if not carried:
+        raise ValueError(
+            "this result has no genotype, so there is no genotype truth to "
+            "write; run with `.with_genotype(...)` or `run_cohort(...)` to "
+            "produce a result that carries one")
+
+    unjoinable = [i for i, g in enumerate(carried) if not getattr(g, "subject_id", None)]
+    if unjoinable:
+        raise ValueError(
+            f"genotype(s) at position(s) {unjoinable} carry no subject_id, so "
+            f"the sidecar could not be joined to the records; set one with "
+            f"`.with_subject(...)`")
+
+    rows = [row for g in carried for row in genotype_truth_rows(g)]
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh, delimiter="\t")
+        writer.writerow(COLUMNS)
+        for row in rows:
+            writer.writerow([row[c] for c in COLUMNS])

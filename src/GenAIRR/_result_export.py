@@ -328,6 +328,22 @@ class _ResultExport:
         """
         self._write_delimited(path, "\t", airr_strict=airr_strict)
 
+    def to_genotype_tsv(self, path: str) -> None:
+        """Write this run's genotype ground truth beside its records.
+
+        One row per (gene, chromosome, carried allele), joined to the records
+        on ``subject_id``. A gene deleted on a chromosome keeps its row with
+        ``(none)`` in the allele cell -- "absent from the table" and "present
+        and deleted" are different truths.
+
+        Raises ``ValueError`` on a result with no genotype rather than writing
+        an empty file: a zero-row truth file beside a million records is a
+        failure that looks like success.
+        """
+        from ._genotype_truth import write_genotype_tsv
+
+        write_genotype_tsv(path, getattr(self, "_genotypes", None))
+
     def to_csv(self, path: str, *, airr_strict: bool = False) -> None:
         """Write the records as comma-separated values. Convenience
         alongside :meth:`to_tsv` — most analysis tooling prefers TSV
