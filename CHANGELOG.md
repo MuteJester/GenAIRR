@@ -401,6 +401,25 @@ All notable changes to GenAIRR are documented here.
 - Validate returned record fields and record/outcome counts; prevent custom
   metadata from overwriting generated sequence annotations.
 
+### Documentation
+
+- **Documented that a seed names a record, not a run, on the plain path.** `n`
+  records are drawn at `seed` .. `seed + n - 1`, which is what makes a dataset
+  splittable and resumable, and the guides already said to offset the starting
+  seed to stitch two batches. What none of them said is what happens if you
+  offset by less: the batches overlap. Measured on human IGH at `n=200`,
+  `seed=0` and `seed=1` share 199 of 199 comparable records, while `seed=0` and
+  `seed=200` share none. So runs at seeds 0, 1, 2 are *not* three independent
+  replicates of an experiment — they are one dataset read from three starting
+  points, and variance measured across them is almost entirely shared. The
+  behaviour is unchanged and deliberate; `run()`'s docstring,
+  [the builder guide](site_docs/guides/experiment-builder.md),
+  [the validation summary](site_docs/validation/index.md) and a new section of
+  [the trace/replay guide](site_docs/guides/trace-replay.md) now say to step the
+  seed by at least `n` for replicates. A clonal run's own sub-simulations do not
+  work this way and never did after the change above: each takes a keyed
+  substream, so adjacent clonal seeds share nothing.
+
 ### Compatibility
 
 - Standard `v_call`, `d_call`, and `j_call` now name single generating alleles.

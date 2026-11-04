@@ -121,8 +121,18 @@ class CompiledExperiment:
     ) -> List["_engine.Outcome"]:
         """Run the compiled simulator ``n`` times — **fresh sampling**.
 
-        Each iteration uses ``seed + i`` as the per-run seed so
-        consecutive batches stitch together by offsetting ``seed``.
+        Each iteration uses ``seed + i`` as the per-run seed, so a seed
+        names a *record* rather than a run: ``n=N`` covers
+        ``seed`` .. ``seed + N - 1``, and the next batch starts at
+        ``seed + N``. That is what lets two batches stitch into one
+        dataset and lets a worker take a shard by its seed range.
+
+        **Offset by less than ``n`` and the batches overlap.**
+        ``run(n=1000, seed=0)`` and ``run(n=1000, seed=1)`` share 999
+        records, so runs at seeds 0, 1, 2 are *not* independent
+        replicates of the same experiment -- they are one dataset read
+        from three starting points. For independent replicates, step the
+        seed by at least ``n``.
 
         ``strict`` controls the failure mode when a pass's
         contract-narrowed candidate set is empty *at sample time*:

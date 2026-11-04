@@ -69,6 +69,39 @@ The mental model:
 A seed is a promise about RNG output. A trace is a record of
 sampling. Use both.
 
+### A seed names a record, not a run
+
+On the plain (non-clonal) path a seed names a single record. `n`
+records are drawn at `seed`, `seed + 1`, ... `seed + n - 1`, which is
+deliberate: it is what makes a dataset splittable and resumable. Give
+one worker `seed=0, n=10_000` and the next `seed=10_000, n=10_000` and
+the two halves concatenate into exactly the dataset a single
+`seed=0, n=20_000` run would have produced. A run that died at record
+612,000 resumes from there.
+
+!!! warning "Runs at nearby seeds are not replicates"
+    Because the seed indexes the record, two runs whose seeds differ by
+    less than `n` **overlap**:
+
+    ```python
+    a = exp.run_records(n=1000, seed=0)   # records at seeds 0 .. 999
+    b = exp.run_records(n=1000, seed=1)   # records at seeds 1 .. 1000
+    # 999 of the 1000 records are the same molecule.
+    ```
+
+    So `seed=0`, `seed=1`, `seed=2` do not give you three independent
+    replicates of one experiment — they give you one dataset read from
+    three starting points, and any variance you measure across them is
+    almost entirely shared. **Step the seed by at least `n`** (or by a
+    comfortable margin, e.g. `seed=0`, `seed=1_000_000`,
+    `seed=2_000_000`) when you want replicates.
+
+This applies to the record axis only. A clonal run's own
+sub-simulations — its clones, its survival retries, its reads and its
+observed tree nodes — do *not* work this way: each takes a keyed
+substream of the run seed, so two clonal runs at adjacent seeds share
+nothing.
+
 ## Run once, save a trace
 
 `compile()` once, run with a seed, and ask the simulator for the
