@@ -36,6 +36,7 @@ pub mod plan;
 pub mod refdata;
 pub mod registry;
 pub mod region;
+pub mod rng;
 pub mod runner;
 pub mod simulation;
 pub mod trace;
@@ -89,6 +90,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(duplex_repair::coupled_duplex_seed,m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(duplex_repair::project_duplex_simulation,m)?)?;
     registry::register(m)?;
+    rng::register(m)?;
     runner::register(m)?;
     Ok(())
 }

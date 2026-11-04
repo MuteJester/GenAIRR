@@ -113,6 +113,24 @@ impl StreamRoot {
 mod tests {
     use super::*;
 
+    /// The word `("clone", 0)` derives to, written down.
+    ///
+    /// `tests/components/engine/test_substream_seed.py` asserts this same
+    /// word through `_engine.substream_seed`. Two literals, one on each
+    /// side of the PyO3 boundary: the Python binding cannot quietly
+    /// start deriving something of its own, and a change to the
+    /// derivation itself fails here, where the reason for the change
+    /// belongs.
+    const PINNED_CLONE_ZERO: u64 = 0xe6dc_f4cf_2cc6_3646;
+
+    #[test]
+    fn the_pinned_word_is_what_a_named_substream_derives() {
+        assert_eq!(
+            StreamRoot::new(0).substream_seed(SubstreamLabel::named("clone", 0)),
+            PINNED_CLONE_ZERO,
+        );
+    }
+
     /// Real pass names, so the properties below are asserted about the
     /// strings the engine actually hands this module — several of
     /// which share long prefixes and differ in one trailing byte.
