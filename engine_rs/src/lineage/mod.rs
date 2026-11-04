@@ -31,6 +31,7 @@ pub mod export;
 pub mod affinity;
 pub mod clone_size;
 pub mod replay_receipt;
+pub mod streams;
 
 pub use clone_size::{sample_clone_size, sample_repertoire_sizes, CloneSizeDist};
 

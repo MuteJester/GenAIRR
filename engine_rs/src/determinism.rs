@@ -34,7 +34,7 @@
 //! | version | model |
 //! |---------|-------|
 //! | (absent) / 1 | one random stream shared by the whole plan; a substitution could redraw the base already present |
-//! | 2 | one random substream per pass; a substitution draws a base the site does not hold |
+//! | 2 | one random substream per pass, and one per clonal-family role (growth, sampling, target) instead of a seed salted by XOR; a substitution draws a base the site does not hold |
 
 /// The engine's sampling-model version. Stamped on every exported
 /// record and readable as `GenAIRR.DETERMINISM_VERSION`.

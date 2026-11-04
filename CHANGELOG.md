@@ -117,6 +117,14 @@ All notable changes to GenAIRR are documented here.
   configured off is now indistinguishable from a pass that is not there, the
   molecule included.
 
+  The same derivation now covers a clonal family's three roles — growth,
+  sampling and affinity-target selection. Those were separated by salting the
+  family's seed with XOR, which separates nothing: XOR is invertible, so a
+  salted stream is the plain stream of another seed, and for the two salts in
+  use there was an offset (`0x27203f3729310000`) at which one family's
+  sampling draws were another family's target draws, word for word. Folding a
+  role's name into the seed has no such offset.
+
   **This changes the output of every seeded run.** Not only runs that use a
   particular pass: the stream every pass draws from has moved. A dataset
   produced before this change cannot be reproduced after it, which is what

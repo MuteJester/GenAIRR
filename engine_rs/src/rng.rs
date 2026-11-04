@@ -36,6 +36,11 @@
 
 pub mod substream;
 
+/// Guard: every production generator is born in a place that says
+/// why it is not a substream. Test-time only; nothing here ships.
+#[cfg(test)]
+mod discipline;
+
 /// The SplitMix64 increment — 2^64 divided by the golden ratio. An
 /// odd constant, so repeatedly adding it walks the whole 64-bit state
 /// space before returning.

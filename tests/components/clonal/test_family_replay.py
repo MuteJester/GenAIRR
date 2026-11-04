@@ -142,7 +142,30 @@ def test_selected_targets_and_unsampled_cells_are_exact(target):
         assert packed(cell.airr_record(bundle.refdata)) == packed(expected.airr_record(result.refdata))
 
 
+def _seed_whose_founder_was_retried(scan=200):
+    """The first seed whose one clone goes extinct before a growth attempt
+    survives, so there is more than one attempt to record.
+
+    This premise used to be the literal seed 0, under a comment saying the
+    seed was "a scheduling label" -- which it is, and which is exactly why it
+    cannot carry the premise. A label says nothing about whether the family
+    drawn under it survived. When the growth stream moved to a named
+    substream, seed 0's first attempt lived, and the test was left asserting a
+    retry that had not happened.
+
+    At ``lambda_base=0.4`` a founder leaves no offspring about two thirds of
+    the time, so the search almost always ends on its first or second seed.
+    """
+    for seed in range(scan):
+        _, probe = experiment(n_clones=1, depth=1, rate=0, lambda_base=.4)
+        sealed = probe.compile().run_records(seed=seed, capture_family_replay=True)
+        if len(json.loads(sealed._family_replay_seal)["clones"][0]["attempts"]) > 1:
+            return seed
+    raise AssertionError(f"no seed below {scan} retried an extinct founder")
+
+
 def test_all_failed_attempts_recorded_and_founder_sampled_once():
+    seed = _seed_whose_founder_was_retried()
     _, exp = experiment(n_clones=1, depth=1, rate=0, lambda_base=.4)
     compiled = exp.compile()
     class CountSource:
@@ -156,9 +179,10 @@ def test_all_failed_attempts_recorded_and_founder_sampled_once():
             return self.wrapped.run_for_family_capture(*args)
     proxy = CountSource(compiled._pre)
     compiled._pre = proxy
-    # This seed's first draw is extinct; the exact seed is a scheduling label,
-    # while each attempt's semantic receipt is independently verified below.
-    result = compiled.run_records(seed=0, capture_family_replay=True)
+    # The founder is drawn once however many growth attempts follow it: that
+    # is what the proxy counts, and why the premise search above runs on its
+    # own compiled experiment rather than through this one.
+    result = compiled.run_records(seed=seed, capture_family_replay=True)
     assert proxy.calls == 1
     payload = json.loads(result._family_replay_seal)
     attempts = payload["clones"][0]["attempts"]

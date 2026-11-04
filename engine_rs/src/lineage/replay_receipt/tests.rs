@@ -79,7 +79,7 @@ fn capture_preserves_existing_generation_target_and_sampling_streams() {
     let target = make_mature_target(
         &aa,
         config.mature_substitutions,
-        &mut Rng::new(12 ^ 0x7461_7267_6574_0001),
+        &mut crate::lineage::streams::stream(12, crate::lineage::streams::TARGET),
     );
     let affinity = AffinityModel::new(
         target.clone(),

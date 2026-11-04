@@ -57,10 +57,23 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 pub struct SubstreamLabel(u64);
 
 impl SubstreamLabel {
-    /// The label for the `occurrence`-th pass named `name`, counting
-    /// from zero in the order the passes were added to the plan.
+    /// The label for the `occurrence`-th stream named `role`,
+    /// counting from zero.
+    ///
+    /// A role is whatever draws as a unit and wants its draws
+    /// unmoved by its neighbours. A pass in a plan is the usual one;
+    /// a clonal family's growth, sampling and target selection are
+    /// three more, which is why this is not spelled only in terms of
+    /// passes.
+    pub fn named(role: &str, occurrence: u32) -> Self {
+        Self(fold_in(fnv1a64(role.as_bytes()), occurrence as u64))
+    }
+
+    /// [`named`](Self::named) with a pass's name as the role: the
+    /// label for the `occurrence`-th pass named `name`, counting from
+    /// zero in the order the passes were added to the plan.
     pub fn for_pass(name: &str, occurrence: u32) -> Self {
-        Self(fold_in(fnv1a64(name.as_bytes()), occurrence as u64))
+        Self::named(name, occurrence)
     }
 }
 
