@@ -572,7 +572,7 @@ impl IndelPass {
             restart_probes: false,
             accepted_probe: None,
         };
-        let mut rng = Rng::new(0);
+        let mut rng = Rng::placeholder();
         let reservoir = if count <= 2 {
             self.exact_short(sim, contracts, refdata, count, &bases, &mut rng, &mut work)?
         } else {

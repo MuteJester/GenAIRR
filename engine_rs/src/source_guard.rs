@@ -31,10 +31,22 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Dedicated test files, by crate convention: anything under a
-/// `tests/` directory, `tests.rs`, and `test_support.rs`. Each is
-/// reachable only through a `#[cfg(test)] mod ...;` declaration in
-/// its parent, so visibility already guarantees they are test-only.
+/// `tests/` directory, `tests.rs`, `test_support.rs`, and any
+/// `*_tests.rs`. Each is reachable only through a `#[cfg(test)] mod
+/// ...;` declaration in its parent, so visibility already guarantees
+/// they are test-only -- checked for every such file in this crate by
+/// a test below, not taken on trust.
+///
+/// The suffix form matters because those files carry no
+/// `#[cfg(test)]` inside them: the file *is* the test module's body,
+/// so a brace tracker reading one sees production scope from its
+/// first line. The parent's declaration is the only thing that says
+/// otherwise, and the filename is how that reaches a guard.
 const TEST_ONLY_FILE_NAMES: &[&str] = &["tests.rs", "test_support.rs"];
+
+/// Suffix form of [`TEST_ONLY_FILE_NAMES`]: `duplex_tests.rs`,
+/// `productive_tests.rs`, and so on.
+const TEST_ONLY_FILE_SUFFIX: &str = "_tests.rs";
 
 /// One line of source naming something a guard looks for.
 #[derive(Debug, Clone)]
@@ -213,7 +225,7 @@ pub fn is_dedicated_test_file(path: &Path) -> bool {
     }
     path.file_name()
         .and_then(|s| s.to_str())
-        .map(|n| TEST_ONLY_FILE_NAMES.contains(&n))
+        .map(|n| TEST_ONLY_FILE_NAMES.contains(&n) || n.ends_with(TEST_ONLY_FILE_SUFFIX))
         .unwrap_or(false)
 }
 
@@ -241,7 +253,10 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{crate_relative, is_dedicated_test_file, mentions_in_body, source_files};
+    use super::{
+        crate_relative, is_dedicated_test_file, mentions_in_body, source_files,
+        TEST_ONLY_FILE_SUFFIX,
+    };
     use std::path::Path;
 
     const NEEDLE: &str = "pass::testing::PassRuntime";
@@ -399,6 +414,44 @@ fn prod(sim: &Simulation) -> Simulation {
         assert!(is_dedicated_test_file(Path::new(
             "src/passes/test_support.rs"
         )));
+        assert!(is_dedicated_test_file(Path::new(
+            "src/lineage/duplex_tests.rs"
+        )));
         assert!(!is_dedicated_test_file(Path::new("src/passes/invert_d.rs")));
+    }
+
+    /// The suffix convention is sound only while every file it
+    /// exempts really is declared under `#[cfg(test)]`. A production
+    /// file named `foo_tests.rs` would be exempted silently, so check
+    /// the declarations rather than trusting the naming.
+    #[test]
+    fn every_file_the_suffix_convention_exempts_is_declared_under_cfg_test() {
+        let all_source: String = source_files()
+            .iter()
+            .filter_map(|p| std::fs::read_to_string(p).ok())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let mut checked = 0;
+        let mut unearned = Vec::new();
+        for path in source_files() {
+            let name = match path.file_name().and_then(|s| s.to_str()) {
+                Some(n) if n.ends_with(TEST_ONLY_FILE_SUFFIX) => n.to_string(),
+                _ => continue,
+            };
+            checked += 1;
+            let declaration = format!("mod {};", name.trim_end_matches(".rs"));
+            let sites = mentions_in_body("all-source", &all_source, &[&declaration]);
+            if sites.is_empty() || !sites.iter().all(|m| m.in_test_scope) {
+                unearned.push(crate_relative(&path));
+            }
+        }
+
+        assert!(checked > 0, "the convention should exempt some files");
+        assert!(
+            unearned.is_empty(),
+            "exempted by the `{TEST_ONLY_FILE_SUFFIX}` convention but not declared \
+             under `#[cfg(test)]`, so the exemption is unearned: {unearned:?}"
+        );
     }
 }

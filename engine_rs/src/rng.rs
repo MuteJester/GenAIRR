@@ -93,6 +93,30 @@ impl Rng {
         }
     }
 
+    /// A generator for a path whose draws cannot matter.
+    ///
+    /// A few places need an `Rng` to satisfy a signature while
+    /// drawing nothing that survives: a replay whose every choice
+    /// comes from a recorded trace, where a stray draw is rejected by
+    /// a consumption fence; a probe whose result is discarded; a
+    /// proof that a sampling support is empty. Those sites used to
+    /// write `Rng::new(1)` or `Rng::new(0)`, which reads like a seed
+    /// somebody chose for a reason and leaves the next reader to work
+    /// out that nothing depends on it.
+    ///
+    /// The state behind it is arbitrary and no caller may depend on
+    /// it. A site that would behave differently under a different
+    /// placeholder is drawing something that matters, and wants a
+    /// substream.
+    ///
+    /// It takes no seed, so it cannot hand a pass a stream of its own
+    /// by the back door -- which is why the guard in
+    /// [`discipline`](crate::rng) watches seed-taking construction and
+    /// not this.
+    pub fn placeholder() -> Self {
+        Self::new(1)
+    }
+
     /// Number of 64-bit PRNG words consumed from this stream.
     ///
     /// This is an observability hook for deterministic tests and
@@ -293,6 +317,39 @@ mod tests {
                 c
             );
         }
+    }
+
+    #[test]
+    fn a_placeholder_is_a_working_stream_with_no_hidden_state() {
+        // The three sites that use it draw nothing that survives, but
+        // a draw must not panic or stall: a fence rejecting a stray
+        // draw has to see the draw happen first.
+        let mut a = Rng::placeholder();
+        let mut b = Rng::placeholder();
+        let first: Vec<u64> = (0..4).map(|_| a.next_u64()).collect();
+        let second: Vec<u64> = (0..4).map(|_| b.next_u64()).collect();
+        assert_eq!(first, second, "two placeholders are the same stream");
+        assert!(
+            first.iter().any(|&w| w != 0),
+            "a stalled stream would make a fence's word count meaningless"
+        );
+        assert_eq!(a.words_consumed(), 4);
+    }
+
+    #[test]
+    fn a_placeholder_cannot_carry_a_runs_seed() {
+        // Why `discipline` watches `Rng::new` and ignores this: a
+        // placeholder takes no seed, so it cannot be used to give a
+        // pass a stream of its own while dodging the guard.
+        let from_placeholder = Rng::placeholder().next_u64();
+        let distinct = (0..512u64)
+            .map(|seed| Rng::new(seed).next_u64())
+            .filter(|&w| w == from_placeholder)
+            .count();
+        assert!(
+            distinct <= 1,
+            "a placeholder's stream is one fixed stream, not a seed's"
+        );
     }
 
     #[test]

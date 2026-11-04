@@ -524,7 +524,7 @@ pub(crate) fn execute_mutation_choices(
     let fail = |reason: String| PassError::invalid_plan_state("lineage.replay", reason);
     let mut cursor = crate::replay::TraceCursor::new(choices.choices());
     let mut trace = Trace::new();
-    let mut rng = Rng::new(1);
+    let mut rng = Rng::placeholder();
     let mut events = Vec::new();
     let mut ctx = PassContext {
         replay_cursor: Some(&mut cursor),

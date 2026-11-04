@@ -165,7 +165,7 @@ impl EndLossPass {
                 // at the first rejected deletion. Probe the same deterministic
                 // transition without consuming choices or committing events.
                 let mut trace = crate::trace::Trace::new();
-                let mut rng = crate::rng::Rng::new(1);
+                let mut rng = crate::rng::Rng::placeholder();
                 let mut probe = PassContext {
                     trace: &mut trace,
                     rng: &mut rng,
