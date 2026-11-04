@@ -13,6 +13,18 @@ from GenAIRR._seed_schedule import BY_LABEL, CURRENT, _Additive, _Keyed
 pytestmark = pytest.mark.behavior
 
 
+def _read_source(path):
+    """Read a source file as UTF-8, whatever the platform would have picked.
+
+    Both scans below walk `src/GenAIRR`, which contains at least one file
+    Windows' default cp1252 cannot decode (`_s5f_loader.py`, byte 0x81 at
+    offset 1529). An omitted `encoding` is therefore not a style point
+    here: it makes the guards pass on Linux and raise `UnicodeDecodeError`
+    on Windows, which is how both of them first reached CI red.
+    """
+    return path.read_text(encoding="utf-8")
+
+
 # The first schedule's arithmetic, as `origin/master` writes it at
 # `_compiled/repertoire.py:106`, `_compiled/lineage.py:164,178,298` and
 # `_compiled/repertoire.py:134`. Quoted here rather than read back off
@@ -124,7 +136,7 @@ class TestNothingDerivesASeedByArithmetic:
         import ast
 
         found = []
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(_read_source(path))):
             if not isinstance(node, ast.BinOp) or not isinstance(
                 node.op, (ast.Add, ast.Sub, ast.Mult)
             ):
@@ -157,12 +169,16 @@ class TestNothingDerivesASeedByArithmetic:
 
         with tempfile.TemporaryDirectory() as directory:
             planted = pathlib.Path(directory) / "planted.py"
-            planted.write_text("def f(seed, i):\n    return seed + i * 1_000_000\n")
+            planted.write_text(
+                "def f(seed, i):\n    return seed + i * 1_000_000\n",
+                encoding="utf-8")
             assert self._sites(planted) == [2]
             innocent = pathlib.Path(directory) / "innocent.py"
-            innocent.write_text("def f(a, b):\n    return a + b * 1_000_000\n")
+            innocent.write_text(
+                "def f(a, b):\n    return a + b * 1_000_000\n", encoding="utf-8")
             assert self._sites(innocent) == []
-            assert isinstance(ast.parse(planted.read_text()), ast.Module)
+            assert isinstance(
+                ast.parse(planted.read_text(encoding="utf-8")), ast.Module)
 
     def test_every_site_left_is_one_with_a_reason(self):
         found = self._scan()
@@ -203,7 +219,7 @@ class TestEverySeedDerivedComesFromThePrimitive:
         import ast
 
         found = []
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(_read_source(path))):
             if isinstance(node, ast.Assign):
                 targets = node.targets
             elif isinstance(node, ast.AnnAssign):
@@ -246,7 +262,8 @@ class TestEverySeedDerivedComesFromThePrimitive:
                 "    base_rng = random.Random(seed)\n"
                 "    for i in range(n):\n"
                 "        sub_seed = base_rng.getrandbits(63)\n"
-                "        yield sub_seed\n"
+                "        yield sub_seed\n",
+                encoding="utf-8",
             )
             assert [line for line, _ in self._sites(superseded)] == [4]
 
@@ -256,7 +273,8 @@ class TestEverySeedDerivedComesFromThePrimitive:
                 "    for i in range(n):\n"
                 "        subject_seed = _sub_seed(seed, 'subject', i)\n"
                 "        clone_seed = _schedule.clone(seed, i)\n"
-                "        yield subject_seed, clone_seed\n"
+                "        yield subject_seed, clone_seed\n",
+                encoding="utf-8",
             )
             assert self._sites(current) == []
 
@@ -271,3 +289,77 @@ class TestEverySeedDerivedComesFromThePrimitive:
             if (sites := self._sites(path))
         }
         assert not offenders, f"a seed derived outside the primitive: {offenders}"
+
+
+class TestTheseScansDeclareTheirEncoding:
+    """Both guards above walk the package, so both read files they did not
+    write. `Path.read_text()` with no `encoding` uses the platform default
+    -- UTF-8 on Linux and macOS, cp1252 on Windows -- and `src/GenAIRR`
+    contains a file cp1252 cannot decode. So the omission does not fail
+    where it is written; it fails on one of three platforms, after review,
+    which is exactly how both scans first went red in CI.
+
+    A scan that reads source is the wrong place to learn that lesson
+    twice, so this module checks its own text I/O.
+    """
+
+    @staticmethod
+    def _undeclared(path):
+        """Every line in `path` that reads or writes text without saying
+        in what encoding. Binary modes are exempt: they decode nothing."""
+        import ast
+
+        found = []
+        for node in ast.walk(ast.parse(_read_source(path))):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name not in ("read_text", "write_text", "open"):
+                continue
+            if name == "open" and len(node.args) >= 2:
+                mode = node.args[1]
+                if isinstance(mode, ast.Constant) and "b" in str(mode.value):
+                    continue
+            if any(kw.arg == "encoding" for kw in node.keywords):
+                continue
+            found.append(node.lineno)
+        return found
+
+    def test_the_check_can_see_an_undeclared_read(self):
+        """Guard the premise: plant both forms and watch them separate."""
+        import pathlib
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            bad = pathlib.Path(directory) / "bad.py"
+            bad.write_text("import pathlib\nx = pathlib.Path('a').read_text()\n",
+                           encoding="utf-8")
+            assert self._undeclared(bad) == [2]
+
+            good = pathlib.Path(directory) / "good.py"
+            good.write_text(
+                "import pathlib\nx = pathlib.Path('a').read_text(encoding='utf-8')\n"
+                "y = open('b', 'rb').read()\n",
+                encoding="utf-8")
+            assert self._undeclared(good) == []
+
+    def test_this_module_reads_and_writes_nothing_by_platform_default(self):
+        from tests.support import paths
+
+        here = paths.repo_root() / "tests" / "components" / "clonal" / "test_seed_schedule.py"
+        assert here.exists(), f"premise: checking this module at {here}"
+        assert self._undeclared(here) == []
+
+    def test_the_package_holds_a_file_the_windows_default_cannot_read(self):
+        """The premise of all of this. If every file in the package were
+        ASCII the omission would be harmless and this guard would be
+        guarding nothing, so the file that makes it matter is named.
+        """
+        from tests.support import paths
+
+        offender = paths.repo_root() / "src" / "GenAIRR" / "_s5f_loader.py"
+        assert offender.exists(), f"premise: {offender} is still there"
+        with pytest.raises(UnicodeDecodeError):
+            offender.read_bytes().decode("cp1252")
+        assert offender.read_text(encoding="utf-8"), "but UTF-8 reads it fine"
