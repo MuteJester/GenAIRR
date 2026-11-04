@@ -47,6 +47,7 @@ from __future__ import annotations
 import pytest
 
 import GenAIRR as ga
+from GenAIRR._seed_schedule import CURRENT as _schedule
 from tests.support import paths
 
 pytestmark = pytest.mark.behavior
@@ -149,7 +150,14 @@ def test_clonal_descendants_match_non_clonal_baseline_per_seed() -> None:
     must produce the same ``original_v_call`` (the same V is sampled
     and revised against the same RNG state). This pins the "IR
     provenance survives the parent→descendant boundary" claim
-    against the non-clonal control."""
+    against the non-clonal control.
+
+    The control is seeded with the clone's *founder* seed, which the
+    schedule derives from the run seed. It used to be the run seed
+    itself, because clone 0 took ``seed + 0 * 1_000_000`` and a clonal
+    run's first clone was therefore a plain run at the same seed. What
+    this pins is that the founder's provenance survives the boundary,
+    not that a clone shares a stream with an unrelated run."""
     non_clonal = ga.Experiment.on("human_igh").recombine().receptor_revision(prob=1.0)
     clonal = (
         ga.Experiment.on("human_igh")
@@ -158,7 +166,7 @@ def test_clonal_descendants_match_non_clonal_baseline_per_seed() -> None:
         .expand_clones(n_clones=1, per_clone=1)
     )
     for seed in range(5):
-        non_clonal_rec = non_clonal.run_records(n=1, seed=seed)[0]
+        non_clonal_rec = non_clonal.run_records(n=1, seed=_schedule.clone(seed, 0))[0]
         clonal_rec = clonal.run_records(seed=seed)[0]
         assert non_clonal_rec["original_v_call"] == clonal_rec["original_v_call"], (
             f"seed {seed}: non-clonal {non_clonal_rec['original_v_call']!r} != "

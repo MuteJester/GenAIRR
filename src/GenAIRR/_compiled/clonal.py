@@ -20,6 +20,7 @@ from .._describe import (
     _describe_step_sequence,
 )
 from .._pipeline_ir import _ClonalForkStep
+from .._seed_schedule import CURRENT as _schedule
 
 if TYPE_CHECKING:
     from ..dataconfig import DataConfig
@@ -144,11 +145,11 @@ class CompiledClonalExperiment:
 
         outcomes: List["_engine.Outcome"] = []
         for clone_idx in range(self._fork.n_clones):
-            clone_seed = int(seed) + clone_idx * 1_000_000
+            clone_seed = _schedule.clone(seed, clone_idx)
             parent = self._pre.run(seed=clone_seed, strict=strict)
             parent_sim = parent.final_simulation()
             for desc_idx in range(self._fork.size):
-                desc_seed = clone_seed + 1 + desc_idx
+                desc_seed = _schedule.read(clone_seed, desc_idx)
                 desc = self._post.run_from(
                     parent_sim, desc_seed, strict=strict
                 )
@@ -219,12 +220,12 @@ class CompiledClonalExperiment:
         parents: List["_engine.Outcome"] = []
         duplex = "duplex.recombine" in self._pre.pass_names()
         for clone_idx in range(self._fork.n_clones):
-            clone_seed = int(seed) + clone_idx * 1_000_000
+            clone_seed = _schedule.clone(seed, clone_idx)
             parent = self._pre.run(seed=clone_seed, strict=strict)
             parents.append(parent)
             parent_sim = parent.final_simulation()
             for desc_idx in range(self._fork.size):
-                desc_seed = clone_seed + 1 + desc_idx
+                desc_seed = _schedule.read(clone_seed, desc_idx)
                 desc = self._post.run_from(
                     parent_sim, desc_seed, strict=strict
                 )

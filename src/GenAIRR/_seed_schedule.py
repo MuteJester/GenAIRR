@@ -32,13 +32,25 @@ family-replay bundle records which schedule drew it, and a bundle
 written under the first one still replays.
 """
 
-from typing import Dict
+from typing import Dict, Optional
 
 
 class _SeedSchedule:
     """The four seeds a clonal run derives, under one named scheme."""
 
+    #: The name a family-replay bundle records, so a reader can pick the
+    #: scheme its seeds were drawn under rather than assume the current one.
     label: str
+
+    #: The scheme's own parameters that a bundle repeats as execution
+    #: fields, beside the label. Only what was actually recorded: the
+    #: additive scheme wrote down its retry stride and not its clone
+    #: stride, and a replay has to accept the bundles that exist.
+    recorded_parameters: Dict[str, int] = {}
+
+    def unaddressable(self, run_seed: int, n_clones: int, retries: int) -> Optional[str]:
+        """Why this scheme cannot seed that run, or ``None`` if it can."""
+        return None
 
     def clone(self, run_seed: int, clone_index: int) -> int:
         """The seed for clone ``clone_index``'s founder."""
@@ -49,7 +61,12 @@ class _SeedSchedule:
         raise NotImplementedError
 
     def read(self, clone_seed: int, read_index: int) -> int:
-        """The seed for the ``read_index``-th read drawn off a founder."""
+        """The seed for the ``read_index``-th draw off a founder.
+
+        One axis for a repertoire's reads and for ``expand_clones``'
+        descendants: both are a post-fork plan run against a founder,
+        and no plan is both at once.
+        """
         raise NotImplementedError
 
     def node(self, clone_seed: int, node_id: int) -> int:
@@ -66,8 +83,17 @@ class _Additive(_SeedSchedule):
     """
 
     label = "clone_1000000_attempt_7919_node_plus_one_v1"
+    recorded_parameters = {"retry_stride": 7_919}
     clone_stride = 1_000_000
     retry_stride = 7_919
+
+    def unaddressable(self, run_seed, n_clones, retries):
+        """Addition runs out of u64. The last clone's last retry is the
+        highest seed the scheme reaches, and the engine takes a u64."""
+        highest = self.attempt(self.clone(run_seed, n_clones - 1), retries)
+        if highest > 2**64 - 1:
+            return "clone/retry seed schedule exceeds u64"
+        return None
 
     def clone(self, run_seed: int, clone_index: int) -> int:
         return int(run_seed) + clone_index * self.clone_stride
@@ -95,6 +121,14 @@ class _Keyed(_SeedSchedule):
     """
 
     label = "keyed_substream_clone_attempt_read_node_v2"
+
+    def unaddressable(self, run_seed, n_clones, retries):
+        """Nothing runs out: a derived seed is a whole u64 whatever went
+        in. The one limit is how far an axis counts, since a stream's
+        role carries a 32-bit occurrence."""
+        if n_clones > 2**32:
+            return "more clones than one stream role can name"
+        return None
 
     @staticmethod
     def _derive(seed: int, role: str, index: int) -> int:

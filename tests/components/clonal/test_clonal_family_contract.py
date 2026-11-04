@@ -45,6 +45,7 @@ import re
 import pytest
 
 import GenAIRR as ga
+from GenAIRR._seed_schedule import BY_LABEL, CURRENT
 from GenAIRR import _compiled, _pipeline_ir
 from GenAIRR.result import SimulationResult, ValidationReport
 from tests.support import paths
@@ -218,22 +219,21 @@ def test_pin_scaffold_clone_id_in_range_and_grouped_by_per_clone() -> None:
 # ──────────────────────────────────────────────────────────────────
 
 
-def test_pin_scaffold_clone_seed_formula_is_stable() -> None:
-    """The seed-derivation formula
-    ``clone_seed = int(seed) + clone_idx * 1_000_000`` is currently
-    internal but visible by behavioural side-effect: two runs with
-    the same ``seed`` reproduce byte-for-byte. The audit's §11
-    flags this as **internal but stable** — a future change to the
-    scheme breaks cross-version byte-reproducibility for clonal
-    batches. A future ``run_family(seed, clone_idx)`` slice should
-    expose the formula instead of changing it."""
+def test_pin_scaffold_clone_seeds_come_from_the_named_schedule() -> None:
+    """The seed scheme is internal, and a change to it breaks
+    cross-version byte-reproducibility for clonal batches. This used to
+    pin the arithmetic — ``clone_idx * 1_000_000`` and
+    ``clone_seed + 1 + desc_idx`` — which pinned one scheme rather than
+    the property worth keeping: that the scheme has a name, so that
+    changing it changes something a reader can see. It is now a named
+    schedule, recorded by label in every family-replay bundle, and the
+    experiment derives from it rather than computing offsets of its
+    own."""
     src = inspect.getsource(_compiled.CompiledClonalExperiment.run_records)
-    assert "clone_idx * 1_000_000" in src, (
-        "Clonal seed scheme has changed; cross-version byte-"
-        "reproducibility for clonal batches is now broken."
-    )
-    # And the per-descendant offset stays at `clone_seed + 1 + desc_idx`.
-    assert "clone_seed + 1 + desc_idx" in src
+    assert "_schedule.clone(seed, clone_idx)" in src
+    assert "_schedule.read(clone_seed, desc_idx)" in src
+    # A scheme with a label; a scheme change is a label change.
+    assert CURRENT.label and CURRENT is BY_LABEL[CURRENT.label]
 
 
 def test_pin_scaffold_byte_reproducibility_same_seed_same_records() -> None:

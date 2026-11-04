@@ -93,3 +93,83 @@ class TestTheScheduleRunsDrawUnderNow:
 def test_a_recorded_label_names_exactly_one_schedule():
     assert set(BY_LABEL) == {_Additive.label, _Keyed.label}
     assert all(label == type(schedule).label for label, schedule in BY_LABEL.items())
+
+
+class TestNothingDerivesASeedByArithmetic:
+    """The Python counterpart of the engine's `rng::discipline` guard.
+
+    The schedule is only worth having if nothing bypasses it, and
+    "someone adds an offset to a seed" is not a thing review catches
+    twice. The package is walked for arithmetic on anything named like a
+    seed, and the one place that is deliberate carries its reason.
+    """
+
+    #: Where arithmetic on a seed is the contract rather than a mistake,
+    #: with how many sites to expect. A count, so that a second one in
+    #: the same file still fails.
+    SANCTIONED = {
+        "_compiled/plain.py": (
+            1,
+            "`stream(n, seed)` yields the run seeded `seed + i` on purpose: a "
+            "seed names a record on the plain path, which is what lets two "
+            "batches stitch into one dataset (`n=N` covers `seed`..`seed+N-1`, "
+            "so the next batch starts at `seed+N`). The engine's `run_batch` "
+            "does the same thing and calls it seed-stitching. Changing it "
+            "would be an API decision about that contract, not a bug fix.",
+        ),
+    }
+
+    @staticmethod
+    def _sites(path):
+        import ast
+
+        found = []
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.BinOp) or not isinstance(
+                node.op, (ast.Add, ast.Sub, ast.Mult)
+            ):
+                continue
+            named = [n.id for n in ast.walk(node) if isinstance(n, ast.Name)]
+            named += [n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)]
+            if any("seed" in name for name in named):
+                found.append(node.lineno)
+        return found
+
+    def _scan(self):
+        from tests.support import paths
+
+        root = paths.repo_root() / "src" / "GenAIRR"
+        assert (root / "_seed_schedule.py").exists(), f"premise: scanning the package at {root}"
+        return {
+            str(path.relative_to(root)): self._sites(path)
+            for path in sorted(root.rglob("*.py"))
+            # The schedule is where the arithmetic is allowed to live: it
+            # has to keep deriving what the earlier scheme derived.
+            if path.name != "_seed_schedule.py" and self._sites(path)
+        }
+
+    def test_the_scan_can_see_arithmetic_at_all(self):
+        """Guard the premise: a scanner that finds nothing anywhere would
+        pass the test below while checking nothing."""
+        import ast
+        import tempfile
+        import pathlib
+
+        with tempfile.TemporaryDirectory() as directory:
+            planted = pathlib.Path(directory) / "planted.py"
+            planted.write_text("def f(seed, i):\n    return seed + i * 1_000_000\n")
+            assert self._sites(planted) == [2]
+            innocent = pathlib.Path(directory) / "innocent.py"
+            innocent.write_text("def f(a, b):\n    return a + b * 1_000_000\n")
+            assert self._sites(innocent) == []
+            assert isinstance(ast.parse(planted.read_text()), ast.Module)
+
+    def test_every_site_left_is_one_with_a_reason(self):
+        found = self._scan()
+        assert set(found) == set(self.SANCTIONED), (
+            f"seed arithmetic outside the schedule: "
+            f"{ {k: v for k, v in found.items() if k not in self.SANCTIONED} }"
+        )
+        for path, lines in found.items():
+            expected, why = self.SANCTIONED[path]
+            assert len(lines) == expected, f"{path} lines {lines}: {why}"

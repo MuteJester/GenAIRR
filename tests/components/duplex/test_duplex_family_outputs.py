@@ -190,6 +190,7 @@ def test_equal_dna_from_distinct_lineage_cells_keeps_separate_branch_truth():
 
 def test_survival_retry_keeps_the_once_sampled_duplex_founder(monkeypatch):
     from GenAIRR import _engine
+    from GenAIRR._seed_schedule import CURRENT as _schedule
 
     refs, exp = _base()
     compiled = exp.clonal_lineage(
@@ -223,8 +224,12 @@ def test_survival_retry_keeps_the_once_sampled_duplex_founder(monkeypatch):
     compiled._pre = CountingSource()
     monkeypatch.setattr(_engine, "simulate_family_outcomes", grow)
     result = compiled.run_records(seed=6, validate_records=True)
-    assert source_seeds == [6]
-    assert len(growth_seeds) >= 2 and growth_seeds[:2] == [6, 6 + 7919]
+    clone_seed = _schedule.clone(6, 0)
+    assert source_seeds == [clone_seed], "the founder is sampled once, not once per attempt"
+    assert len(growth_seeds) >= 2, "premise: the forced extinction caused a retry"
+    assert growth_seeds[:2] == [_schedule.attempt(clone_seed, 0),
+                                _schedule.attempt(clone_seed, 1)]
+    assert growth_seeds[0] != growth_seeds[1], "a retry re-grows under a seed of its own"
     assert all(history == growth_founders[0] for history in growth_founders)
     assert result.parents[0].airr_record(refs)["duplex_repair"]["selection"] == growth_founders[0]
 

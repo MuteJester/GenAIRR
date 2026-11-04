@@ -15,6 +15,7 @@ from typing import Any
 
 from GenAIRR import _engine
 from GenAIRR._artifact_io import ArtifactIOError, write_atomic
+from GenAIRR import _seed_schedule
 
 
 _ARTIFACT = "genairr_family_replay"
@@ -356,9 +357,14 @@ class _FamilyCapture:
         step = compiled._step
         if type(seed) is not int or not 0 <= seed <= 2**64 - 1:
             raise FamilyReplayError("format", "capture.seed", "expected an unsigned 64-bit integer")
-        last_clone_seed = seed + (step.n_clones - 1) * 1_000_000
-        if last_clone_seed + (0 if step.allow_extinction else 49 * 7919) > 2**64 - 1:
-            raise FamilyReplayError("resource", "capture.seed", "clone/retry seed schedule exceeds u64")
+        self.schedule = _seed_schedule.CURRENT
+        # Whether a scheme can seed this run is the scheme's own arithmetic:
+        # addition runs out of u64 at the last clone's last retry, and a
+        # keyed derivation runs out of occurrences instead.
+        unaddressable = self.schedule.unaddressable(
+            seed, step.n_clones, 0 if step.allow_extinction else 49)
+        if unaddressable is not None:
+            raise FamilyReplayError("resource", "capture.seed", unaddressable)
         self.seed, self.n_clones = seed, step.n_clones
         bound = step.lambda_base * (1 + step.selection_strength)
         if not math.isfinite(bound) or bound < 0 or bound > 64:
@@ -430,8 +436,8 @@ class _FamilyCapture:
             "post_plan": self.post_spec,
             "execution": {"strict": self.strict, "expose_provenance": self.expose_provenance,
                           "allow_extinction": self.allow_extinction, "retry_bound": 50,
-                          "retry_stride": 7919, "n_clones": self.n_clones,
-                          "seed_label": str(self.seed), "seed_schedule": "clone_1000000_attempt_7919_node_plus_one_v1",
+                          **self.schedule.recorded_parameters, "n_clones": self.n_clones,
+                          "seed_label": str(self.seed), "seed_schedule": self.schedule.label,
                           "family_config": self.family_config},
             "annotations": json.loads(self.request.annotations),
             "records": json.loads(packed_records),
@@ -592,11 +598,19 @@ class FamilyReplayBundle:
                 if payload["post_plan"][field] != payload["source_plan"][field]:
                     raise FamilyReplayError("plan_mismatch", f"observations.plan.{field}", "source and read contexts differ")
         execution = payload["execution"]
-        _require_keys(execution, ("strict", "expose_provenance", "allow_extinction", "retry_bound", "retry_stride",
-                                  "n_clones", "seed_label", "seed_schedule", "family_config"), "execution.settings")
+        # The schedule is read from the bundle, not assumed to be the current
+        # one: a bundle records which scheme drew its seeds precisely so that
+        # one written under an earlier scheme still replays.
+        label = execution.get("seed_schedule") if isinstance(execution, dict) else None
+        schedule = _seed_schedule.BY_LABEL.get(label) if isinstance(label, str) else None
+        if schedule is None:
+            raise FamilyReplayError("format", "execution.seed_schedule", "unsupported seed schedule")
+        _require_keys(execution, ("strict", "expose_provenance", "allow_extinction", "retry_bound",
+                                  "n_clones", "seed_label", "seed_schedule", "family_config",
+                                  *schedule.recorded_parameters), "execution.settings")
         if (any(type(execution[key]) is not bool for key in ("strict", "expose_provenance", "allow_extinction"))
-                or execution["retry_bound"] != 50 or execution["retry_stride"] != 7919
-                or execution["seed_schedule"] != "clone_1000000_attempt_7919_node_plus_one_v1"):
+                or execution["retry_bound"] != 50
+                or any(execution[key] != value for key, value in schedule.recorded_parameters.items())):
             raise FamilyReplayError("format", "execution.settings", "unsupported execution policy")
         run_seed = _seed(execution["seed_label"], "execution.seed_label")
         n_clones = _index(execution["n_clones"], "execution.n_clones")
@@ -624,7 +638,7 @@ class FamilyReplayBundle:
             _require_keys(clone, ("clone_id", "parent_id", "source", "attempts", "accepted_attempt", "observations"), path)
             if _index(clone["clone_id"], path) != clone_index or _index(clone["parent_id"], path) != len(parents):
                 raise FamilyReplayError("invalid_scope", path, "clone/parent addressing mismatch")
-            clone_seed = run_seed + clone_index * 1_000_000
+            clone_seed = schedule.clone(run_seed, clone_index)
             _stage_policy(clone["source"], execution["strict"], clone_seed, path + ".source")
             founder = _native(path + ".source", source.replay_family_trace, None, _json(clone["source"]), budget=budget)
             attempts = clone["attempts"]
@@ -639,7 +653,7 @@ class FamilyReplayBundle:
                     raise FamilyReplayError("format", stage_path, "missing native family configuration")
                 attempt_config = dict(receipt["config"])
                 attempt_seed = _seed(attempt_config.pop("seed_label", None), stage_path + ".config.seed_label")
-                if _json(attempt_config) != _json(config) or attempt_seed != clone_seed + attempt_index * 7919:
+                if _json(attempt_config) != _json(config) or attempt_seed != schedule.attempt(clone_seed, attempt_index):
                     raise FamilyReplayError("plan_mismatch", stage_path + ".config", "attempt law or scheduling differs")
                 candidate = _native(stage_path, _engine.replay_family_outcomes, founder, refdata, _json(receipt), budget=budget)
                 survived = _native(stage_path, _engine._family_replay_has_observed, candidate, budget=budget)
@@ -671,7 +685,8 @@ class FamilyReplayBundle:
                 else:
                     if observation["receipt"] is None:
                         raise FamilyReplayError("invalid_choice", stage_path, "missing post-read stage")
-                    _stage_policy(observation["receipt"], execution["strict"], clone_seed + 1 + node.id, stage_path)
+                    _stage_policy(observation["receipt"], execution["strict"],
+                                  schedule.node(clone_seed, node.id), stage_path)
                     initial = _native(stage_path, _engine._family_replay_final_simulation, outcome, budget=budget)
                     read = _native(stage_path, post.replay_family_trace, initial,
                                    _json(observation["receipt"]), budget=budget)

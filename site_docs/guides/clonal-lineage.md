@@ -90,8 +90,9 @@ flowchart TB
 `recombine()` (everything before `clonal_lineage` in the chain) is the **per-clone**
 phase: it runs once to produce the naive rearrangement - the V/D/J allele picks,
 trims, NP bases, junction. That founder `Simulation` (and its recombination trace)
-is the root of the tree. Clone *c* uses seed `seed + c × 1_000_000`, so families
-are independent and reproducible.
+is the root of the tree. Clone *c*'s founder is seeded from the run seed and the
+clone index together, so families are independent of each other and of the same
+clone index in a run at any other seed.
 
 ### 2. Generation-synchronous birth–death
 
@@ -313,11 +314,13 @@ That mixes large expanded families with a realistic singleton tail. See the
 
 ## Determinism
 
-Everything is keyed on `seed`. Clone *c* grows from `seed + c × 1_000_000`;
-within a clone, generations, divisions, mutations, and sampling all draw from
-seeded RNG streams (growth and sampling use separate streams so they don't
-interfere). Re-running with the same seed reproduces the trees and records
-byte-for-byte.
+Everything is keyed on `seed`. Each clone, each survival retry and each
+observed node derives its own seed from the run's, by folding in which axis it
+is and which index along that axis — the same derivation the passes use for
+their streams. Within a clone, generations, divisions, mutations and sampling
+draw from separate streams so they don't interfere. Re-running with the same
+seed reproduces the trees and records byte-for-byte, and running at a different
+seed draws a different repertoire rather than a reshuffling of the same one.
 
 ## Parameters
 

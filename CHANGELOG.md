@@ -138,6 +138,30 @@ All notable changes to GenAIRR are documented here.
   produced before this change cannot be reproduced after it, which is what
   `determinism_version` below exists to make visible.
 
+- **A clonal run's clone, retry and read seeds are derived, not offset.** Each
+  sub-simulation of a clonal run took its seed by adding to the run seed: clone
+  *c* used `seed + c × 1_000_000`, a survival retry used
+  `clone_seed + attempt × 7919`, a read or an observed node used
+  `clone_seed + 1 + index`. Addition is a translation, so every run seed shared
+  one lattice and a different seed reused streams instead of drawing new ones.
+  Clone 1 of a run at seed 0 was the same simulation as clone 0 of a run at
+  seed 1,000,000 — identical founder, identical `v_call`/`d_call`/`j_call`,
+  identical junction, and with one read per clone the identical corrupted read;
+  on the lineage path a whole family repeated, mutations included. **Replicate
+  runs at nearby seeds were therefore not independent replicates.** Two further
+  collisions came from the same arithmetic: a node's observation seed met a
+  retry's seed inside one clone (node 7918 and attempt 1), and nothing bounded
+  a clone's node offsets from crossing into the next clone's block.
+
+  Every axis is now a keyed substream of the run seed with the axis as its
+  role, through the same primitive the passes use. The run seed is folded in
+  rather than translated, `read` and `attempt` cannot meet, and no axis has a
+  block to overflow. This changes the output of every seeded clonal run.
+
+  A family-replay bundle records which scheme drew its seeds, and a bundle
+  written under the previous one still replays: the recorded label picks the
+  scheme instead of being compared against the current one.
+
 - **`count` is now a count of events, not of attempts, for `mutate(model="uniform")`,
   `pcr_amplify` and `sequencing_errors`.** Each of the three drew its replacement
   base from all four bases including the one already at the position, so about a

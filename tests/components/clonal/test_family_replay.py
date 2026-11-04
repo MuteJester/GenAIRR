@@ -537,3 +537,70 @@ def test_content_tokens_are_closed_and_object_keys_unique(node):
     with pytest.raises(FamilyReplayError, match="format"):
         _content_decode({"ref": identity}, [{"id": identity, "value": node}], limits,
                         _engine.FamilyReplayBudget(limits._json()))
+
+
+# ---------------------------------------------------------------------------
+# The seed schedule is a wire value: a bundle records which scheme drew its
+# seeds, and that is what lets a bundle written under an earlier scheme still
+# replay after the scheme changes.
+# ---------------------------------------------------------------------------
+
+def test_a_fresh_bundle_records_the_schedule_that_drew_it():
+    from GenAIRR._seed_schedule import CURRENT
+
+    refs, exp = experiment()
+    result = exp.run_records(seed=5, capture_family_replay=True)
+    execution = json.loads(result._family_replay_seal)["execution"]
+    assert execution["seed_schedule"] == CURRENT.label
+    # The retry stride was a parameter of the additive scheme and means
+    # nothing under this one, so it is not written down any more.
+    assert "retry_stride" not in execution
+    assert packed(_bundle_from_result(result).replay_records().records) == packed(result.records)
+
+
+def test_a_bundle_drawn_under_the_earlier_schedule_still_replays(monkeypatch):
+    """Bundles exist that were captured when clone seeds were offsets.
+
+    Replaying one has to re-derive the seeds its capture actually used,
+    so the recorded label picks the scheme rather than being compared
+    against the current one. Captured here under the old scheme by
+    pointing both the runtime and the capture at it, then replayed with
+    the patch undone — so the replay runs the code a user's replay runs.
+    """
+    from GenAIRR import _seed_schedule
+    from GenAIRR._compiled import lineage as lineage_runtime
+
+    additive = _seed_schedule._Additive()
+    monkeypatch.setattr(_seed_schedule, "CURRENT", additive)
+    monkeypatch.setattr(lineage_runtime, "_schedule", additive)
+
+    refs, exp = experiment()
+    result = exp.run_records(seed=5, capture_family_replay=True)
+    bundle = _bundle_from_result(result)
+    execution = json.loads(result._family_replay_seal)["execution"]
+    assert execution["seed_schedule"] == additive.label
+    assert execution["retry_stride"] == 7919
+
+    monkeypatch.undo()
+    assert _seed_schedule.CURRENT is not additive, "premise: replay is the current build"
+    assert packed(bundle.replay_records().records) == packed(result.records)
+
+
+def test_a_bundle_naming_a_schedule_this_build_does_not_have_is_refused(captured):
+    refs, result, _ = captured
+    for label in ("clone_1000000_attempt_7919_node_plus_one_v3", "", None, 7, ["v1"]):
+        bundle = alter(result, lambda payload: payload["execution"].__setitem__("seed_schedule", label))
+        with pytest.raises(FamilyReplayError, match="unsupported seed schedule"):
+            bundle.replay_records()
+
+
+def test_a_relabelled_bundle_does_not_replay_as_if_it_were_the_other_schedule(captured):
+    """The label is not a free choice: the seeds a stage recorded have to
+    be the seeds the named scheme derives."""
+    from GenAIRR._seed_schedule import _Additive
+
+    refs, result, _ = captured
+    bundle = alter(result, lambda payload: payload["execution"].update(
+        seed_schedule=_Additive.label, retry_stride=7919))
+    with pytest.raises(FamilyReplayError, match="seed scheduling label mismatch|scheduling differs"):
+        bundle.replay_records()
