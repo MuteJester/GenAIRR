@@ -7,6 +7,7 @@ from .._compiled import (
     CompiledLineageExperiment,
     CompiledRepertoireExperiment,
 )
+from .._seed_schedule import sub_seed as _sub_seed
 
 # Imported for the quoted return annotations below only. At runtime this
 # module is imported BY the class it annotates, so a real import would be
@@ -67,7 +68,6 @@ class _RunMixin:
 
             _reject_genotype_constrained()
         import copy as _copy
-        import random as _random
 
         from ..cohort import (
             CohortResult,
@@ -124,11 +124,11 @@ class _RunMixin:
 
         resolved_counts = _resolve_counts(len(gts), n_per_subject, counts)
         subject_ids = _resolve_subject_ids([g.subject_id for g in gts])
-        base_rng = _random.Random(seed)
-
         subjects = []
-        for g, sid, count in zip(gts, subject_ids, resolved_counts):
-            sub_seed = base_rng.getrandbits(63)
+        for index, (g, sid, count) in enumerate(zip(gts, subject_ids, resolved_counts)):
+            # A subject is a sub-simulation of the cohort run, seeded the
+            # way every other one is: a keyed substream named for its axis.
+            subject_seed = _sub_seed(seed, "subject", index)
             snap = g._snapshot()
             snap.subject_id = sid
             # Clone the uncompiled experiment; never mutate self.
@@ -144,7 +144,7 @@ class _RunMixin:
                 res._genotypes = [snap]
             else:
                 res = compiled.run_records(
-                    n=count, seed=sub_seed, strict=strict,
+                    n=count, seed=subject_seed, strict=strict,
                     expose_provenance=expose_provenance,
                     validate_records=validate_records)
             # Apply with_metadata() per subject (parity with run_records), then
@@ -159,7 +159,7 @@ class _RunMixin:
                 rec["sequence_id"] = f"{sid}_{rec.get('sequence_id', '')}"
             subjects.append(CohortSubjectResult(
                 subject_id=sid, genotype=snap, result=res, refdata=refdata_i,
-                seed=sub_seed, count=count))
+                seed=subject_seed, count=count))
 
         return CohortResult(subjects)
 

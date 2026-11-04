@@ -19,13 +19,16 @@
 //! the same draws.
 //!
 //! The number covers the library's sampling and not only this crate's.
-//! A clonal run splits into sub-simulations in the Python layer, which
-//! derives a seed for each (`GenAIRR._seed_schedule`); that schedule
-//! decides what a seed produces just as directly as a pass does, so a
-//! change to it is a change to this number. The schedule carries a name
-//! of its own because a family-replay bundle has to replay under the
-//! scheme that drew it, but the name is not a second version: a reader
-//! holding a dataset reads this one.
+//! Several runs split into sub-simulations in the Python layer -- a
+//! clonal run into clones, retries, reads and nodes, a cohort into
+//! subjects, a genotype draw into viability attempts -- and that layer
+//! derives a seed for each (`GenAIRR._seed_schedule`). How a seed
+//! becomes a sub-simulation's seed decides what a seed produces just as
+//! directly as a pass does, so a change to it is a change to this
+//! number. The clonal schedule carries a name of its own because a
+//! family-replay bundle has to replay under the scheme that drew it,
+//! but the name is not a second version: a reader holding a dataset
+//! reads this one.
 //!
 //! Incrementing is not a failure to be avoided. Pinning a number while
 //! the draws move underneath it is strictly worse than bumping it,
@@ -43,7 +46,7 @@
 //! | version | model |
 //! |---------|-------|
 //! | (absent) / 1 | one random stream shared by the whole plan; a substitution could redraw the base already present |
-//! | 2 | one random substream per pass, and one per clonal-family role (growth, sampling, target) instead of a seed salted by XOR; a clone, a survival retry and a read take keyed substreams of the run seed instead of offsets added to it; a substitution draws a base the site does not hold |
+//! | 2 | one random substream per pass, and one per clonal-family role (growth, sampling, target) instead of a seed salted by XOR; a clone, a survival retry and a read take keyed substreams of the run seed instead of offsets added to it; a cohort subject and a genotype viability attempt take keyed substreams instead of words from a `random.Random` seeded with the run seed; a substitution draws a base the site does not hold |
 
 /// The engine's sampling-model version. Stamped on every exported
 /// record and readable as `GenAIRR.DETERMINISM_VERSION`.

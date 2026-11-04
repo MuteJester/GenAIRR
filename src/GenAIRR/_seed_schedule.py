@@ -30,9 +30,32 @@ mixed rather than translated and the roles cannot meet.
 Both schedules live here because the label is a wire value: a
 family-replay bundle records which schedule drew it, and a bundle
 written under the first one still replays.
+
+Two axes outside a clonal run need the same thing and are not part of
+that wire contract: a cohort subject and a genotype resample attempt.
+They call :func:`sub_seed` directly. Both used to draw their sub-seeds
+from ``random.Random(run_seed).getrandbits(63)``, which mixes -- so
+neither had the collision the first clonal schedule had -- but which put
+CPython's Mersenne Twister in the chain, where the engine's determinism
+version does not reach it and the ``rng::discipline`` guard cannot see
+it. One primitive, one answer to "where did this seed come from".
 """
 
 from typing import Dict, Optional
+
+
+def sub_seed(seed: int, role: str, index: int) -> int:
+    """The seed for the ``index``-th sub-simulation named ``role``.
+
+    The only way this package turns a seed into another seed: the
+    engine's keyed primitive, with the axis as the stream's role. Two
+    roles cannot meet, a role's occurrences cannot meet, and a different
+    ``seed`` is a different set of streams rather than a translation of
+    the same ones.
+    """
+    import GenAIRR._engine as _engine
+
+    return _engine.substream_seed(int(seed), role, index)
 
 
 class _SeedSchedule:
@@ -132,9 +155,7 @@ class _Keyed(_SeedSchedule):
 
     @staticmethod
     def _derive(seed: int, role: str, index: int) -> int:
-        import GenAIRR._engine as _engine
-
-        return _engine.substream_seed(int(seed), role, index)
+        return sub_seed(seed, role, index)
 
     def clone(self, run_seed: int, clone_index: int) -> int:
         return self._derive(run_seed, "clone", clone_index)

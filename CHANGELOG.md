@@ -162,6 +162,22 @@ All notable changes to GenAIRR are documented here.
   written under the previous one still replays: the recorded label picks the
   scheme instead of being compared against the current one.
 
+- **A cohort subject's seed and a genotype attempt's seed come from the same
+  primitive as everything else.** Both were drawn from
+  `random.Random(run_seed).getrandbits(63)`. That mixes, so neither had the
+  collision described above — subject 1 of one cohort was not subject 0 of
+  another. What it did have was a second generator in the derivation chain:
+  CPython's Mersenne Twister decided engine seeds, somewhere the engine's
+  determinism version does not reach and neither seed-discipline guard could
+  see, so "how does GenAIRR turn a seed into a sub-simulation's seed" had two
+  answers. `run_cohort(..., seed=S)` now seeds subject *i* with a substream of
+  *S* named `subject`, and `Genotype.sample(..., seed=S)` seeds viability
+  attempt *a* with one named `genotype_attempt`; a failed attempt still cannot
+  land on what a direct draw at `S + 1` would get, which is what the base
+  generator was there for. **This changes which genotype a given seed draws
+  and which records a given cohort seed produces.** A package-wide guard now
+  fails if a seed is assigned from anything but that primitive.
+
 - **`count` is now a count of events, not of attempts, for `mutate(model="uniform")`,
   `pcr_amplify` and `sequencing_errors`.** Each of the three drew its replacement
   base from all four bases including the one already at the position, so about a

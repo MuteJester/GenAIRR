@@ -173,3 +173,101 @@ class TestNothingDerivesASeedByArithmetic:
         for path, lines in found.items():
             expected, why = self.SANCTIONED[path]
             assert len(lines) == expected, f"{path} lines {lines}: {why}"
+
+
+class TestEverySeedDerivedComesFromThePrimitive:
+    """The other half of the discipline, for derivations that are calls.
+
+    Arithmetic is one way to make a seed out of a seed; calling something
+    is the other, and the scan above cannot see it. Two axes used to
+    derive theirs from ``random.Random(seed).getrandbits(63)`` -- which
+    mixes, so it was never the collision the first clonal schedule had,
+    but which answered "where did this seed come from" with a second
+    generator the engine's determinism version does not reach.
+
+    So a name that looks like a seed may be assigned from a call only if
+    the call is one of these. The list is short on purpose: a derivation
+    worth adding is worth naming here.
+    """
+
+    #: Callables a seed may be assigned from. `sub_seed` and the schedule
+    #: are the primitive; `_seed` reads a seed label off a replay bundle,
+    #: which is parsing rather than deriving.
+    DERIVERS = {"sub_seed", "_sub_seed", "substream_seed", "_seed"}
+
+    #: Objects whose every method is a derivation (the named schedules).
+    DERIVING_OBJECTS = {"_schedule", "schedule"}
+
+    @classmethod
+    def _sites(cls, path):
+        import ast
+
+        found = []
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            else:
+                continue
+            named = [t.id for t in targets if isinstance(t, ast.Name)]
+            if not any("seed" in name for name in named):
+                continue
+            if not isinstance(node.value, ast.Call):
+                continue
+            func = node.value.func
+            if isinstance(func, ast.Name) and func.id in cls.DERIVERS:
+                continue
+            if isinstance(func, ast.Attribute):
+                owner = func.value
+                if func.attr in cls.DERIVERS:
+                    continue
+                if isinstance(owner, ast.Name) and owner.id in cls.DERIVING_OBJECTS:
+                    continue
+                if isinstance(owner, ast.Attribute) and owner.attr in cls.DERIVING_OBJECTS:
+                    continue
+            found.append((node.lineno, ast.unparse(node.value)))
+        return found
+
+    def test_the_scan_can_see_the_derivation_it_was_written_for(self):
+        """Guard the premise with the code this guard replaced.
+
+        The two superseded sites, as they stood, plus the two that
+        replaced them -- so the scan is shown rejecting the one and
+        accepting the other rather than merely finding nothing.
+        """
+        import pathlib
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            superseded = pathlib.Path(directory) / "superseded.py"
+            superseded.write_text(
+                "def f(seed, n):\n"
+                "    base_rng = random.Random(seed)\n"
+                "    for i in range(n):\n"
+                "        sub_seed = base_rng.getrandbits(63)\n"
+                "        yield sub_seed\n"
+            )
+            assert [line for line, _ in self._sites(superseded)] == [4]
+
+            current = pathlib.Path(directory) / "current.py"
+            current.write_text(
+                "def f(seed, n):\n"
+                "    for i in range(n):\n"
+                "        subject_seed = _sub_seed(seed, 'subject', i)\n"
+                "        clone_seed = _schedule.clone(seed, i)\n"
+                "        yield subject_seed, clone_seed\n"
+            )
+            assert self._sites(current) == []
+
+    def test_nothing_in_the_package_derives_a_seed_another_way(self):
+        from tests.support import paths
+
+        root = paths.repo_root() / "src" / "GenAIRR"
+        assert (root / "_seed_schedule.py").exists(), f"premise: scanning the package at {root}"
+        offenders = {
+            str(path.relative_to(root)): sites
+            for path in sorted(root.rglob("*.py"))
+            if (sites := self._sites(path))
+        }
+        assert not offenders, f"a seed derived outside the primitive: {offenders}"
