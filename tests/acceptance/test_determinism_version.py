@@ -87,6 +87,24 @@ def test_every_record_reports_the_engine_that_drew_it():
     assert all(record[COLUMN] == ga.DETERMINISM_VERSION for record in records)
 
 
+def test_a_clonal_dataset_says_which_model_drew_it_too():
+    """Version 2 moved the clonal seed schedule as well as the passes.
+
+    A clone, a survival retry and a read used to take seeds offset from
+    the run seed, which made clone 1 of one run the same simulation as
+    clone 0 of another; they are keyed substreams now. That is the same
+    kind of change as the pass substreams and carries the same number,
+    so a clonal dataset has to carry it too -- and clonal records leave
+    through their own export route, with `clone_id` and
+    `duplicate_count`, rather than the plain one asserted above.
+    """
+    result = (ga.Experiment.on("human_igh").recombine()
+              .clonal_repertoire(n_clones=4, max_size=5).run_records(seed=3))
+    assert result.records, "premise: the repertoire produced records"
+    assert {record["clone_id"] for record in result.records} == {0, 1, 2, 3}
+    assert all(record[COLUMN] == ga.DETERMINISM_VERSION for record in result.records)
+
+
 def test_the_version_is_a_column_the_exporter_knows_about():
     """Ordered deliberately rather than appended as an unknown extra.
 
