@@ -52,7 +52,7 @@
             "status": 0,
             "summary": "1569 passed, 103 warnings in 355.83s (0:05:55)",
             "command": [
-              "/home/thomas/Desktop/GenAIRR/.venv/bin/python",
+              "<repo>/.venv/bin/python",
               "-m",
               "pytest",
               "tests/test_airr_record_validator.py",
@@ -210,7 +210,7 @@
             "status": 0,
             "summary": "1569 passed, 68 warnings in 219.92s (0:03:39)",
             "command": [
-              "/home/thomas/Desktop/GenAIRR/.venv/bin/python",
+              "<repo>/.venv/bin/python",
               "-m",
               "pytest",
               "tests/test_allele_usage_estimation_implementation.py",

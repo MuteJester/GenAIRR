@@ -3,7 +3,7 @@
   "branch": "fix/biological-metadata-correctness",
   "model": "original_coding_end_v1",
   "external_dependencies_added": false,
-  "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+  "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
   "extension_sha256": "0a364e94191e001517166c07dea8d9343d8ee01abdb16586a6ac7f86f985de25",
   "python": {
     "passed": 2636,

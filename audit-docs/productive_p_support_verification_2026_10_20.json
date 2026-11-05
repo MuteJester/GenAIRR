@@ -925,8 +925,8 @@
   "environment": {
     "concurrent_workload": "Root agent running full Python and Rust test suites; timings are observational, not isolated benchmarks.",
     "engine_mtime_utc": "2026-10-20T07:01:17.103705+00:00",
-    "engine_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
-    "package_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/__init__.py",
+    "engine_path": "<repo>/src/GenAIRR/_engine.abi3.so",
+    "package_path": "<repo>/src/GenAIRR/__init__.py",
     "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]"
   },
   "method": {

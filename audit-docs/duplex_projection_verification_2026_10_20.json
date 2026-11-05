@@ -2,7 +2,7 @@
   "baseline_commit": "c480374e0fffb8991c03a113017578847992e7c5",
   "branch": "fix/biological-metadata-correctness",
   "commands": [
-    "VIRTUAL_ENV=/home/thomas/Desktop/GenAIRR/.venv .venv/bin/maturin develop --release",
+    "VIRTUAL_ENV=<repo>/.venv .venv/bin/maturin develop --release",
     "cargo test --manifest-path engine_rs/Cargo.toml -q",
     "cargo test --release --manifest-path engine_rs/Cargo.toml -q",
     ".venv/bin/python -m pytest -q tests/test_duplex_projection.py tests/test_coupled_duplex_repair.py tests/test_experimental_duplex_repair.py tests/test_coding_end_models.py tests/test_metadata_np_estimator_regressions.py tests/test_np_length_estimation_contract.py tests/test_np_length_estimation_implementation.py tests/test_np_base_model_estimation_contract.py tests/test_np_base_model_estimation_implementation.py tests/test_p_nucleotide_length_estimation_contract.py tests/test_p_nucleotide_length_estimation_implementation.py tests/test_trim_distribution_estimation_contract.py tests/test_trim_distribution_estimation_implementation.py tests/test_productivity_assessment.py tests/test_productivity_trusted_landmarks.py",
@@ -22,7 +22,7 @@
   },
   "extension": {
     "build_log": "/tmp/genairr_duplex_projection_build_verified.log",
-    "path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+    "path": "<repo>/src/GenAIRR/_engine.abi3.so",
     "sha256": "3b601a4d6df473e8c45bc3b31da1be8148a67899d594f248e823e49e40f9950c"
   },
   "model": "duplex_airr_projection_v1",

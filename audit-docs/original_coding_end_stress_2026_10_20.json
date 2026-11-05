@@ -158,7 +158,7 @@
       "replay_equal": true
     }
   ],
-  "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+  "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
   "guarded_rejections": [
     {
       "config": "mouse_igk",

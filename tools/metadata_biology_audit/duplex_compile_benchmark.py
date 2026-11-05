@@ -26,6 +26,21 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _relative_extension_path() -> str:
+    """The extension's path relative to the repo, so a record names no machine.
+
+    An absolute path identifies the author's filesystem, not the artifact; the
+    sha256 beside this field is what identifies the binary.
+    """
+    extension = Path(_engine.__file__).resolve()
+    try:
+        return str(extension.relative_to(ROOT))
+    except ValueError:
+        return extension.name
+
+
+
+
 def _rss_kib():
     value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return value / 1024 if platform.system() == "Darwin" else value
@@ -94,7 +109,7 @@ def _worker(rows, contexts, records, seed):
         "distinct_histories_sampled": len(counts), "sampled_records": sum(counts.values()),
         "max_preflight_operations": model.max_preflight_operations,
         "max_preflight_bases": model.max_preflight_bases,
-        "extension_path": str(Path(_engine.__file__).resolve()), "first_record": first,
+        "extension_path": _relative_extension_path(), "first_record": first,
     }
 
 
@@ -118,7 +133,7 @@ def _identity():
         "dirty": bool(git("status", "--porcelain")),
         "source_sha256": digest.hexdigest(),
         "source_hash_scope": "engine_rs/src/**/*.rs,src/GenAIRR/**/*.py,engine_rs/Cargo.toml,Cargo.lock",
-        "extension_path": str(extension),
+        "extension_path": _relative_extension_path(),
         "extension_sha256": hashlib.sha256(extension.read_bytes()).hexdigest(),
         "python": sys.version, "platform": platform.platform(),
     }

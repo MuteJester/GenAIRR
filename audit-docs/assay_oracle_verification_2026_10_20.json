@@ -4,8 +4,8 @@
   "scope": "All S0-S12 dev suites rebuilt with the final local engine, then alignair_assay.testing.assert_oracle_perfect was applied to every truth set; donor genotypes were supplied whenever donors.json exists. This verifies the external assay truth/scoring oracle rule and records its exclusions/warnings. It is not proof that every simulator metadata field or biological distribution is correct.",
   "run": {
     "directory": "/tmp/genairr_assay_fixed_final",
-    "python": "/home/thomas/Desktop/AlignAIR/.venv/bin/python",
-    "pythonpath": "/home/thomas/Desktop/GenAIRR/src:/home/thomas/Desktop/AlignAIR/.claude/worktrees/dockerhub-registry/src",
+    "python": "<external-aligner-checkout>/.venv/bin/python",
+    "pythonpath": "<repo>/src:<external-aligner-checkout>/src",
     "build_command": "python -m alignair_assay build --suites S0,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,S11,S12 --run-dir /tmp/genairr_assay_fixed_final --split dev --scale 0.02 --workers 1",
     "build_log": "/tmp/genairr_external_assay_final.log",
     "verification_script": "/tmp/verify_genairr_external_assay.py",
@@ -20,20 +20,20 @@
   "source": {
     "genairr": {
       "genairr_version": "1.0.0",
-      "genairr_source": "/home/thomas/Desktop/GenAIRR/src/GenAIRR",
+      "genairr_source": "<repo>/src/GenAIRR",
       "genairr_git_commit": "1ededa676e8904430f7ea0bdcf03092de4888a41",
       "genairr_git_dirty": true,
       "genairr_source_sha256": "0678200704dddd82b43e09b2e676fdf9a5fa90cd7c4d91b0084d1833782aa778",
       "branch": "fix/biological-metadata-correctness",
       "source_project_version": "2.3.1",
-      "loaded_package": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/__init__.py",
-      "loaded_engine": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "loaded_package": "<repo>/src/GenAIRR/__init__.py",
+      "loaded_engine": "<repo>/src/GenAIRR/_engine.abi3.so",
       "loaded_engine_sha256": "bcb885e05b763f7c160cfa08c5a1043b9779867f72b9c09b945ba81d61831443",
       "rust_source_sha256": "d6ddd23999e3ab05012d55af720a2cbee85d8a33ab9888b759e025244a5075f8",
       "metadata_version_note": "The external AlignAIR virtual environment has stale installed GenAIRR distribution metadata (1.0.0). PYTHONPATH loads this checkout's package and rebuilt native extension (source project version 2.3.1); paths and hashes above identify them."
     },
     "assay": {
-      "path": "/home/thomas/Desktop/AlignAIR/.claude/worktrees/dockerhub-registry/src/alignair_assay",
+      "path": "<external-aligner-checkout>/src/alignair_assay",
       "git_commit": "8cf24ca29a89df3f8617c99f51fdbc0fa1a6c77e",
       "git_dirty": false,
       "python_source_sha256": "fc69139307ce83ece3a4f9a7fbca482c0cc12b2ae49b82ae98f329ff607b7ab2",

@@ -12,6 +12,8 @@ from pathlib import Path
 import GenAIRR as ga
 from GenAIRR import _engine
 
+ROOT = Path(__file__).resolve().parents[2]
+
 CONFIGS = [f"{species}_{locus}" for species in ("human", "mouse")
            for locus in ("igh", "igk", "igl", "tcra", "tcrb", "tcrd", "tcrg")]
 COMPLEMENT = str.maketrans("ACGTacgtNn", "TGCAtgcaNn")
@@ -60,6 +62,18 @@ def check(record, reference):
                        if o["choice_id"] == choice["choice_id"] and o["canonical_end"] == canonical]
             assert len(origins) == max(-outcome, 0)
 
+
+def _relative_extension_path() -> str:
+    """The extension's path relative to the repo, so a record names no machine.
+
+    An absolute path identifies the author's filesystem, not the artifact; the
+    sha256 beside this field is what identifies the binary.
+    """
+    extension = Path(_engine.__file__).resolve()
+    try:
+        return str(extension.relative_to(ROOT))
+    except ValueError:
+        return extension.name
 
 def main():
     parser = argparse.ArgumentParser()
@@ -130,7 +144,7 @@ def main():
             results.append(item)
             print(json.dumps(item), flush=True)
     artifact = {"seed": args.seed, "records": sum(r["records"] for r in results),
-                "errors": 0, "profiles": results, "extension_path": _engine.__file__,
+                "errors": 0, "profiles": results, "extension_path": _relative_extension_path(),
                 "guarded_rejections": rejections,
                 "productive_indel_count": 2 if args.productive_indels else 0,
                 "reference_policy": "allow curatable reference annotations; productive support still requires valid retained anchors and coding sequence",
