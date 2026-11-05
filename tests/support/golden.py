@@ -18,6 +18,18 @@ is where the floating-point draws are. That gap was invisible from inside:
 changing the replacement-base model for every substitution pass in the engine
 moved no golden byte, because no golden drew a substitution. Each variant below
 exists to run code the others do not.
+
+The same gap applied to the clonal path until the ``clonal_*`` variants were
+added. Every fixture ran a single molecule, so **no fixture grew a lineage or
+drew a clone size**, and that is where the engine's transcendental arithmetic
+lives: ``lineage/poisson.rs:26`` (``exp``, every offspring draw),
+``lineage/affinity.rs:209,221`` (``exp``, every affinity), and
+``lineage/clone_size.rs:33,43,46,52`` (``ln``, ``sqrt``, ``cos``, ``powf``,
+``exp``). Rust documents the precision of those as platform-dependent, and a
+clone size is ``x.round()`` of a ``powf`` -- so one ulp is a different integer,
+not a different last digit. Two determinism-version bumps passed through this
+file moving nothing but the version column, which is the symptom: the fixtures
+could not see the model they were stamping.
 """
 from __future__ import annotations
 
@@ -53,20 +65,59 @@ VARIANTS: dict[str, tuple[tuple[str, dict], ...]] = {
     # names one -- a different kernel from `uniform`, with its own
     # five-mer lookups. Pins the bundled kernel's numbers as well as the code.
     "hypermutation": (("mutate", {"count": 12}),),
+    # The clonal paths, which is where the engine's transcendental arithmetic
+    # is. Kept small: these are a portability probe, not a biology fixture.
+    #
+    # A neutral lineage: one `exp` per parent per generation in the Poisson
+    # offspring sampler, and the tree topology that follows from it.
+    "clonal_lineage": (("clonal_lineage",
+                        {"n_clones": 3, "max_generations": 4, "n_max": 50,
+                         "n_sample": 5, "rate": 0.01, "lambda_base": 1.8}),),
+    # The same with selection on, which adds one `exp` per cell for affinity
+    # and makes the genealogy depend on its value.
+    "clonal_lineage_selected": (("clonal_lineage",
+                                 {"n_clones": 3, "max_generations": 4,
+                                  "n_max": 50, "n_sample": 5, "rate": 0.01,
+                                  "lambda_base": 1.8, "selection_strength": 0.5,
+                                  "beta": 0.001, "mature_substitutions": 5}),),
+    # Clone sizes through `powf`. The size is `x.round()` of it, so a one-ulp
+    # difference is a different `duplicate_count`, not a rounding artefact.
+    "clonal_power_law": (("clonal_repertoire",
+                          {"n_clones": 4, "size_distribution": "power_law",
+                           "exponent": 2.0, "max_size": 30}),),
+    # Clone sizes through Box-Muller and `exp`: `ln`, `sqrt` and `cos` as well,
+    # which `powf` alone does not reach.
+    "clonal_lognormal": (("clonal_repertoire",
+                          {"n_clones": 4, "size_distribution": "lognormal",
+                           "mu": 1.0, "sigma": 1.0, "max_size": 30}),),
 }
 
-#: ``(variant, locus, n)`` for every committed fixture.
-FIXTURE_SPECS: tuple[tuple[str, str, int], ...] = (
+#: The variants above whose `run_records` takes no `n`.
+CLONAL = frozenset({"clonal_lineage", "clonal_lineage_selected",
+                    "clonal_power_law", "clonal_lognormal"})
+
+#: Variants that fork the pipeline into clones. Their record count follows from
+#: the clone structure rather than from a caller's ``n``, so they are named
+#: without one and ``run_records`` is called without it.
+#: ``(variant, locus, n)`` for every committed fixture. ``n`` is ``None`` for the
+#: clonal variants, which do not take one.
+FIXTURE_SPECS: tuple[tuple[str, str, int | None], ...] = (
     tuple(("", locus, N) for locus in LOCI)
     + (("mixed_features", "human_igh", 20),
        ("library_prep", "human_igh", 20),
-       ("hypermutation", "human_igh", 20))
+       ("hypermutation", "human_igh", 20),
+       ("clonal_lineage", "human_igh", None),
+       ("clonal_lineage_selected", "human_igh", None),
+       ("clonal_power_law", "human_igh", None),
+       ("clonal_lognormal", "human_igh", None))
 )
 
 
-def golden_name(locus: str, *, n: int = N, seed: int = SEED, variant: str = "") -> str:
+def golden_name(locus: str, *, n: int | None = N, seed: int = SEED,
+                variant: str = "") -> str:
     suffix = f"_{variant}" if variant else ""
-    return f"seed{seed}_n{n}_{locus}{suffix}.tsv"
+    size = f"_n{n}" if n is not None else ""
+    return f"seed{seed}{size}_{locus}{suffix}.tsv"
 
 
 def _experiment(locus: str, *, variant: str = ""):
@@ -77,11 +128,14 @@ def _experiment(locus: str, *, variant: str = ""):
     return exp
 
 
-def write_reproducibility_tsv(path: Path, locus: str, *, n: int = N, seed: int = SEED,
-                              variant: str = "") -> Path:
+def write_reproducibility_tsv(path: Path, locus: str, *, n: int | None = N,
+                              seed: int = SEED, variant: str = "") -> Path:
     """Write the fixture for ``locus`` to ``path`` and return it."""
     exp = _experiment(locus, variant=variant)
-    exp.compile().run_records(n=n, seed=seed).to_tsv(str(path))
+    compiled = exp.compile()
+    result = (compiled.run_records(seed=seed) if variant in CLONAL
+              else compiled.run_records(n=n, seed=seed))
+    result.to_tsv(str(path))
     return path
 
 
