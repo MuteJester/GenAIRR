@@ -1,5 +1,10 @@
 {
-  "revised": {},
+  "revised": {
+    "VARIANTS": "four clonal variants added: clonal_lineage, clonal_lineage_selected, clonal_power_law and clonal_lognormal. No existing variant changed. They exist to reach code no fixture ran: lineage/poisson.rs:26 (exp, every offspring draw), lineage/affinity.rs:209,221 (exp, every affinity) and lineage/clone_size.rs:33,43,46,52 (ln, sqrt, cos, powf, exp). Rust documents those as platform-dependent in precision, and a clone size is x.round() of a powf, so one ulp is a different integer. Until now no golden grew a lineage or drew a clone size, which is why determinism versions 3 and 4 both passed through this file moving nothing but the version column.",
+    "FIXTURE_SPECS": "the four clonal fixtures appended, each with n=None because their record count follows from the clone structure rather than a caller's n. The six existing specs are unchanged. The tuple type widens to int | None for that reason.",
+    "golden_name": "omits the _n{n} segment when n is None, so the clonal fixtures are named seed42_human_igh_clonal_lineage.tsv rather than carrying a meaningless count. The name of every existing fixture is unchanged, which the six untouched committed files confirm.",
+    "write_reproducibility_tsv": "calls run_records(seed=seed) without n for the clonal variants, which do not accept one, and run_records(n=n, seed=seed) exactly as before for the rest. This is a generator, not an assertion helper: it cannot make a test pass more easily, because what it writes is compared byte for byte against the committed file by test_output_matches_the_committed_golden."
+  },
   "replaced": {},
   "allow": {}
 }
