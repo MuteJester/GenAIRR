@@ -10,7 +10,7 @@ artefact profile of the sequencer you're benchmarking against.</p>
 
 ## What counts as observation-stage corruption
 
-Seven passes belong in the observation-stage block. Each models a
+Eight passes belong in the observation-stage block. Each models a
 distinct artefact mechanism, each has its own AIRR provenance, and
 each is independently tunable:
 
@@ -23,6 +23,7 @@ each is independently tunable:
 | `.end_loss_5prime(...)` | 5' adapter / primer loss | `end_loss_5_length` |
 | `.end_loss_3prime(...)` | 3' adapter / primer loss | `end_loss_3_length` |
 | `.random_strand_orientation(...)` | Strand flip during library prep | `rev_comp` |
+| `.contaminate(...)` | Replaces the record with an unrelated background sequence | `is_contaminant` |
 
 Plus `.paired_end(...)`, which isn't corruption - it's a read-layout
 projection - but it sits in the same descendant-phase block of the
@@ -87,16 +88,19 @@ result = (
       .run_records(n=100, seed=1)
 )
 
+rec = result[0]
 rec["n_quality_errors"]    # int - number of sequencer base-call errors
 ```
 
 `sequencing_errors` models sequencer-quality miscalls. The pass
 **lowercases the affected bytes** in the assembled sequence as a
-visible quality marker. So `sequence` may end up with mixed-case
-bytes: uppercase = clean, lowercase = sequencer-flagged
-low-quality position. Downstream pipelines that want to mask
-quality-flagged bases can do
-`sequence.upper()` to normalise.
+visible quality marker. Case is not a clean/dirty flag, though:
+germline reference bases are already lowercase, while N/P additions,
+SHM substitutions and PCR errors are written uppercase, so a record
+with no corruption at all is mostly lowercase. Case marks what the
+engine wrote, not what is wrong; read the counters
+(`n_quality_errors`, `n_pcr_errors`, `n_ambiguous_bases`) for that,
+and `sequence.upper()` to normalise.
 
 ## N corruption / ambiguous bases
 
@@ -263,7 +267,7 @@ A few facts to know:
 
 ## Ordering with clonal workflows
 
-**All seven corruption passes are descendant-phase.** They model
+**All eight corruption passes are descendant-phase.** They model
 per-read artefacts - every emitted clone member or observed lineage
 cell gets independent PCR errors, independent indel events,
 independent end-loss draws, etc.
@@ -430,8 +434,7 @@ on) already reflect the post-flip orientation. R2 is also
 already reverse-complemented at projection time (that's the
 paired-end-output convention). Applying any further flips
 downstream produces wrong reads. The validator's
-`PairedEndWindowMismatch` check enforces the per-record R2 RC
-state.
+`ReadSequenceMismatch` check enforces the per-record R2 RC state.
 
 **Looking for an `n_ns` counter.** The field is spelled
 `n_ambiguous_bases`. It counts positions the pass actually masked,

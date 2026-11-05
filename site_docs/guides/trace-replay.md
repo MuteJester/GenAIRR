@@ -33,6 +33,12 @@ existed. A trace file carries the same number, and replaying one whose
 number disagrees with the installed engine fails rather than quietly
 reproducing something else.
 
+**Where it is checked.** The reproducibility goldens run in CI on Linux,
+macOS and Windows across Python 3.10-3.13 and assert that the same seed
+reproduces the same bytes on each. Linux aarch64 ships a wheel but is not
+covered by those goldens, so on that architecture the promise is the
+engine's intent rather than something measured on every commit.
+
 **One stream per pass.** Each pass draws from its own random
 substream, derived from the run seed and the pass's identity rather
 than taken from a stream the pipeline shares. Two consequences worth
@@ -188,8 +194,9 @@ strongest reproducibility check you can author with one trace.
 
 ## What the trace contains
 
-Version 4 records the annotation policy and active contract context alongside
-the existing signatures:
+Fresh traces are written at schema version **5**, which adds
+`determinism_version` to the annotation policy and active-contract context
+schema 4 introduced:
 
 | Field | Purpose |
 |---|---|
@@ -217,9 +224,11 @@ its payload. You ship the trace + the cartridge name; the engine
 re-derives everything else from the recorded choices.
 
 Both seed reruns and choice replay check reference content, address vocabulary,
-annotation policy and active contracts. New schema-4 files require explicit
-policy/context fields. Earlier schemas remain readable with their documented
-historical limitations.
+annotation policy, active contracts and determinism version. Files written at
+schema 4 or later require explicit policy/context fields; schema 5 adds the
+determinism stamp, and a file written before it reports `0`, meaning
+"unknown". Earlier schemas remain readable with their documented historical
+limitations.
 
 Constrained indels now use `natural_sequential_v1`, whose probabilities follow
 the actual sequence after each event. Changed sampler signatures intentionally
@@ -232,7 +241,11 @@ historical productivity annotations.
 ## What can make replay fail
 
 Replay raises `ValueError` (never `KeyError`, never a custom
-exception) with one of these distinct shapes:
+exception) with one of these distinct shapes. The names below are the
+gates' names, not tokens inside the message: the `ValueError` text is
+English prose that describes the mismatch (and, for the signature gates,
+prints the expected and actual signatures). Match on the exception type
+and read the message; do not grep for the snake_case name.
 
 ### Validation phase - checked before any choices are consumed
 
@@ -375,10 +388,12 @@ loud on purpose. Use **rerun** if you want to see what would
 change; use **replay** when you want to verify nothing did.
 
 **Using a different cartridge.** Replaying a `HUMAN_IGH_OGRDB`
-trace against `HUMAN_IGH_EXTENDED` fires
-`refdata_signature_mismatch`. The two cartridges have different
-catalogues, different allele names at the same index - replay
-would silently corrupt. The gate catches it.
+trace against `HUMAN_IGH_EXTENDED` is refused. In practice the pass-plan
+signature gate fires first, because a cartridge's trim and NP-length
+distributions are baked into the resolved pass plan, so the error names the
+plan rather than the refdata. Either way the two cartridges have different
+catalogues and different allele names at the same index - replay would
+silently corrupt, and the gate catches it.
 
 **Confusing replay with rerun.** Replay consumes recorded values;
 rerun re-draws. Calling `replay_from_trace_file` and expecting

@@ -59,8 +59,10 @@ A few rules to keep in mind when you reason about the geometry:
 ## N length models
 
 `ReferenceEmpiricalModels.np_lengths` controls how many bases each
-NP region holds. Keys are `NP1` (always) and `NP2` (VDJ only - VJ
-cartridges reject `NP2` keys at attach time):
+NP region holds. Keys are `NP1` (always) and `NP2` (VDJ only). Note that an `NP2`
+key on a VJ cartridge is **accepted** and then has nothing to apply
+to - only the D-side keys of `trims` and `p_nucleotide_lengths` are
+chain-gated - so check the chain yourself before authoring one:
 
 ```python
 from GenAIRR import EmpiricalDistributionSpec, ReferenceEmpiricalModels
@@ -329,10 +331,12 @@ distribution and emit the ≥95%-zero warning. Use this estimator
 only against data that genuinely carries P-length annotations.
 
 **Expecting `NP2` on a VJ cartridge.** VJ chains have only one NP
-region. Attempting to author `np_lengths["NP2"]` or
-`p_nucleotide_lengths["D_5"]` / `["D_3"]` on a VJ cartridge
-raises `ValueError` at validate time; the engine never gets the
-chance to silently lose your spec.
+region. `p_nucleotide_lengths["D_5"]` / `["D_3"]` and the D-side
+`trims` keys do raise `ValueError` at validate time on a VJ
+cartridge. `np_lengths["NP2"]` / `np_bases["NP2"]` do **not** - the
+key is accepted and silently has no NP2 to apply to, so a spec
+authored there is lost without a warning. Check the chain type
+before authoring NP2.
 
 ## Where to go next
 

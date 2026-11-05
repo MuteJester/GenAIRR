@@ -27,7 +27,7 @@ below shows what those auto-rendered pages look like.
 
 ## Top-level imports
 
-35 names ship in `GenAIRR.__all__`. Grouped by what they do:
+40 names ship in `GenAIRR.__all__`. Grouped by what they do:
 
 ### Simulation entry points
 
@@ -38,6 +38,7 @@ below shows what those auto-rendered pages look like.
 | `SimulationResult` | Records + outcomes + parents wrapper | [Quick start](../getting-started/quick-start.md) |
 | `set_seed`, `get_seed`, `reset_seed` | Thread-local seed management | [Validation hub](../validation/index.md#trace-and-replay) |
 | `__version__` | Resolved via `importlib.metadata`; falls back to `"0.0.0"` for editable installs | - |
+| `DETERMINISM_VERSION` | Which sampling model this engine implements (`4`). Stamped on every record as `determinism_version` | [Trace, replay, reproducibility](../guides/trace-replay.md) |
 
 ### Reference data - cartridges and bridges
 
@@ -46,11 +47,14 @@ below shows what those auto-rendered pages look like.
 | `DataConfig` | The Python-side cartridge dataclass | [Reference cartridge](../concepts/reference-cartridge.md) |
 | `RefDataConfig` | The engine-side refdata bridge object | [Reference cartridge](../concepts/reference-cartridge.md) |
 | `dataconfig_to_refdata` | Bridge function - `DataConfig → RefDataConfig` | [`validate_records`](../validation/validate-records.md) |
+| `Reference` | Portable local germline reference built from V/D/J FASTA plus a versioned annotation sidecar | [Portable local references](../guides/portable-references.md) |
+| `ReferenceArtifactError` | Raised when a reference artifact cannot be read or written | [Portable local references](../guides/portable-references.md) |
+| `ReferenceCapabilityError` | Raised when a run needs evidence the reference does not carry | [Portable local references](../guides/portable-references.md) |
 | `ConfigInfo` | Identity metadata | [Reference cartridge](../concepts/reference-cartridge.md) |
 | `ChainType` | `BCR_HEAVY` / `BCR_LIGHT_KAPPA` / ... | - |
 | `Species` | `HUMAN` / `MOUSE` / ... | - |
 | `Productivity` | Productive / NonProductive enumeration | - |
-| `list_configs` | Enumerate the 100+ bundled cartridges | - |
+| `list_configs` | Enumerate the 106 bundled cartridges | - |
 | `DataConfigError` | DataConfig validation failure | - |
 
 ### Bundled cartridges (lazy-loaded)
@@ -70,9 +74,12 @@ cfg = ga.HUMAN_IGH_OGRDB     # pickled cartridge - loaded on first access
 | `HUMAN_TCRB_IMGT` | Human TRB, IMGT |
 
 The five top-level bundled cartridges above are the most commonly
-used. The full 100+-cartridge catalogue stays reachable via
+used. The full 106-cartridge catalogue stays reachable via
 `ga.list_configs()` and `GenAIRR.data.<NAME>` (lazy attribute
-access).
+access). 80 of the 106 carry unresolved anchor or pseudogene/ORF
+findings and are quarantined under strict compilation - see
+[Reference evidence and quarantine](../cartridges/reference-evidence.md)
+for the list and for `allow_curatable_refdata()`.
 
 ### Reference cartridge authoring
 
@@ -86,6 +93,7 @@ access).
 | `EmpiricalDistributionSpec` | `[(value, weight), ...]` shape | [Reference cartridge](../concepts/reference-cartridge.md) |
 | `NpBaseModelSpec` | NP-base sampling model (uniform / empirical / Markov) | [Junction N/P additions](../guides/junction-additions.md) |
 | `AlleleUsageSpec` | Per-segment allele-usage weights | [Reference cartridge](../concepts/reference-cartridge.md) |
+| `CodingEndOutcomeModel` | Signed net coding-end outcome model, with fitting and held-out scoring | [Retained coding end calibration](../guides/coding-end-calibration.md) |
 
 ### Validation reports and exceptions
 
@@ -111,12 +119,14 @@ is called.
 | **Recombination** | `.recombine()`, `.invert_d(prob=...)`, `.receptor_revision(prob=...)` | Ancestor-phase mechanisms |
 | **Constraints** | `.productive_only()`, `.restrict_alleles(v=..., d=..., j=...)` | Constrain the sample space |
 | **Biological mutation** | `.mutate(model="s5f"\|"uniform", rate=..., count=..., segment_rates=..., v_subregion_rates=...)` | The only pass that increments `n_mutations` |
-| **Clonal structure** | `.clonal_lineage(...)`, `.clonal_repertoire(...)`, legacy `.expand_clones(...)` | BCR trees, TCR / flat-BCR abundance repertoires, or fixed-size star families |
+| **Clonal structure** | `.clonal_lineage(...)`, `.clonal_repertoire(...)`, legacy `.expand_clones(...)` | BCR trees, TCR / flat-BCR abundance repertoires, or fixed-size star families. `expand_clones` is deprecated and raises a `DeprecationWarning` |
+| **Genotype** | `.with_genotype(genotype)` | Haplotype-phased recombination from one subject's diploid complement; see [Genotypes](../guides/genotype.md) |
 | **Trims override** | `.trim(v_3=..., d_5=..., d_3=..., j_5=..., enabled=...)` | Per-experiment trim distribution overrides |
 | **Library / sequencer artefacts** | `.pcr_amplify(...)`, `.polymerase_indels(...)`, `.ambiguous_base_calls(...)`, `.sequencing_errors(...)`, `.end_loss_5prime(...)`, `.end_loss_3prime(...)` | All descendant-phase |
 | **Read layout** | `.paired_end(r1_length=..., r2_length=..., insert_size=...)`, `.random_strand_orientation(prob=...)` | Per-read projection |
 | **Bookkeeping** | `.with_metadata(...)`, `.contaminate(prob=...)` | Stamp metadata; inject background contaminants |
 | **Run** | `.run_records(n=..., seed=..., validate_records=..., strict=..., expose_provenance=...)`, `.run(...)`, `.stream(...)`, `.stream_records(...)` | Compile + run + project |
+| **Run a cohort** | `.run_cohort(genotypes, *, n_per_subject=1, seed=0, counts=None, strict=False, expose_provenance=False)` | Many subjects in one call; returns a `CohortResult`. See [Genotype cohorts](../guides/genotype-cohorts.md) |
 | **Compile reuse** | `.compile()` | Compile once, reuse across many batches |
 | **Compile mode** | `.allow_curatable_refdata()`, `.curate_refdata(policy)` | Cartridge-validation mode at compile time |
 
@@ -133,7 +143,7 @@ record dicts plus the underlying `Outcome` objects.
 | **List-like access** | `len(result)`, `result[i]`, `result[a:b]`, `for rec in result:` | One AIRR dict per element |
 | **Underlying state** | `.records`, `.outcomes`, `.parents`, `.lineage_trees` | `outcomes` is `None` when built from records only; `parents` exists only for legacy `expand_clones`; `lineage_trees` exists on lineage results |
 | **Validation** | `.validate_records(refdata)`, `.validate_families()`, `.validate_families_with_parents(refdata)` | See [Validation hub](../validation/index.md) |
-| **Export** | `.to_tsv(path, *, airr_strict=True)`, `.to_csv(path, *, airr_strict=False)`, `.to_fasta(path, *, prefix="seq")`, `.to_fastq(path, *, quality="illumina", **kw)`, `.to_paired_fastq(r1, r2, *, quality="illumina", overwrite=False, **kw)`, `.to_dataframe(*, airr_strict=False)` | TSV defaults to AIRR coordinate/CIGAR conversion and `T` / `F` booleans; see [Export the results](../getting-started/export-results.md) |
+| **Export** | `.to_tsv(path, *, airr_strict=True)`, `.to_csv(path, *, airr_strict=False)`, `.to_fasta(path, *, prefix="seq")`, `.to_fastq(path, *, quality="illumina", **kw)`, `.to_paired_fastq(r1, r2, *, quality="illumina", overwrite=False, **kw)`, `.to_dataframe(*, airr_strict=False)`, `.to_genotype_tsv(path)` | TSV defaults to AIRR coordinate/CIGAR conversion and `T` / `F` booleans; `to_genotype_tsv` writes the genotype truth sidecar and raises when the run carried no genotype, or when its genotypes carry no `subject_id`. See [Export the results](../getting-started/export-results.md) |
 | **Construction** | `SimulationResult.from_outcomes(outcomes, refdata, *, id_prefix="seq", expose_provenance=False)` | Build a result from Rust `Outcome` objects + refdata; `expose_provenance=True` injects `truth_*_call` columns |
 
 ## Reports and exceptions
@@ -145,7 +155,7 @@ report = result.validate_records(refdata)
 report.ok        # bool - every record passed
 report.count     # int - total records validated
 report.failures  # list[dict] - per-record failure entries with structured issues
-report.summary() # str - histogram of issue kinds
+report.summary() # dict[str, int] - issue kind -> count ({} when ok)
 bool(report)     # == report.ok
 ```
 
@@ -233,10 +243,6 @@ A few surfaces deliberately don't appear on this page:
 - **Experimental / private helpers.** Anything under `GenAIRR._*`
   is private; signatures and behaviour can change between
   releases without notice.
-- **Pre-engine documentation.** The historical `_old_docs/`
-  directory in the repository carries an earlier docs system
-  that predates the Rust engine; it's preserved for reference
-  but not migrated into the current site.
 
 For the full per-symbol docstring inventory, the **API Reference**
 nav section carries `mkdocstrings`-driven pages for

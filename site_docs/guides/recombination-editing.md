@@ -329,9 +329,11 @@ the replacement allele happened to land on the same V).
 **Treating `d_cigar` coordinates as reversed.** Under
 `d_inverted=True`, the CIGAR ops still use the forward allele's
 coordinate space - `d_germline_start/end` are forward-allele
-coordinates. The match-rate `d_identity` drops because the
-inverted pool bytes don't match the forward allele bytes, but
-the coordinate system stays stable. If your downstream pipeline
+coordinates, and the coordinate system stays stable. Inversion on
+its own does **not** lower `d_identity`: the engine aligns the
+inverted reference in its assembled orientation, so an unmutated
+inverted D reports `d_identity == 1.0`, exactly as a forward one
+does. If your downstream pipeline
 re-RCs the bytes before comparing, do it on
 `rec["sequence"][d_sequence_start:d_sequence_end]` - don't
 remap the coordinates.

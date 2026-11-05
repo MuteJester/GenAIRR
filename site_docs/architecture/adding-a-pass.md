@@ -3,12 +3,6 @@
 
 _Linked from `docs/adding_a_pass.md`._
 
-!!! info "Migration placeholder"
-    This page is a placeholder. Content lands in **Phase 5**
-    of the migration plan documented in
-    [`docs/docs_mkdocs_migration_plan.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/docs_mkdocs_migration_plan.md).
-
-    Until then, see the corresponding live page on the existing
-    documentation site at
-    [mutejester.github.io/GenAIRR](https://mutejester.github.io/GenAIRR/)
-    or the source markdown referenced above (if any).
+!!! info "This page has not been written yet"
+    There is no content here yet. What you are looking for is most
+    likely on [Architecture](https://mutejester.github.io/GenAIRR/architecture/index.html).

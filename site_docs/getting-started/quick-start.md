@@ -28,8 +28,8 @@ print(len(result))               # 1000
 rec = result[0]
 print(rec["v_call"],
       rec["d_call"],
-      rec["j_call"])              # 'IGHVF10-G38*04 IGHD2-15*01 IGHJ2*01'
-print(rec["junction_aa"])         # 'CVKDDGNRGYCSGGSCYGRCCALDYWYFDLW'
+      rec["j_call"])              # 'IGHVF6-G23*01 IGHD1-20*01 IGHJ1*01'
+print(rec["junction_aa"])         # 'CARCRTRLTRAYHITGTAHFQHW'
 print(rec["productive"])          # True
 ```
 

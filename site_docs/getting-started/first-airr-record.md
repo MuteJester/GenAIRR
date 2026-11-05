@@ -9,7 +9,7 @@ real record so you can read your own output confidently.</p>
 ```python
 import GenAIRR as ga
 
-result = ga.Experiment.on("human_igh").recombine().run_records(n=1, seed=0)
+result = ga.Experiment.on("human_igh").recombine().run_records(n=1, seed=5)
 rec = result[0]
 print(rec)
 ```
@@ -20,15 +20,15 @@ keys; we'll cover them by category below):
 ```python
 {
     "sequence_id":   "seq0",
-    "sequence":      "gaggtgcagctggtg...",
-    "sequence_aa":   "EVQLVESGGGLVQPG...",
+    "sequence":      "gaagtgcagctggtg...",
+    "sequence_aa":   "EVQLVESGGVVVQPG...",
     "locus":         "IGH",
-    "v_call":        "IGHVF10-G38*04",
-    "d_call":        "IGHD2-15*01",
-    "j_call":        "IGHJ2*01",
-    "junction":      "TGTGCGAGAGATGATGGAAATAGAGGCTACTGCAGT...",
-    "junction_aa":   "CARDDGNRGYCSGGSCYGRCCALDYW",
-    "junction_length": 78,
+    "v_call":        "IGHVF10-G42*04",
+    "d_call":        "IGHD2-2*02",
+    "j_call":        "IGHJ1*01",
+    "junction":      "tgtgcaaaagatATCTTTAACGAatattgtagtagtacc...",
+    "junction_aa":   "CAKDIFNEYCSSTSCYFQHW",
+    "junction_length": 60,
     "productive":    True,
     "vj_in_frame":   True,
     "stop_codon":    False,
@@ -41,8 +41,8 @@ keys; we'll cover them by category below):
 ## Sequence
 
 ```python
-rec["sequence"]       # 'gaggtgcagctggtg…' - assembled nucleotide
-rec["sequence_aa"]    # 'EVQLVESGGGLVQPG…' - codon-rail translation
+rec["sequence"]       # 'gaagtgcagctggtg…' - assembled nucleotide
+rec["sequence_aa"]    # 'EVQLVESGGVVVQPG…' - codon-rail translation
 rec["sequence_id"]    # 'seq0' - auto-assigned; carries to FASTQ headers
 rec["locus"]          # 'IGH' - derived from v_call / j_call
 ```
@@ -55,9 +55,9 @@ translation - stops emit `*`, ambiguous codons emit `X`.
 ## V / D / J calls
 
 ```python
-rec["v_call"]    # 'IGHVF10-G38*04'
-rec["d_call"]    # 'IGHD2-15*01'
-rec["j_call"]    # 'IGHJ2*01'
+rec["v_call"]    # 'IGHVF10-G42*04'
+rec["d_call"]    # 'IGHD2-2*02'
+rec["j_call"]    # 'IGHJ1*01'
 ```
 
 Each standard call names the generating allele used by the corresponding
@@ -74,9 +74,9 @@ calls when `expose_provenance=True`.
 ## Junction + productivity
 
 ```python
-rec["junction"]         # 'TGTGCGAGAGATGAT…' - V Cys through J W/F + 3
-rec["junction_aa"]      # 'CARDDGNRGYCSGGSCYGRCCALDYW'
-rec["junction_length"]  # 78
+rec["junction"]         # 'tgtgcaaaagatATCTTT…' - V Cys through J W/F + 3
+rec["junction_aa"]      # 'CAKDIFNEYCSSTSCYFQHW'
+rec["junction_length"]  # 60
 rec["productive"]       # True
 rec["vj_in_frame"]      # True
 rec["stop_codon"]       # False
@@ -147,7 +147,7 @@ When `productive_only()` is in the pipeline, every record carries
 
 ```python
 rec["coding_frame_start"] # 0    (first base of the reading frame)
-rec["coding_frame_end"]   # 316  (one past the last base assessed)
+rec["coding_frame_end"]   # 376  (one past the last base assessed)
 rec["j_tail_in_frame"]    # True (the fifth predicate of `productive`)
 rec["v_anchor_accepted"]  # True (the first two)
 rec["j_anchor_accepted"]  # True
@@ -223,20 +223,21 @@ its germline, and none of them moves this count — those are reported on
 ## Paired-end fields (when requested)
 
 ```python
-rec["read_layout"]    # 'single' by default; 'paired_end' after .paired_end(...)
+rec["read_layout"]    # '' by default; 'paired_end' after .paired_end(...)
 rec["r1_sequence"]    # '' unless paired_end is in the pipeline
 rec["r2_sequence"]    # ''
-rec["r1_start"]       # 0
-rec["r1_end"]         # 0
-rec["r2_start"]       # 0
-rec["r2_end"]         # 0
+rec["r1_start"]       # None
+rec["r1_end"]         # None
+rec["r2_start"]       # None
+rec["r2_end"]         # None
 rec["insert_size"]    # 0
 ```
 
 These fields are always present on the record dict for schema
 stability, but they're populated only when `Experiment.paired_end(
 r1_length=..., r2_length=..., insert_size=...)` is in the pipeline.
-Otherwise they carry their zero / empty defaults.
+Otherwise the four window coordinates are `None`, `read_layout` and the
+two sequences are empty strings, and `insert_size` is `0`.
 
 ## The full schema
 

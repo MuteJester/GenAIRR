@@ -57,7 +57,11 @@ excludes an allele), and unspecified genes fall back to uniform.
     population source (e.g. VDJbase) for realistic per-gene frequencies; the default
     is uniform within each gene. `allele_frequencies="usage_as_prior"` is an
     explicit opt-in that reuses the cartridge's recombination `allele_usage` as a
-    frequency proxy - convenient but biologically approximate.
+    frequency proxy - convenient but biologically approximate, and it requires a
+    cartridge that actually carries a typed `reference_models.allele_usage`
+    plane. The bundled cartridges (`HUMAN_IGH_OGRDB` included) do not, so on
+    those it raises `ValueError`; estimate the plane first with
+    `ReferenceCartridgeBuilder.estimate_allele_usage(...)`.
 
 ### Loading population frequencies
 
@@ -126,8 +130,11 @@ Given a list of observed `Genotype` objects (e.g. one per donor), estimate a
 prior directly:
 
 ```python
+# Each genotype needs a subject_id: the default
+# subject_id_policy="require_unique" refuses a list it cannot check for
+# duplicate subjects. Pass subject_id_policy="allow_duplicates" to opt out.
 model = PopulationGenotypeModel.from_genotypes(
-    [g_donor1, g_donor2, g_donor3],
+    [g_donor1.with_subject("D1"), g_donor2.with_subject("D2"), g_donor3.with_subject("D3")],
     cfg=cfg, model_id="cohort-est", source="my-cohort",
 )
 # or, attaching to a builder in one chained step:

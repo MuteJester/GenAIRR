@@ -53,15 +53,22 @@ the present state and the immutable history of how you got here.
 ## Reading the manifest
 
 `cfg.cartridge_manifest()` returns a single nested dict with
-nine top-level keys:
+twelve top-level keys:
 
 ```python
 manifest = cfg.cartridge_manifest()
 sorted(manifest)
-# ['catalogue', 'curation', 'dropped_allele_fields', 'errors',
+# ['catalogue', 'checksum_scheme', 'curation', 'dropped_allele_fields',
 #  'hashes', 'identity', 'models', 'orphan_dataconfig_fields',
-#  'rules', 'schema_version']
+#  'reference_audit', 'reference_evidence', 'rules', 'schema_version']
 ```
+
+`checksum_scheme` names the checksum algorithm the artifact was
+stamped with (`pickle4_roundtrip_v2` on cartridges built by the
+current builder, `pickle4_v1` on archived ones).
+`reference_audit` and `reference_evidence` carry the catalogue's
+quarantine findings and its sequence-bound landmark evidence - see
+[Reference evidence and quarantine](../cartridges/reference-evidence.md).
 
 The remaining sections walk through each.
 
@@ -134,8 +141,14 @@ manifest["models"]
 #   "np_length_models": {...},
 #   "np_base_models": {...},
 #   "p_nucleotide_models": {...},
-#   "np_length_keys": ["NP1", "NP2"],
-#   "trim_keys": ["v_trim_3", "d_trim_5", "d_trim_3", "j_trim_5"],
+#   "genotype_priors": {...},
+# }
+# The trim and NP length keys live inside their own blocks, as plane
+# keys rather than DataConfig field names:
+#   manifest["models"]["trim_models"]["keys"]       # ["D_3","D_5","J_5","V_3"]
+#   manifest["models"]["np_length_models"]["keys"]  # ["NP1","NP2"]
+# Both are [] on a cartridge with no typed plane (HUMAN_IGH_OGRDB included).
+# {
 #   "legacy_np_lengths_present": False,
 #   "legacy_trim_dicts_present": False
 # }
@@ -186,8 +199,8 @@ surface.
 ```python
 manifest["hashes"]
 # {
-#   "data_config_checksum": "sha256:e3b0c44...",
-#   "refdata_content_hash": "sha256:6a1f8b2..."
+#   "data_config_checksum": "a66c87e1...",      # bare hex, no prefix
+#   "refdata_content_hash": "sha256:a98f4dad..."  # prefixed
 # }
 ```
 
@@ -260,9 +273,11 @@ One entry per builder method that ran. Each carries:
 - `inferred` - what the stage computed (counts, model summaries,
   fallback flags)
 - `warnings` - stage-level warnings (e.g. P-naive zero-fraction)
-- `replaced` - `True` when an estimator overwrote a prior typed
-  plane (idempotency marker; see
-  [Estimate cartridge models from real data](estimate-cartridge-models.md))
+
+Those four are the whole stage dict. An estimator's idempotency
+marker is `inputs["replaced"]` - `True` when the estimator
+overwrote a prior typed plane - not a fifth top-level key; see
+[Estimate cartridge models from real data](estimate-cartridge-models.md).
 
 ### `warnings`
 
@@ -316,12 +331,13 @@ assert manifest["catalogue"]["j_count"] >= 5
 
 # Models - every plane you need must be attached
 assert manifest["models"]["allele_usage"]["available"]
-assert manifest["models"]["trim_models"]["available"]
-assert manifest["models"]["np_length_models"]["available"]
+assert manifest["models"]["trim_models"]["keys"]
+assert manifest["models"]["np_length_models"]["keys"]
 assert manifest["models"]["np_base_models"]["models"]
 
-# No deferred errors
-assert not manifest.get("errors")
+# Only `allele_usage` and `genotype_priors` carry an `available`
+# flag. The trim / NP-length blocks report their plane `keys`
+# instead, which are empty when no typed plane is attached.
 
 # No rejected rows above an acceptable threshold (records-driven build)
 assert len(report.rejected) < 0.01 * len(input_records)
@@ -364,8 +380,8 @@ be filtered to known alleles.
 **Zero coverage for a model plane.** An estimator stage that
 ran on zero rows (all rows rejected). The cartridge silently
 falls back to defaults for that plane; the build report's stage
-entry stamps `records_used: 0`. Pin the count in CI to catch
-this.
+entry stamps `inputs["record_count"]`. Pin that count in CI to
+catch this.
 
 ## Hashes and reproducibility
 

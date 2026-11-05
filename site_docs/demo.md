@@ -98,8 +98,7 @@ df = result.to_dataframe()
 
 ```text
 len(result) = 1000
-df.shape    = (1000, 102)
-elapsed     = 2.0s
+df.shape    = (1000, 128)
 ```
 
 </div>
@@ -112,26 +111,26 @@ elapsed     = 2.0s
   <div class="demo-airr-card">
     <div class="demo-airr-sequence">
       <span class="demo-node-kicker">row 0 sequence</span>
-      <code>CVKDDGNRGYCSGDSCYGHCCALDYWYFDLW</code>
+      <code>CARCRTRLTRAYHITGTAHFQHW</code>
     </div>
     <div class="demo-airr-columns">
       <section>
         <span class="demo-airr-column-title">Observed fields</span>
-        <div><b>v_call</b><code>IGHVF10-G38*04</code></div>
-        <div><b>d_call</b><code>IGHD2-15*01</code></div>
-        <div><b>j_call</b><code>IGHJ2*01</code></div>
+        <div><b>v_call</b><code>IGHVF6-G23*01</code></div>
+        <div><b>d_call</b><code>IGHD1-20*01</code></div>
+        <div><b>j_call</b><code>IGHJ1*01</code></div>
       </section>
       <section>
         <span class="demo-airr-column-title">Ground truth</span>
-        <div><b>truth_v_call</b><code>IGHVF10-G38*04</code></div>
-        <div><b>truth_d_call</b><code>IGHD2-15*01</code></div>
-        <div><b>truth_j_call</b><code>IGHJ2*01</code></div>
+        <div><b>truth_v_call</b><code>IGHVF6-G23*01</code></div>
+        <div><b>truth_d_call</b><code>IGHD1-20*01</code></div>
+        <div><b>truth_j_call</b><code>IGHJ1*01</code></div>
       </section>
       <section>
         <span class="demo-airr-column-title">Record state</span>
         <div><b>productive</b><code>True</code></div>
-        <div><b>n_mutations</b><code>10</code></div>
-        <div><b>columns</b><code>102</code></div>
+        <div><b>n_mutations</b><code>14</code></div>
+        <div><b>columns</b><code>128</code></div>
       </section>
     </div>
   </div>
@@ -173,7 +172,7 @@ print(f"With    productive_only(): {constrained_productive:.1%}")
 <div class="demo-cell-label demo-cell-label--output">Output</div>
 
 ```text
-Without productive_only(): 18.5%
+Without productive_only(): 19.0%
 With    productive_only(): 100.0%
 ```
 
@@ -182,8 +181,8 @@ With    productive_only(): 100.0%
 <div class="demo-bars" markdown="0">
   <div class="demo-bar-row">
     <div class="demo-bar-label">Without productive_only()</div>
-    <div class="demo-bar-track"><div class="demo-bar-fill demo-bar-fill--warn" style="width: 18.5%;"></div></div>
-    <div class="demo-bar-value">18.5%</div>
+    <div class="demo-bar-track"><div class="demo-bar-fill demo-bar-fill--warn" style="width: 19.0%;"></div></div>
+    <div class="demo-bar-value">19.0%</div>
   </div>
   <div class="demo-bar-row">
     <div class="demo-bar-label">With productive_only()</div>
@@ -212,7 +211,7 @@ pipeline.
     <div class="demo-flow-arrow" aria-hidden="true"></div>
     <section class="demo-node demo-node--neutral demo-node--compact">
       <span class="demo-node-kicker">Trace file</span>
-      <strong>12,996 bytes</strong>
+      <strong>14,247 bytes</strong>
     </section>
     <div class="demo-flow-arrow" aria-hidden="true"></div>
     <section class="demo-node demo-node--neutral demo-node--compact">
@@ -258,7 +257,7 @@ replayed = compiled.simulator.replay_from_trace_file(tf, strict=False)
 <div class="demo-cell-label demo-cell-label--output">Output</div>
 
 ```text
-trace size = 12,996 bytes
+trace size = 14,247 bytes
 byte-identical fields = sequence, V/D/J calls, junction_aa, n_mutations
 ```
 
@@ -280,7 +279,9 @@ compiled_modified.simulator.replay_from_trace_file(tf, strict=False)
 <div class="demo-cell-label demo-cell-label--output">Output</div>
 
 ```text
-ValueError: replay_from_trace_file: pass plan signature mismatch.
+ValueError: replay_from_trace_file: trace-file pass plan signature mismatch:
+  expected: sample_allele.v()|...|mutate.s5f(rate=0.03)
+  actual:   sample_allele.v()|...|mutate.s5f(rate=0.05)
 ```
 
 </div>
@@ -291,7 +292,9 @@ ValueError: replay_from_trace_file: pass plan signature mismatch.
 
 One parent recombination can fork into many independently mutated
 descendants. This demo uses legacy `expand_clones` for the simple
-fixed-size star shape; for new clone benchmarks, see
+fixed-size star shape - it is deprecated and raises a
+`DeprecationWarning`, but it is still the only surface that gives an
+exact per-clone count. For new clone benchmarks, see
 [`clonal_lineage`](guides/clonal-lineage.md) for BCR trees and
 [`clonal_repertoire`](guides/clonal-repertoire.md) for TCR / abundance
 repertoires.
@@ -315,7 +318,7 @@ result = (
 records = 500
 parents = 10
 per clone = 50
-clone 0 SHM counts = 4, 14, 8, 7, 5, ...
+clone 0 SHM counts = 10, 7, 4, 13, 14, ...
 validate_families() = ok
 ```
 

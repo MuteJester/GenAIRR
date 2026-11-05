@@ -58,14 +58,14 @@ result = (
       .end_loss_5prime(length=(0, 3))
       .end_loss_3prime(length=(0, 3))
       .random_strand_orientation(prob=0.5)
-      .paired_end(r1_length=150, insert_size=(250, 450))
+      .paired_end(r1_length=150, insert_size=(250, 350))
       .run_records(n=100, seed=1, validate_records=True)
 )
 
 print(len(result))                                     # 100
-print(result[0]["productive"], result[0]["v_call"])    # True 'IGHVF10-G38*04'
+print(result[0]["productive"], result[0]["v_call"])    # True 'IGHVF10-G51*02'
 print(result[0]["read_layout"])                        # 'paired_end'
-print(result[0]["r1_sequence"][:30])                   # 'gaggtgcagctg...'
+print(result[0]["r1_sequence"][:30])                   # 'Gctgaggagacggtgaccagggtgccctgg'
 ```
 
 That's a finished simulation: every record is productive, has
@@ -234,8 +234,11 @@ result = exp.run_records(n=1000, seed=42, validate_records=True)
 
 Two flags carry most of the reproducibility story:
 
-- **`seed=`** - same seed → byte-identical output across runs and
-  platforms. `n` consecutive seeded records use seeds
+- **`seed=`** - the same seed, run against the same
+  `GenAIRR.DETERMINISM_VERSION`, gives byte-identical output; a different
+  determinism version promises nothing at all. The goldens check this on
+  Linux, macOS and Windows across Python 3.10-3.13. `n` consecutive
+  seeded records use seeds
   `[seed, seed+1, …, seed+n-1]`, so batches stitch together if you
   offset the starting seed **by at least `n`**. Offset by less and they
   overlap: `n=1000, seed=0` and `n=1000, seed=1` share 999 records. See

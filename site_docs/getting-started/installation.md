@@ -6,8 +6,10 @@ required on any supported platform.</p>
 
 ## Requirements
 
-- **Python 3.9 or newer** (3.9, 3.10, 3.11, 3.12, and 3.13 are
-  officially supported and CI-tested).
+- **Python 3.9 or newer.** The test suite runs in CI on Python
+  3.10, 3.11, 3.12 and 3.13, on Linux, macOS and Windows. Python 3.9
+  is supported and its wheels are smoke-tested on all three platforms,
+  but the suite is not run against it.
 - One of the following platforms with a pre-built wheel:
     - Linux x86_64 or aarch64
     - macOS Intel or Apple Silicon
@@ -36,6 +38,7 @@ After install, a one-liner confirms everything is in place:
 import GenAIRR as ga
 
 print(ga.__version__)
+print(ga.DETERMINISM_VERSION)   # which sampling model this engine ships
 ```
 
 If this prints a version string, the Python API loaded and the
@@ -60,10 +63,10 @@ pip install GenAIRR[viz]          # graphviz
 pip install GenAIRR[mcp]          # fastmcp (for the MCP server)
 ```
 
-`pandas` is needed for `result.to_dataframe()`; it ships under
-`[all]`. The core simulator works without any extras - every export
-format except `to_dataframe` is implemented in pure Python on the
-standard library.
+`pandas` is needed for `result.to_dataframe()` and is **not** part of
+any extra - install it yourself (`pip install pandas`). The core
+simulator works without any extras: every export format except
+`to_dataframe` is implemented in pure Python on the standard library.
 
 ## Documentation build (optional, for contributors)
 

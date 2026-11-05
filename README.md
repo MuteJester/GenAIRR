@@ -57,20 +57,21 @@ result = (
 len(result)                 # 1000
 rec = result[0]
 
-rec["sequence"]             # 'gaggtgcagctggtggagtctgggggaggc...' (nucleotide)
-rec["sequence_aa"]          # 'EVQLVESGGGLVQPGGSLRLSCSAS...'      (translated)
+rec["sequence"]             # 'caggtgcagctggtgcagtctggggctgaggtg...' (nucleotide)
+rec["sequence_aa"]          # 'QVQLVQSGAEVKKPGASVKVSCKASGYTFTSYY...' (translated)
 rec["locus"]                # 'IGH'
-rec["v_call"]               # 'IGHVF10-G38*04'   (generating allele)
+rec["v_call"]               # 'IGHVF6-G23*01'    (generating allele)
 rec["recalled_v_call"]      # post-mutation inference; comma-separated when tied
-rec["d_call"]               # 'IGHD2-15*01'
-rec["j_call"]               # 'IGHJ2*01'
-rec["junction_aa"]          # 'CVKDDGNRGYCSGGSCYGRCCALDYWYFDLW'
+rec["d_call"]               # 'IGHD1-20*01'
+rec["j_call"]               # 'IGHJ1*01'
+rec["junction_aa"]          # 'CARCRTRLTRAYHITGTAHFQHW'
 rec["productive"]           # True
 rec["v_identity"]           # 1.0  (matches/total over the V segment)
 rec["n_mutations"]          # 0
+rec["determinism_version"]  # 4    (which sampling model drew this record)
 
 # Export in any of the standard formats. TSV/FASTA/FASTQ are dependency-free;
-# to_dataframe() needs pandas (pip install GenAIRR[all]).
+# to_dataframe() needs pandas (pip install pandas).
 result.to_tsv("repertoire.tsv")        # AIRR-spec TSV (50+ columns)
 result.to_fasta("sequences.fasta")     # FASTA with v_call/j_call in the headers
 result.to_fastq("sequences.fastq")     # FASTQ with illumina-shaped quality scores
@@ -96,11 +97,11 @@ result = (
 result.to_paired_fastq("reads_R1.fastq", "reads_R2.fastq")
 ```
 
-Headers use the AIRR record's `sequence_id` with the universally-portable `/1` and `/2` suffix (`@seq0/1` and `@seq0/2`) — no `|`-pipe metadata that some aligners (STAR < 2.7) split on. R1 / R2 sequences are written verbatim from the AIRR `r1_sequence` / `r2_sequence` fields (R2 is already reverse-complemented at projection time; the writer does NOT apply a second flip). Default `overwrite=False` refuses to clobber existing files; pass `overwrite=True` to replace. Quality strings use the same pluggable models as `to_fastq` — `quality="illumina"` (default trapezoid shape, applied per read) or `quality="constant"` with `q=...`. See [`docs/fastq_export_design.md`](audit-docs/fastq_export_design.md).
+Headers use the AIRR record's `sequence_id` with the universally-portable `/1` and `/2` suffix (`@seq0/1` and `@seq0/2`) — no `|`-pipe metadata that some aligners (STAR < 2.7) split on. R1 / R2 sequences are written verbatim from the AIRR `r1_sequence` / `r2_sequence` fields (R2 is already reverse-complemented at projection time; the writer does NOT apply a second flip). Default `overwrite=False` refuses to clobber existing files; pass `overwrite=True` to replace. Quality strings use the same pluggable models as `to_fastq` — `quality="illumina"` (default trapezoid shape, applied per read) or `quality="constant"` with `q=...`. The requested `insert_size` has to fit inside the molecule: on human IGH a record is roughly 350–440 nt, so an insert of 450 leaves the R2 window off the end of the sequence and `validate_records` reports `ReadWindowOutOfBounds`. See [`audit-docs/fastq_export_design.md`](audit-docs/fastq_export_design.md).
 
 `Experiment.on(...)` accepts **a config-name string** (e.g. `"human_igh"`, `"mouse_tcrb"`), **a `DataConfig`** loaded from the bundled species pickles, or **a `RefDataConfig`** for [custom reference data](#custom-reference-data). `.productive_only()` is the constraint-aware bundle — covered in the next section. Drop it to sample without the productivity constraint; records then report true, false, or unresolved productivity according to their observed evidence.
 
-> See the full walkthrough in the docs: [Quick Start](https://mutejester.github.io/GenAIRR/lesson-1.html) · [Interpreting Results](https://mutejester.github.io/GenAIRR/concept-airr-record.html)
+> See the full walkthrough in the docs: [Quick Start](https://mutejester.github.io/GenAIRR/getting-started/quick-start.html) · [Your first AIRR record](https://mutejester.github.io/GenAIRR/getting-started/first-airr-record.html) · [Interpreting Results](https://mutejester.github.io/GenAIRR/concepts/airr-record.html)
 
 ---
 
@@ -134,24 +135,23 @@ result = (
       .ambiguous_base_calls(count=(0, 2))
       # 4. Stamp arbitrary metadata onto every record.
       .with_metadata(experiment_id="exp001", tissue="peripheral_blood")
-      # The founder is drawn under the productive() constraint. Accumulated
-      # SHM and corruption passes can still introduce stop codons /
-      # frameshifts in individual cells, so expect ~75% productive under
-      # this SHM + corruption load — that mirrors real wet-lab data, where a
-      # productive B-cell can sequence as a non-productive read.
+      # The constraint is carried, not just applied to the founder: each
+      # lineage division and each corruption pass draws only substitutions,
+      # indels and masks that keep the cell productive, so every emitted
+      # record is productive by construction.
       .productive_only().run_records(seed=42)
 )
 
-len(result)                                  # 415   (sampled live cells across 50 trees)
-sum(1 for r in result if r["productive"])    # 316   (~76% under this SHM + corruption load)
+len(result)                                  # 440   (sampled live cells across 50 trees)
+sum(1 for r in result if r["productive"])    # 440   (all of them — see the note above)
 len(result.lineage_trees)                    # 50    (one ground-truth tree per clone)
 
 # Same clone, different cells — shared founder V(D)J,
 # independent SHM + errors:
 result[0]["clone_id"], result[1]["clone_id"]              # (0, 0)
-result[0]["v_call"],   result[1]["v_call"]                # both 'IGHVF10-G51*05'
-result[0]["n_mutations"], result[1]["n_mutations"]        # (14, 11) — independent SHM
-result[0]["n_pcr_errors"], result[1]["n_pcr_errors"]      # (3, 0)   — independent errors
+result[0]["v_call"],   result[1]["v_call"]                # both 'IGHVF6-G21*11'
+result[0]["n_mutations"], result[1]["n_mutations"]        # (11, 17) — independent SHM
+result[0]["n_pcr_errors"], result[1]["n_pcr_errors"]      # (1, 0)   — independent errors
 
 # Custom metadata propagated:
 result[0]["experiment_id"], result[0]["tissue"]           # ('exp001', 'peripheral_blood')
@@ -168,7 +168,7 @@ GenAIRR models clonal structure three ways. Pick by what you need:
 |---|---|---|
 | **`clonal_lineage`** | BCR affinity-maturation **trees** — generation-synchronous birth–death, per-division S5F SHM, optional affinity selection, sample + genotype-collapse | B-cell lineage trees with **ground truth** (Newick/FASTA per clone), benchmarking lineage/clone inference, ML training data |
 | **`clonal_repertoire`** | Non-tree **abundance** repertoires — heavy-tailed clone sizes (power-law/lognormal) + unexpanded-singleton fraction, reads through library-prep, collapsed to `duplicate_count` | **TCR** repertoires (no SHM) and flat-BCR abundance; clone-calling benchmarks |
-| `expand_clones` *(deprecated)* | Fixed-size **star**: one founder + `per_clone` independent descendants | legacy; kept working, but prefer the two above |
+| `expand_clones` *(deprecated)* | Fixed-size **star**: one founder + `per_clone` independent descendants | legacy; still works and still the only way to get an exact per-clone count, but it raises a `DeprecationWarning` — prefer the two above |
 
 ```python
 import GenAIRR as ga
@@ -205,13 +205,66 @@ Other feature flags worth knowing:
 | `.restrict_alleles(v=[...], d=[...], j=[...])` | Restrict allele sampling to a specific subset — useful for benchmarking against a known repertoire. |
 | `.mutate(model="uniform", rate=0.03)` | Use a uniform-rate mutation model instead of S5F. |
 | `.mutate(model="s5f", rate=0.03, segment_rates={"V": 1.0, "D": 0.2, "J": 0.5, "NP": 0.0})` | Restrict SHM targeting by biological region class. Buckets are `"V"`, `"D"`, `"J"`, `"NP"` (the NP entry covers both NP1 and NP2). Omitted buckets default to `1.0`; `0.0` disables a region entirely so sites in it drop out of proposal support before contract admissibility. Default (no kwarg) is byte-identical to the pre-slice engine. Composes with `productive_only()`; replay reproduces exactly when the same rate vector is used. The rate vector itself is **not** part of cartridge identity / Rust `content_hash` — it's a per-experiment parameter (audit's documented v1 boundary). |
-| `.mutate(model="s5f", rate=0.03, segment_rates={"V": 1.0, "NP": 0.0}, v_subregion_rates={"CDR": 2.0, "FWR": 0.5})` | Refine V-segment SHM targeting by IMGT subregion on top of `segment_rates`. Accepted keys are the five canonical labels `"FWR1"` / `"CDR1"` / `"FWR2"` / `"CDR2"` / `"FWR3"` plus the two aliases `"FWR"` (expands to FWR1 / FWR2 / FWR3) and `"CDR"` (expands to CDR1 / CDR2). **Alias expansion runs first, then explicit labels override** — `{"FWR": 0.5, "FWR2": 2.0}` resolves to `FWR1=0.5, FWR2=2.0, FWR3=0.5, CDR1=1.0, CDR2=1.0`. The V-site weight becomes `base × segment_rate(V) × v_subregion_rate(label)`. Non-V sites and V alleles without subregion annotations receive identity factor `1.0`, so the kwarg composes cleanly with mixed cartridges and with `productive_only()`. Default (no kwarg, `{}`, or explicit all-ones) is byte-identical to the pre-slice engine. Requires the cartridge to carry V-subregion annotations — the bundled human OGRDB cartridges do; calling `v_subregion_rates` against an unannotated cartridge raises `ValueError` at builder time. Like `segment_rates`, the rate vector is part of the plan signature (replay against a different vector fails before consuming choices) but **not** part of `refdata_content_hash`. See [`docs/v_subregion_shm_rate_design.md`](audit-docs/v_subregion_shm_rate_design.md). |
-| **`n_mutations` / `n_v_mutations` / `n_d_mutations` / `n_j_mutations` / `n_np_mutations`** (AIRR fields) | `n_mutations` is the **global biological SHM** counter (uniform + S5F substitutions only, sourced from `Simulation.mutation_count`). The four per-segment fields **partition** it by carried event segment — `n_v + n_d + n_j + n_np == n_mutations` by construction, enforced by the validator's `MutationCountSumMismatch` cross-check. NP1 and NP2 events roll into `n_np_mutations` (matches the `segment_rates` DSL grouping). **PCR / quality / N-corruption / receptor revision / D inversion / contaminant are intentionally excluded** — observation-stage and recombination-stage changes do not count as SHM. PCR + quality artefacts surface separately as `n_pcr_errors` / `n_quality_errors`. See [`docs/mutation_provenance_audit.md`](audit-docs/mutation_provenance_audit.md). |
-| **`n_fwr1_mutations` / `n_cdr1_mutations` / `n_fwr2_mutations` / `n_cdr2_mutations` / `n_fwr3_mutations` / `n_v_unannotated_mutations`** (AIRR fields) | **Per-V-subregion SHM counters** — a partition of **`n_v_mutations`** (not of the global `n_mutations`). The five canonical IMGT labels bucket V SHM events by the assigned V allele's `FWR1` / `CDR1` / `FWR2` / `CDR2` / `FWR3` interval; `n_v_unannotated_mutations` catches everything else under V. Three "unannotated" cases: (1) the user's cartridge has at least one V allele without subregion annotations (legacy / hand-authored), (2) the SHM event lands in the **V-side CDR3 contribution stretch** between `FWR3.end` and `len(V_allele.seq)` — the five canonical labels deliberately stop at FWR3, so junctional V-tail SHM goes here, (3) an SHM pass runs after an indel pass and mutates an inserted V base (non-canonical pass order). On bundled human OGRDB cartridges the unannotated bucket is a small but non-zero baseline (case 2 — V-tail / CDR3 contribution). Partition invariant: `n_fwr1 + n_cdr1 + n_fwr2 + n_cdr2 + n_fwr3 + n_v_unannotated == n_v_mutations` on every record, enforced by the validator's six `N<Region>MutationsMismatch` checks plus the `VSubregionMutationCountSumMismatch` cross-field invariant. Two-bucket aggregates (`n_cdr_mutations` / `n_fwr_mutations`) are deliberately NOT exposed — derive them downstream as `df["n_cdr_mutations"] = df["n_cdr1_mutations"] + df["n_cdr2_mutations"]`. See [`docs/v_subregion_mutation_counters_audit.md`](audit-docs/v_subregion_mutation_counters_audit.md). |
+| `.mutate(model="s5f", rate=0.03, segment_rates={"V": 1.0, "NP": 0.0}, v_subregion_rates={"CDR": 2.0, "FWR": 0.5})` | Refine V-segment SHM targeting by IMGT subregion on top of `segment_rates`. Accepted keys are the five canonical labels `"FWR1"` / `"CDR1"` / `"FWR2"` / `"CDR2"` / `"FWR3"` plus the two aliases `"FWR"` (expands to FWR1 / FWR2 / FWR3) and `"CDR"` (expands to CDR1 / CDR2). **Alias expansion runs first, then explicit labels override** — `{"FWR": 0.5, "FWR2": 2.0}` resolves to `FWR1=0.5, FWR2=2.0, FWR3=0.5, CDR1=1.0, CDR2=1.0`. The V-site weight becomes `base × segment_rate(V) × v_subregion_rate(label)`. Non-V sites and V alleles without subregion annotations receive identity factor `1.0`, so the kwarg composes cleanly with mixed cartridges and with `productive_only()`. Default (no kwarg, `{}`, or explicit all-ones) is byte-identical to the pre-slice engine. Requires the cartridge to carry V-subregion annotations — the bundled human OGRDB cartridges do; calling `v_subregion_rates` against an unannotated cartridge raises `ValueError` at builder time. Like `segment_rates`, the rate vector is part of the plan signature (replay against a different vector fails before consuming choices) but **not** part of `refdata_content_hash`. See [`audit-docs/v_subregion_shm_rate_design.md`](audit-docs/v_subregion_shm_rate_design.md). |
+| **`n_mutations` / `n_v_mutations` / `n_d_mutations` / `n_j_mutations` / `n_np_mutations`** (AIRR fields) | `n_mutations` is the **global biological SHM** counter (uniform + S5F substitutions only, sourced from `Simulation.mutation_count`). The four per-segment fields **partition** it by carried event segment — `n_v + n_d + n_j + n_np == n_mutations` by construction, enforced by the validator's `MutationCountSumMismatch` cross-check. NP1 and NP2 events roll into `n_np_mutations` (matches the `segment_rates` DSL grouping). **PCR / quality / N-corruption / receptor revision / D inversion / contaminant are intentionally excluded** — observation-stage and recombination-stage changes do not count as SHM. PCR + quality artefacts surface separately as `n_pcr_errors` / `n_quality_errors`. See [`audit-docs/mutation_provenance_audit.md`](audit-docs/mutation_provenance_audit.md). |
+| **`n_fwr1_mutations` / `n_cdr1_mutations` / `n_fwr2_mutations` / `n_cdr2_mutations` / `n_fwr3_mutations` / `n_v_unannotated_mutations`** (AIRR fields) | **Per-V-subregion SHM counters** — a partition of **`n_v_mutations`** (not of the global `n_mutations`). The five canonical IMGT labels bucket V SHM events by the assigned V allele's `FWR1` / `CDR1` / `FWR2` / `CDR2` / `FWR3` interval; `n_v_unannotated_mutations` catches everything else under V. Three "unannotated" cases: (1) the user's cartridge has at least one V allele without subregion annotations (legacy / hand-authored), (2) the SHM event lands in the **V-side CDR3 contribution stretch** between `FWR3.end` and `len(V_allele.seq)` — the five canonical labels deliberately stop at FWR3, so junctional V-tail SHM goes here, (3) an SHM pass runs after an indel pass and mutates an inserted V base (non-canonical pass order). On bundled human OGRDB cartridges the unannotated bucket is a small but non-zero baseline (case 2 — V-tail / CDR3 contribution). Partition invariant: `n_fwr1 + n_cdr1 + n_fwr2 + n_cdr2 + n_fwr3 + n_v_unannotated == n_v_mutations` on every record, enforced by the validator's six `N<Region>MutationsMismatch` checks plus the `VSubregionMutationCountSumMismatch` cross-field invariant. Two-bucket aggregates (`n_cdr_mutations` / `n_fwr_mutations`) are deliberately NOT exposed — derive them downstream as `df["n_cdr_mutations"] = df["n_cdr1_mutations"] + df["n_cdr2_mutations"]`. See [`audit-docs/v_subregion_mutation_counters_audit.md`](audit-docs/v_subregion_mutation_counters_audit.md). |
 | `.invert_d(prob=0.05)` | Heavy-chain only. With probability `prob`, sample the D allele in reverse-complement orientation (V(D)J inversion event). Records the decision under `sample_allele.d.inverted`; the assembled D bytes are the WC complement of the original allele; AIRR records carry `d_inverted: bool` for provenance. |
 | `.receptor_revision(prob=0.05)` | Heavy-chain only. With probability `prob`, replace V after initial recombination with a different germline allele (B-cell receptor revision). Records `receptor_revision.applied` (+ replacement allele id / 3' trim on `True`); the V slice in the assembled pool is rewritten; AIRR records carry `receptor_revision_applied: bool` and `original_v_call: str` (the pre-revision V; empty when no revision happened). `v_call` continues to report the post-revision identity. |
 | `.paired_end(r1_length=150, insert_size=300)` | Both VDJ and VJ. Add Illumina-style paired-end read-layout projection to every record: AIRR fields `r1_sequence` (forward window) + `r2_sequence` (reverse-complement of the 3' window) + `r1_start/end` / `r2_start/end` / `insert_size` / `read_layout="paired_end"`. Optional `r2_length` (defaults to `r1_length`). Each length accepts `int` / `(low, high)` / empirical `[(value, weight)]`. Trace records `paired_end.r1_length` / `.r2_length` / `.insert_size`; AIRR builder reads them back to populate the windows. Projection-only — no IR mutation, no live-call invalidation, runs after end-loss + rev-comp. |
 | `compile()` then `compiled.run_records(...)` | Compile the plan once, reuse it across many batches — see [Compile once](#compile-once-run-many-times). |
+
+---
+
+## Per-individual genotypes
+
+A `Genotype` is one subject's diploid germline complement — which V/D/J alleles
+they carry, on which chromosome, with which genes deleted or duplicated. Attach
+one and recombination becomes **haplotype-phased**: the V, D and J of a
+rearrangement are drawn from a single chromosome, so the linkage that
+haplotype-inference methods exploit is actually there in the data.
+
+```python
+import GenAIRR as ga
+import GenAIRR.data as gdata
+from GenAIRR.genotype import Genotype
+
+cfg = gdata.HUMAN_IGH_OGRDB
+g = (
+    Genotype.from_dataconfig(cfg)
+      .complete_from_reference("homozygous_first_reference")
+      .heterozygous("IGHVF1-G1", "IGHVF1-G1*01", "IGHVF1-G1*02")
+      .delete_gene("IGHVF3-G7", haplotype="both")
+      .with_subject("DONOR01")
+)
+
+result = (
+    ga.Experiment.on(cfg)
+      .with_genotype(g)              # recombination is now haplotype-phased
+      .recombine()
+      .run_records(n=1000, seed=7)
+)
+
+result[0]["subject_id"]              # 'DONOR01' — on every record
+result[0]["haplotype"]               # 0 or 1 — which chromosome this read used
+
+# The genotype leaves the library with the records it explains:
+result.to_genotype_tsv("genotype_truth.tsv")
+# subject_id  locus  segment  gene  allele  chromosome  novel  gene_state
+```
+
+`to_genotype_tsv()` writes one row per carried allele, so a dataset you hand to
+someone else arrives with the truth it is meant to be scored against. A deleted
+gene keeps its row with the literal allele `(none)`; a run with no genotype, or a
+genotype that leaves reference genes unspecified, raises rather than writing a
+file that looks complete and is not. Whether a given read drew a **novel** allele
+is a join of `truth_v_call` against that table on `(subject_id, allele)` —
+`run_records(..., expose_provenance=True)` adds the `truth_*_call` columns.
+
+`run_cohort(genotypes, n_per_subject=...)` runs many subjects in one call and
+namespaces their records; `CohortResult.to_genotype_tsv(path)` writes the whole
+cohort's truth table.
+
+> Docs: [Genotypes](https://mutejester.github.io/GenAIRR/guides/genotype.html) · [Genotype sampling & population priors](https://mutejester.github.io/GenAIRR/guides/genotype-priors.html) · [Genotype cohorts](https://mutejester.github.io/GenAIRR/guides/genotype-cohorts.html) · [Benchmarking genotype inference](https://mutejester.github.io/GenAIRR/guides/genotype-benchmarking.html)
 
 ---
 
@@ -248,7 +301,7 @@ preserved; impossible support raises an error even in permissive mode instead
 of dropping requested additions. This conditions each local draw, rather than
 sampling from a globally conditioned joint probability law.
 
-> Docs: [Productive sequences](https://mutejester.github.io/GenAIRR/guide-productive.html)
+> Docs: [Sample only productive sequences](https://mutejester.github.io/GenAIRR/guides/productive.html)
 
 ### Strict vs permissive mode
 
@@ -270,28 +323,47 @@ except ga.StrictSamplingError as e:
 
 ## Reproducibility
 
+The promise is narrow and worth stating exactly: **one seed and one
+determinism version give one answer.** Two runs at the same
+`GenAIRR.DETERMINISM_VERSION` agree byte for byte; two runs at different
+versions promise each other nothing — not "mostly the same", not
+"statistically equivalent". Every exported record carries the number as a
+`determinism_version` column, and so does every trace file, so a dataset says
+which sampling model drew it.
+
 ```python
 import GenAIRR as ga
 
-# Same seed → byte-identical records across runs and platforms.
+ga.DETERMINISM_VERSION          # 4 — the installed engine's sampling model
+
+# Same seed + same determinism version → byte-identical records.
 a = ga.Experiment.on("human_igh").recombine().run_records(n=100, seed=42)
 b = ga.Experiment.on("human_igh").recombine().run_records(n=100, seed=42)
 assert a[0]["sequence"] == b[0]["sequence"]
+assert a[0]["determinism_version"] == ga.DETERMINISM_VERSION
 
-# `n` runs use seeds [seed, seed+1, ..., seed+n-1] so consecutive
-# batches stitch together by offsetting the starting seed.
+# `n` runs use seeds [seed, seed+1, ..., seed+n-1], so a seed names a
+# *record*, not a run: consecutive batches stitch together by offsetting
+# the starting seed by at least `n`.
 batch_a = ga.Experiment.on("human_igh").recombine().run_records(n=100, seed=0)
 batch_b = ga.Experiment.on("human_igh").recombine().run_records(n=100, seed=100)
 # batch_a[50] is byte-equal to a one-off run at seed=50.
+# Offsetting by less than `n` overlaps: seeds 0, 1, 2 are not three
+# independent replicates, they are one dataset read from three
+# starting points.
 ```
 
-> Docs: [Reproducibility](https://mutejester.github.io/GenAIRR/guide-reproduce.html)
+The reproducibility goldens run in CI on **Linux, macOS and Windows across
+Python 3.10–3.13** and assert that the same seed reproduces the same bytes on
+each. Linux aarch64 ships a wheel but is not covered by those goldens.
+
+> Docs: [Trace, replay, reproducibility](https://mutejester.github.io/GenAIRR/guides/trace-replay.html)
 
 ---
 
 ## Validation posture
 
-GenAIRR's release readiness rests on five guardrails, each backed by
+GenAIRR's release readiness rests on seven guardrails, each backed by
 an audit doc and a golden-test file. Every PR runs the full suite;
 every release additionally runs the golden trace compatibility
 fixtures so on-disk formats stay byte-stable.
@@ -300,7 +372,7 @@ fixtures so on-disk formats stay byte-stable.
 - **Provenance correctness** — indels, end-loss, allele-call ambiguity, junction fields, and per-pass event ledger each have isolated-scenario tests.
 - **Reproducibility** — every audit slice includes trace-replay round-trips that reproduce sequence, AIRR coordinates, and per-pass event counts.
 - **Distribution invariants** — Monte-Carlo tests (±5σ) prove the constrained samplers draw from `natural_weight × admissibility`, with explicit negative controls against renormalization bugs.
-- **Performance budgets** — wall-time regression guards on seven representative workloads catch ~10× slowdowns before they ship.
+- **Performance budgets** — wall-time regression guards on nine representative workloads catch ~10× slowdowns before they ship.
 - **Postcondition validator** — `result.validate_records(refdata)` runs the engine's own truth oracle over every projected AIRR record (re-derives counters, junction, allele tie-set, structural coords from outcome state). Returns a `ValidationReport` you can `assert` on as a one-line CI guard. **This is the public output-correctness contract.**
 - **Live-call cache parity** — `outcome.check_live_call_cache_parity(refdata)` compares the cached `SegmentLiveCall` on the final simulation against a from-scratch recompute, per V/D/J. **This is the internal cache-correctness check on the state that feeds projection.**
 
@@ -322,7 +394,7 @@ for outcome in result.outcomes:
 **Troubleshooting rule.** If a CI run has both layers failing on the same batch, fix the **parity** divergence first: a stale cache leaks into projection and produces spurious validator failures downstream. Once parity is green, rerun the validator — remaining failures then point at a genuine projection-layer bug rather than cache fallout.
 
 The navigable index — guarantees → audit docs → test files — lives in
-[`docs/validation_matrix.md`](audit-docs/validation_matrix.md). Use it to
+[`audit-docs/validation_matrix.md`](audit-docs/validation_matrix.md). Use it to
 locate the right test for a change you're making, or to scope a
 follow-up that touches an open drift item in any audit's §6.
 
@@ -369,7 +441,8 @@ for batch in range(10):
 | `result.to_csv(path, *, airr_strict=False)` | — | Comma-separated; keeps Python record conventions unless `airr_strict=True`. |
 | `result.to_fasta(path, *, prefix="seq")` | — | FASTA. Headers include `v_call` and `j_call`. |
 | `result.to_fastq(path, *, quality="illumina", **kw)` | — | FASTQ. Quality models: `"illumina"` (smoothed trapezoid) or `"constant"`. |
-| `result.to_dataframe(*, airr_strict=False)` | `pandas.DataFrame` | One row per record. Requires pandas (`pip install GenAIRR[all]`). |
+| `result.to_dataframe(*, airr_strict=False)` | `pandas.DataFrame` | One row per record. Requires pandas (`pip install pandas`). |
+| `result.to_genotype_tsv(path)` | — | The genotype truth sidecar: one row per carried allele. Raises when the run carried no genotype. |
 | `result.outcomes` | `list[Outcome] \| None` | The underlying `Outcome` objects, for advanced introspection (see below). |
 
 Each record dict has 50+ AIRR fields. The most commonly used:
@@ -385,9 +458,11 @@ Each record dict has 50+ AIRR fields. The most commonly used:
 | `productive` | `True` / `False` / `None` | In-frame junction AND no stop codons AND anchors preserved. `None` when undefined (e.g. junction not present). |
 | `v_identity` / `d_identity` / `j_identity` | `0.987` | Fraction from 0 to 1: matching bases divided by alignment columns, including gaps. |
 | `v_cigar` / `d_cigar` / `j_cigar` | `'17D279M'` | Local per-segment M/I/D runs in Python dicts; strict exports add leading query `S` and reference `N` offsets when nonzero. |
-| `n_mutations` / `n_pcr_errors` / `n_quality_errors` / `n_indels` | `4` / `0` / `2` / `1` | Per-record error counts from the trace. |
+| `n_mutations` / `n_pcr_errors` / `n_quality_errors` / `n_ambiguous_bases` / `n_indels` | `4` / `0` / `2` / `3` / `1` | Per-record event counts from the trace. `n_quality_errors` comes from `sequencing_errors()`; `ambiguous_base_calls()` reports on `n_ambiguous_bases`. |
+| `n_observable_mutations` | `3` | The SHM substitutions a mutation caller can **recover from `sequence`**. Below `n_mutations`: a mutation on an untemplated junction base has no germline base to differ from, a second hit can restore the germline base, and a position lost to end loss is gone. **Score a caller against this field, not `n_mutations`.** |
+| `determinism_version` | `4` | Which sampling model drew the row. Two datasets with different numbers are not comparable. |
 
-The full schema (plus the `*_sequence_start/end`, `*_alignment_start/end`, `*_germline_start/end` coordinate fields, `vj_in_frame`, `stop_codon`, `rev_comp`, and others) is documented at [Interpreting Results](https://mutejester.github.io/GenAIRR/concept-airr-record.html).
+The full schema (plus the `*_sequence_start/end`, `*_alignment_start/end`, `*_germline_start/end` coordinate fields, `vj_in_frame`, `stop_codon`, `rev_comp`, and others) is documented at [The AIRR record](https://mutejester.github.io/GenAIRR/concepts/airr-record.html).
 
 ### Advanced: full pipeline state via `Outcome`
 
@@ -407,7 +482,7 @@ Each `Simulation` exposes `len(sim)` (pool length), `sim.bases() → bytes`, `si
 
 `.run_records(...)` also exposes these via `result.outcomes[i]` — so you can have both the AIRR records *and* the deep introspection from a single call.
 
-> Docs: [Simulation Pipeline](https://mutejester.github.io/GenAIRR/concept-pipeline.html) · [Ground-truth Contracts](https://mutejester.github.io/GenAIRR/concept-contracts.html) · [Interpreting Results](https://mutejester.github.io/GenAIRR/concept-airr-record.html)
+> Docs: [The Experiment builder](https://mutejester.github.io/GenAIRR/guides/experiment-builder.html) · [Trace, replay, reproducibility](https://mutejester.github.io/GenAIRR/guides/trace-replay.html) · [The AIRR record](https://mutejester.github.io/GenAIRR/concepts/airr-record.html)
 
 ---
 
@@ -442,12 +517,24 @@ Salmon, Sheep, Trout, Zebrafish.
 ```python
 import GenAIRR as ga
 
-ga.Experiment.on("mouse_igh").recombine().run_records(n=500)
 ga.Experiment.on("rabbit_tcrb").recombine().run_records(n=500)
-ga.Experiment.on("rhesus_igk").recombine().run_records(n=500)
+
+# 80 of the 106 bundled catalogues carry unresolved anchor or
+# pseudogene/ORF findings, so strict compilation quarantines them. Opt in
+# explicitly to simulate from one — the records are then drawn from a
+# catalogue whose landmarks the project has not been able to confirm.
+ga.Experiment.on("mouse_igh").allow_curatable_refdata().recombine().run_records(n=500)
+ga.Experiment.on("rhesus_igk").allow_curatable_refdata().recombine().run_records(n=500)
 ```
 
-> Docs: [Learn GenAIRR](https://mutejester.github.io/GenAIRR/learn.html) · [Reference (Configs)](https://mutejester.github.io/GenAIRR/reference.html)
+The 26 catalogues that compile strictly today are the three human OGRDB
+cartridges (`human_igh`, `human_igk`, `human_igl`), `HUMAN_IGH_EXTENDED`, and
+22 IMGT catalogues whose anchors all resolved. Everything else — including
+every mouse catalogue and `human_tcrb` — needs `allow_curatable_refdata()`.
+The compile error lists the findings allele by allele, so you can also filter
+the catalogue or curate it with `Experiment.curate_refdata(...)` instead.
+
+> Docs: [Choose your path](https://mutejester.github.io/GenAIRR/learn.html) · [Reference evidence and quarantine](https://mutejester.github.io/GenAIRR/cartridges/reference-evidence.html) · [API Reference](https://mutejester.github.io/GenAIRR/reference/index.html)
 
 ---
 
@@ -458,19 +545,30 @@ For non-builtin alleles (custom IMGT pulls, in-house references, etc.) you can b
 ```python
 import GenAIRR as ga
 
-cfg = ga.RefDataConfig.vj()
-cfg.add_v_allele("v_custom*01", "v_custom", b"GAAGTACAGCTGGTGCAG...", anchor=288)
-cfg.add_v_allele("v_custom*02", "v_custom", b"GAAGTACAGCTAGTGCAG...", anchor=288)
-cfg.add_j_allele("j_custom*01", "j_custom", b"TGGGGCCAAGGG...",       anchor=10)
+# Real bytes, so the example runs as written. Substitute your own.
+igk = ga.HUMAN_IGK_OGRDB
+v1, v2 = [a for g in igk.v_alleles.values() for a in g][:2]
+j1 = next(a for g in igk.j_alleles.values() for a in g)
 
-result = ga.Experiment.on(cfg).recombine().run_records(n=100, seed=42)
+cfg = ga.RefDataConfig.vj()
+cfg.add_v_allele("v_custom*01", "v_custom", v1.ungapped_seq.upper().encode(), anchor=v1.anchor)
+cfg.add_v_allele("v_custom*02", "v_custom", v2.ungapped_seq.upper().encode(), anchor=v2.anchor)
+cfg.add_j_allele("j_custom*01", "j_custom", j1.ungapped_seq.upper().encode(), anchor=j1.anchor)
+
+result = (
+    ga.Experiment.on(cfg)
+      .recombine(np1_lengths=[(n, 1.0) for n in range(7)])  # no empirical NP model
+      .trim(enabled=False)                                  # no trim distributions
+      .run_records(n=100, seed=42)
+)
+result[0]["v_call"], result[0]["junction_aa"]   # ('v_custom*01', 'CLQHNSYPPWRFTF')
 ```
 
-`RefDataConfig.vdj()` builds a heavy-chain-shaped refdata (with a D pool); `add_d_allele(...)` populates it. Anchors are 0-based offsets of the V Cys / J W or F codon's first base, used to keep the junction frame-aligned during recombination.
+`RefDataConfig.vdj()` builds a heavy-chain-shaped refdata (with a D pool); `add_d_allele(...)` populates it. Anchors are 0-based offsets of the V Cys / J W or F codon's first base, used to keep the junction frame-aligned during recombination — the engine checks that the codon at the anchor really translates to Cys (V) or Trp/Phe (J) and refuses the reference otherwise. Sequence bytes must be A/C/G/T/N; a raw `RefDataConfig` carries no empirical NP-length or trim distributions, so pass them explicitly (as above) or accept the two `UserWarning`s that say the engine fell back to a uniform NP length and a no-op trim.
 
-For non-human or otherwise non-standard references — custom J anchor amino acids, extended sequence alphabets, hand-authored NP-length or trim distributions, pseudogene-aware allele filtering — configure a **reference cartridge** instead of relying on the built-in locus defaults. The cartridge has four typed planes (identity, catalogue, rules, empirical models) plus an explicit curation policy. See [`docs/reference_cartridge.md`](audit-docs/reference_cartridge.md) for the model, the authoring surface (`ReferenceRulesSpec`, `ReferenceEmpiricalModels`, `Experiment.curate_refdata`), and end-to-end examples.
+For non-human or otherwise non-standard references — custom J anchor amino acids, extended sequence alphabets, hand-authored NP-length or trim distributions, pseudogene-aware allele filtering — configure a **reference cartridge** instead of relying on the built-in locus defaults. The cartridge has four typed planes (identity, catalogue, rules, empirical models) plus an explicit curation policy. See [`audit-docs/reference_cartridge.md`](audit-docs/reference_cartridge.md) for the model, the authoring surface (`ReferenceRulesSpec`, `ReferenceEmpiricalModels`, `Experiment.curate_refdata`), and end-to-end examples.
 
-Cartridges can also carry **V-region substructure annotations** — per-V-allele IMGT `FWR1` / `CDR1` / `FWR2` / `CDR2` / `FWR3` intervals derived from the IMGT-gapped reference sequence. The bundled OGRDB cartridges populate them at load time for all human IGH / IGK / IGL V alleles; user cartridges can override the dict explicitly. Subregion intervals are inspectable on the bridged `RefDataConfig`, surfaced in `DataConfig.cartridge_manifest()["models"]["shm"]["v_subregion_support"]`, and folded into `refdata_content_hash` so two cartridges that differ only in subregion boundaries hash differently. **They also drive SHM targeting** via `Experiment.mutate(v_subregion_rates={…})` — see the targeted-SHM example in the pipeline-steps table above. Per-region AIRR mutation counters (`n_cdr1_mutations` etc.) are still deferred — that's a separate future slice. See [`docs/v_region_substructure_audit.md`](audit-docs/v_region_substructure_audit.md) and [`docs/v_subregion_shm_rate_design.md`](audit-docs/v_subregion_shm_rate_design.md) for the audits and per-slice scope.
+Cartridges can also carry **V-region substructure annotations** — per-V-allele IMGT `FWR1` / `CDR1` / `FWR2` / `CDR2` / `FWR3` intervals derived from the IMGT-gapped reference sequence. The bundled OGRDB cartridges populate them at load time for all human IGH / IGK / IGL V alleles; user cartridges can override the dict explicitly. Subregion intervals are inspectable on the bridged `RefDataConfig`, surfaced in `DataConfig.cartridge_manifest()["models"]["shm"]["v_subregion_support"]`, and folded into `refdata_content_hash` so two cartridges that differ only in subregion boundaries hash differently. **They also drive SHM targeting** via `Experiment.mutate(v_subregion_rates={…})` — see the targeted-SHM example in the pipeline-steps table above — and they bucket the per-region AIRR mutation counters (`n_cdr1_mutations` …) and their recoverable counterparts (`n_cdr1_observable_mutations` …), both described in the pipeline-steps table. See [`audit-docs/v_region_substructure_audit.md`](audit-docs/v_region_substructure_audit.md) and [`audit-docs/v_subregion_shm_rate_design.md`](audit-docs/v_subregion_shm_rate_design.md) for the audits and per-slice scope.
 
 ### Typed NP base models (uniform / empirical / Markov)
 
@@ -504,7 +602,7 @@ cfg.reference_models = ReferenceEmpiricalModels(
 
 Both rows must cover every canonical from-base — the Python validator rejects partial matrices at construction time. Plan signatures fold the full Markov payload (first-base row + 4 transition rows), so replay against a different matrix fails the signature gate before any choice is consumed; same-cartridge + same-seed replay is byte-identical. Productive-only sampling composes through the existing admit-mask intersection.
 
-**Legacy `NP_transitions` / `NP_first_bases` are NOT auto-lifted yet.** The bundled cartridges still carry those dicts as documented orphan fields, and the manifest reports `legacy_fallback=False`. Authors who want Markov today populate `ReferenceEmpiricalModels.np_bases` explicitly; an opt-in auto-lift slice is a separate cartridge-migration decision. See [`docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md) and [`docs/junction_n_addition_audit.md`](audit-docs/junction_n_addition_audit.md) for the full design.
+**Legacy `NP_transitions` / `NP_first_bases` are NOT auto-lifted yet.** The bundled cartridges still carry those dicts as documented orphan fields, and the manifest reports `legacy_fallback=False`. Authors who want Markov today populate `ReferenceEmpiricalModels.np_bases` explicitly; an opt-in auto-lift slice is a separate cartridge-migration decision. See [`audit-docs/np_markov_base_generator_design.md`](audit-docs/np_markov_base_generator_design.md) and [`audit-docs/junction_n_addition_audit.md`](audit-docs/junction_n_addition_audit.md) for the full design.
 
 ### Templated P-nucleotide (palindromic) additions
 
@@ -548,7 +646,7 @@ p_v_3_length, p_d_5_length, p_d_3_length, p_j_5_length
 
 …each counting the number of templated P-bytes emitted at that V(D)J coding-end junction side. Zero on records from cartridges without a typed P-plane. The validator's `PLengthMismatch` issue kind catches downstream record tampering; cache parity is unaffected (P-bytes don't move structural region boundaries).
 
-**Legacy `p_nucleotide_length_probs` is NOT auto-lifted yet.** The bundled cartridges still carry the orphan dict; the manifest reports `legacy_fallback=False`. v1 ships *lengths-only* — per-base P strings (`p_v_3`, ...) and the aggregate `n_p_nucleotides` are deferred. See [`docs/p_nucleotide_design.md`](audit-docs/p_nucleotide_design.md) for the full design.
+**Legacy `p_nucleotide_length_probs` is NOT auto-lifted yet.** The bundled cartridges still carry the orphan dict; the manifest reports `legacy_fallback=False`. Per-base P strings (`p_v_3`, …) and an aggregate `n_p_nucleotides` are still not exported, but each NP region now reports how its bases arose: `np1_n_tdt` / `np1_n_p` / `np1_n_inserted` (and the `np2_*` triple) partition `np1_length` into TdT N additions, templated P bases and bases an indel inserted. See [`audit-docs/p_nucleotide_design.md`](audit-docs/p_nucleotide_design.md) for the full design.
 
 ### Build a cartridge from FASTA
 
@@ -595,9 +693,9 @@ builder = (
 cfg = builder.build()
 ```
 
-Recombination on the resulting cartridge **uses the estimated weights by default** — `ga.Experiment.on(cfg).recombine()` now samples alleles according to the typed plane unless an explicit `recombine(v_allele_weights=..., d_allele_weights=..., j_allele_weights=...)` kwarg is passed (kwarg > cartridge plane > uniform). Ambiguity policy is `"fractional"` (splits credit across tie-set entries), `"truth_first"` (uses the first call only), or `"reject"` (drops ambiguous rows into `report.rejected`). Unknown alleles, missing-D-on-VDJ rows, and below-`min_count` drops all surface as structured entries on the build report. Per-segment weights are normalised to sum to 1.0; the `manifest["models"]["allele_usage"]` block surfaces `available` / `nonempty_segments` / `legacy_gene_use_dict_present` / `in_plan_signature=False` (inherited soft gap from `v_allele_weights`). See [`docs/allele_usage_estimation_design.md`](audit-docs/allele_usage_estimation_design.md).
+Recombination on the resulting cartridge **uses the estimated weights by default** — `ga.Experiment.on(cfg).recombine()` now samples alleles according to the typed plane unless an explicit `recombine(v_allele_weights=..., d_allele_weights=..., j_allele_weights=...)` kwarg is passed (kwarg > cartridge plane > uniform). Ambiguity policy is `"fractional"` (splits credit across tie-set entries), `"truth_first"` (uses the first call only), or `"reject"` (drops ambiguous rows into `report.rejected`). Unknown alleles, missing-D-on-VDJ rows, and below-`min_count` drops all surface as structured entries on the build report. Per-segment weights are normalised to sum to 1.0; the `manifest["models"]["allele_usage"]` block surfaces `available` / `nonempty_segments` / `legacy_gene_use_dict_present` / `in_plan_signature=False` (inherited soft gap from `v_allele_weights`). See [`audit-docs/allele_usage_estimation_design.md`](audit-docs/allele_usage_estimation_design.md).
 
-**Remaining estimators stay deferred.** `estimate_trim_distributions` / `estimate_np_length_distributions` / `estimate_np_base_model` / `estimate_p_nucleotide_lengths` / `estimate_shm_rates` are scoped to follow-up slices — each will append new stage entries to the build report without changing the facade. See [`docs/reference_cartridge_authoring_audit.md`](audit-docs/reference_cartridge_authoring_audit.md) for the full design.
+**The other estimators have landed since.** `estimate_trim_distributions`, `estimate_np_length_distributions`, `estimate_np_base_model`, `estimate_p_nucleotide_lengths` and `estimate_genotype_priors` all ship alongside `estimate_allele_usage` and append their own stage entries to the build report; `set_genotype_priors` attaches a population model you already have. Only `estimate_shm_rates` is still deferred. See [`audit-docs/reference_cartridge_authoring_audit.md`](audit-docs/reference_cartridge_authoring_audit.md) for the full design and [Estimate models from data](https://mutejester.github.io/GenAIRR/guides/estimate-cartridge-models.html) for the per-estimator walkthrough.
 
 ---
 
@@ -606,7 +704,7 @@ Recombination on the resulting cartridge **uses the estimated weights by default
 - **Rust simulation kernel** &mdash; persistent IR with full revision history, addressed-trace introspection, `cargo test`-grade unit coverage.
 - **Constraint-aware sampling** &mdash; contracts prune candidate distributions at sample time so productive sequences come out of the engine by construction; no retry loops.
 - **Strict-mode opt-in** &mdash; surface unsatisfiable plans as `StrictSamplingError` instead of silently relaxing the bundle.
-- **Deterministic seeds** &mdash; same seed reproduces every byte of the pool and every entry of the trace, across runs and platforms.
+- **Deterministic seeds** &mdash; one seed and one `determinism_version` reproduce every byte of the pool and every entry of the trace; the goldens check that on Linux, macOS and Windows across Python 3.10&ndash;3.13.
 - **Full revision history** &mdash; `outcome.revision(i)` exposes the IR after each pass for fine-grained debugging.
 - **Addressed trace** &mdash; every random draw is keyed by a hierarchical string (`"np.np1.bases[3]"`) and survives end-to-end into the returned `Outcome`.
 - **23 species, 106 configs** &mdash; built-in IMGT + OGRDB reference pickles ship with the wheel.
@@ -698,10 +796,11 @@ A quick smoke-test prompt to verify the install: *"List the available GenAIRR co
 
 The full documentation site is at **[mutejester.github.io/GenAIRR](https://mutejester.github.io/GenAIRR/)**. Useful starting points:
 
-- **Learn** — [Lesson 1: V(D)J recombination](https://mutejester.github.io/GenAIRR/lesson-1.html) · [Lesson 2: Pipeline scrubber](https://mutejester.github.io/GenAIRR/lesson-2.html) · [Lesson 3: S5F SHM](https://mutejester.github.io/GenAIRR/lesson-3.html) · [Lesson 4: Sequencing artifacts](https://mutejester.github.io/GenAIRR/lesson-4.html) · [Lesson 5: Ground-truth payoff](https://mutejester.github.io/GenAIRR/lesson-5.html)
-- **Concepts** — [Simulation Pipeline](https://mutejester.github.io/GenAIRR/concept-pipeline.html) · [Persistent IR](https://mutejester.github.io/GenAIRR/concept-persistent-ir.html) · [Contracts](https://mutejester.github.io/GenAIRR/concept-contracts.html) · [AIRR Record](https://mutejester.github.io/GenAIRR/concept-airr-record.html) · [Live Calls](https://mutejester.github.io/GenAIRR/concept-live-call.html)
-- **Guides** — [Build a config](https://mutejester.github.io/GenAIRR/guide-build-config.html) · [Productive sampling](https://mutejester.github.io/GenAIRR/guide-productive.html) · [Clonal lineage trees](https://mutejester.github.io/GenAIRR/guides/clonal-lineage.html) · [Clonal repertoires](https://mutejester.github.io/GenAIRR/guides/clonal-repertoire.html) · [Export](https://mutejester.github.io/GenAIRR/guide-export.html) · [Replay](https://mutejester.github.io/GenAIRR/guide-replay.html) · [Reproduce a dataset](https://mutejester.github.io/GenAIRR/guide-reproduce.html) · [Compare SHM models](https://mutejester.github.io/GenAIRR/guide-compare-shm.html) · [Tune corruption](https://mutejester.github.io/GenAIRR/guide-tune-corruption.html)
-- **Reference** — [API + Configs + AIRR fields](https://mutejester.github.io/GenAIRR/reference.html)
+- **Getting started** — [Installation](https://mutejester.github.io/GenAIRR/getting-started/installation.html) · [Quick start](https://mutejester.github.io/GenAIRR/getting-started/quick-start.html) · [Your first AIRR record](https://mutejester.github.io/GenAIRR/getting-started/first-airr-record.html) · [Export the results](https://mutejester.github.io/GenAIRR/getting-started/export-results.html)
+- **Concepts** — [AIRR Record](https://mutejester.github.io/GenAIRR/concepts/airr-record.html) · [Reference Cartridge](https://mutejester.github.io/GenAIRR/concepts/reference-cartridge.html)
+- **Guides** — [The Experiment builder](https://mutejester.github.io/GenAIRR/guides/experiment-builder.html) · [Productive sampling](https://mutejester.github.io/GenAIRR/guides/productive.html) · [Clonal lineage trees](https://mutejester.github.io/GenAIRR/guides/clonal-lineage.html) · [Clonal repertoires](https://mutejester.github.io/GenAIRR/guides/clonal-repertoire.html) · [Genotypes](https://mutejester.github.io/GenAIRR/guides/genotype.html) · [Paired-end reads and FASTQ](https://mutejester.github.io/GenAIRR/guides/paired-end-fastq.html) · [Corruption + sequencing artefacts](https://mutejester.github.io/GenAIRR/guides/corruption-sequencing.html) · [Targeted SHM rates](https://mutejester.github.io/GenAIRR/guides/shm-targeting.html) · [Trace, replay, reproducibility](https://mutejester.github.io/GenAIRR/guides/trace-replay.html)
+- **Validation** — [validate_records](https://mutejester.github.io/GenAIRR/validation/validate-records.html) · [Validation overview](https://mutejester.github.io/GenAIRR/validation/index.html)
+- **Reference** — [API + Configs + AIRR fields](https://mutejester.github.io/GenAIRR/reference/index.html)
 
 ---
 
@@ -717,8 +816,8 @@ If GenAIRR is useful in your research, please cite:
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines. If you're adding a pass, a contract, or any code that mutates the simulation IR:
 
-- **Read first**: [docs/engine_architecture.md](audit-docs/engine_architecture.md) — codifies the invariants (contracts constrain support, trace = choices, events = consequences, live-call refresh follows events) and lists the anti-patterns CI catches.
-- **Then copy from**: [docs/adding_a_pass.md](audit-docs/adding_a_pass.md) — minimal pass template, three required test patterns with `passes::test_support` helpers, and a crib sheet of which existing pass to model the new one on.
+- **Read first**: [audit-docs/engine_architecture.md](audit-docs/engine_architecture.md) — codifies the invariants (contracts constrain support, trace = choices, events = consequences, live-call refresh follows events) and lists the anti-patterns CI catches.
+- **Then copy from**: [audit-docs/adding_a_pass.md](audit-docs/adding_a_pass.md) — minimal pass template, three required test patterns with `passes::test_support` helpers, and a crib sheet of which existing pass to model the new one on.
 
 ## License
 

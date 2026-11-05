@@ -19,15 +19,16 @@ records  ──estimator──►  cfg.reference_models.<plane>
 ```
 
 The output is still a normal `DataConfig`. The cartridge's
-identity (`cfg.identity`), allele catalogue (`cfg.alleles`),
-rules (`cfg.rules`), and any models you didn't estimate stay
+identity (`cfg.metadata`), allele catalogue
+(`cfg.v_alleles` / `cfg.d_alleles` / `cfg.j_alleles`), rules
+(`cfg.reference_rules`), and any models you didn't estimate stay
 exactly as they were. Estimators are **typed-plane mutators**:
 they touch one plane each, leave the rest alone, and stamp an
 auditable trail on the build report.
 
 ## Which estimators ship today
 
-Five estimators are available in v1:
+Six estimators ship today. Five populate an empirical plane:
 
 | Estimator | Plane it populates | Required columns | Optional columns |
 |---|---|---|---|
@@ -36,6 +37,11 @@ Five estimators are available in v1:
 | `estimate_np_length_distributions` | `reference_models.np_lengths` | `np1_length` | `np2_length` (required on VDJ) |
 | `estimate_np_base_model` | `reference_models.np_bases` | `np1` | `np2` (required on VDJ) |
 | `estimate_p_nucleotide_lengths` | `reference_models.p_nucleotide_lengths` | `p_v_3_length`, `p_j_5_length` | `p_d_5_length`, `p_d_3_length` (required on VDJ) |
+
+The sixth, `estimate_genotype_priors(genotypes, ...)`, populates the
+cartridge's genotype-prior plane from observed `Genotype` objects
+(`set_genotype_priors(model)` attaches one you already have); see
+[Genotype sampling & population priors](genotype-priors.md).
 
 !!! warning "`estimate_shm_rates` is deferred"
     SHM-model estimation is not in v1. Calling
@@ -211,10 +217,12 @@ report.checksum_at_build_time  # str | None - schema_sha256 stamped on cfg
 report.to_dict()           # JSON-clean dict for CI artifacts
 ```
 
-`stages` carries an `inputs` and `inferred` block per stage. For
-estimator stages you'll find counts of `records_seen`,
-`records_used`, `replaced` (idempotency marker), and per-key
-diagnostic dicts.
+Each stage dict has exactly four keys: `stage`, `inputs`,
+`inferred` and `warnings`. For estimator stages `inputs` carries
+`record_count`, `source`, `min_count`, `replaced` (the idempotency
+marker) and the estimator's own options; `inferred` carries the
+computed per-key weights plus diagnostics such as `skipped` and
+`below_min_count`.
 
 ### The cartridge manifest
 
@@ -223,23 +231,27 @@ manifest = cfg.cartridge_manifest()
 manifest["models"]
 # {
 #   "has_reference_models": True,
-#   "allele_usage": {"v": 320, "d": 30, "j": 6, ...},
-#   "trim_models": {"v_trim_3": {"support_size": 18, ...}, ...},
-#   "np_length_models": {"np1": {...}, "np2": {...}},
-#   "np_base_models": {"first_base": {...}, "transition": {...}},
-#   "p_nucleotide_models": {"p_v_3_length": {...}, ...},
+#   "allele_usage": {"available": True, "segments": {...},
+#                    "nonempty_segments": [...], "source": ...,
+#                    "legacy_gene_use_dict_present": ...,
+#                    "legacy_fallback": ..., "in_plan_signature": ...},
+#   "trim_models": {"keys": ["D_3", "D_5", "J_5", "V_3"], "source": ...,
+#                   "in_plan_signature": ..., "legacy_...": ...},
+#   "np_length_models": {"keys": ["NP1", "NP2"], ...},
+#   "np_base_models": {"models": {"NP1": {"kind": "markov"},
+#                                 "NP2": {"kind": "markov"}},
+#                      "supported_kinds": [...], "deferred_kinds": [...], ...},
+#   "p_nucleotide_models": {"length_keys": ["D_3", "D_5", "J_5", "V_3"],
+#                           "supported_ends": [...], ...},
 #   "shm": {"v_subregion_support": {"available": True, ...}, ...},
-#   "trim_keys": ["v_trim_3", "d_trim_5", ...],
-#   "np_length_keys": ["np1", "np2"],
-#   "legacy_trim_dicts_present": False,
-#   "legacy_np_lengths_present": False,
+#   "genotype_priors": {"available": ..., "model_id": ..., ...},
 # }
 ```
 
 `manifest["models"]` is the canonical place to verify what got
-estimated. Each top-level key is `None` when its plane is
-empty, so `manifest["models"]["allele_usage"] is None` after a
-build that skipped `estimate_allele_usage` is normal.
+estimated. No block is ever `None`: a plane you did not estimate
+reports an empty `keys` / `models` list, or `"available": False`
+on the two blocks that carry that flag.
 
 ## Common mistakes
 
@@ -278,8 +290,8 @@ then raises `ValueError` instead of overwriting.
 **Markov NP-base estimation with `pseudocount=0` on tiny
 inputs.** If a from-base never appears in the observed sequences,
 the engine can't form a transition row for it, and `ValueError`
-fires before spec construction. Either use the default
-`kind="markov", pseudocount=1.0`, or drop to
+fires before spec construction. Either raise `pseudocount` above
+its default of `0.0` (`kind="markov"` is the default), or drop to
 `kind="empirical_first_base"` if the from-base coverage isn't
 representative.
 
