@@ -2,9 +2,60 @@
 
 All notable changes to GenAIRR are documented here.
 
-## Unreleased
+## [2.4.0] - 2026-11-05
 
-### Changed
+**Read this first if you have stored data.** `DETERMINISM_VERSION` moved from
+the unnumbered model that shipped through 2.3.1 to **4**. A given seed does not
+produce the 2.3.1 output any more — not approximately, not statistically. Every
+exported record and every trace file now carries the number as
+`determinism_version`, and `GenAIRR.DETERMINISM_VERSION` reads it without
+running anything. A dataset with no such column was drawn by the pre-2.4.0
+model. See [MIGRATING.md](MIGRATING.md) for what to do with data you already
+have.
+
+### Breaking and behaviour-changing
+
+- **`DETERMINISM_VERSION` is now 4** — three separate increments, each of which
+  moves what a seed produces:
+
+  | version | what changed |
+  |---|---|
+  | 2 | one random substream per pass and per clonal-family role, keyed rather than offset or XOR-salted; a substitution draws a base the site does not already hold |
+  | 3 | clonal lineage regulation is Beverton-Holt; `n_max` is the population a lineage settles at |
+  | 4 | affinity selection scores the protein the cell actually expresses |
+
+  Each is described in full below. Version 1 is the unnumbered model that
+  shipped up to and including 2.3.1.
+
+- **Clonal lineage regulation obeys a different law, and `n_max` means
+  something different.** `n_max` is now the live population a lineage
+  **settles at**, not the pivot of a law that settled lower and not a hard cap.
+  **The same `n_max` therefore yields about 3x more cells at the default
+  `lambda_base=1.5`**, with proportional memory and runtime; lower `n_max` to
+  recover the old population, whose plateau was `n_max * (1 - 1/lambda_base)`.
+  `lambda_base` is documented as what it is: the Poisson mean for a
+  founder-baseline cell in an empty germinal center, not the mean a cell draws
+  against once capacity damping or selection is active.
+
+- **`Experiment.expand_clones()` is deprecated** and raises a
+  `DeprecationWarning`. It keeps working, and it is still the only surface that
+  delivers an exact `n_clones x per_clone` count. Use
+  `clonal_lineage()` for BCR affinity-maturation trees with a ground-truth tree
+  per clone, or `clonal_repertoire()` for TCR and flat-BCR abundance
+  repertoires with clone-size distributions and `duplicate_count`. Neither is a
+  drop-in replacement for a fixed `per_clone`: a lineage run returns at most
+  `n_sample` records per clone after genotype collapse, and a repertoire run
+  collapses identical copies into one record carrying the count.
+
+- **Most bundled catalogues are quarantined under strict compilation.** A
+  reproducible reference audit marks every bundled catalogue carrying
+  unresolved anchor or pseudogene/ORF findings, and strict compilation — the
+  default — refuses them. 80 of the 106 bundled configs are affected, including
+  every mouse catalogue and `human_tcrb`; the three human OGRDB cartridges,
+  `HUMAN_IGH_EXTENDED` and 22 IMGT catalogues still compile strictly. Add
+  `.allow_curatable_refdata()` to sample from a quarantined catalogue anyway,
+  or `.curate_refdata(policy)` to drop the offending alleles. The error lists
+  the findings allele by allele.
 
 - **`DETERMINISM_VERSION` is now 4.** Affinity selection scores the protein the
   cell actually expresses. Seed-moving wherever selection is active;
@@ -97,6 +148,58 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
+- **Two clonal models beside the deprecated star.**
+  `Experiment.clonal_lineage(...)` grows a real BCR genealogy per clone: a
+  generation-synchronous birth-death process with per-division S5F
+  hypermutation, optional affinity selection, live-cell sampling and
+  genotype collapse. Each clone comes back with an AIRR record per observed
+  cell -- `clone_id`, `lineage_node_id`, `lineage_parent_id`,
+  `lineage_generation`, `lineage_abundance`, `lineage_affinity`,
+  `duplicate_count` -- and with the ground-truth tree itself on
+  `result.lineage_trees`, exportable as Newick, FASTA or a node table. It is
+  BCR-only and refuses a TCR locus, because T cells do not hypermutate.
+  `Experiment.clonal_repertoire(...)` covers what a TCR clone actually is: one
+  rearrangement proliferated to a heavy-tailed clone size (power-law or
+  lognormal, with an `unexpanded_fraction` of never-expanded singletons), read
+  through library prep and collapsed to `duplicate_count`. Neither has a
+  per-clone size you set directly; see the deprecation note above.
+
+- **Paired-end read layout and FASTQ export.**
+  `Experiment.paired_end(r1_length=..., r2_length=..., insert_size=...)`
+  projects every record as an Illumina-style read pair: `r1_sequence`,
+  `r2_sequence` (already reverse-complemented), `r1_start` / `r1_end` /
+  `r2_start` / `r2_end`, `insert_size` and `read_layout`. It is a projection
+  and mutates nothing. `result.to_fastq(path, quality=...)` writes single-end
+  FASTQ and `result.to_paired_fastq(r1, r2)` writes two synchronised files
+  with portable `/1` and `/2` header suffixes; quality strings come from a
+  pluggable model (`"illumina"` or `"constant"`). A requested insert longer
+  than the surviving molecule leaves the windows empty rather than clipping,
+  which `validate_records` reports as `ReadWindowOutOfBounds`.
+
+- **Each NP region says where its bases came from.** `np1_n_tdt`, `np1_n_p`
+  and `np1_n_inserted` (and the `np2_*` triple) partition that region's length
+  into TdT N additions, templated palindromic P bases and bases an indel
+  inserted. An AIRR `np1` string has always combined all three, so a model
+  fitted against it as a pure N addition was fitting something else; the
+  partition makes the question answerable from the record. The validator
+  checks it through `NpPartitionMismatch` and `NpPartitionOriginAmbiguous`.
+
+- **The reading frame and every predicate of `productive`.**
+  `coding_frame_start` / `coding_frame_end` say which span the verdict was
+  computed over, and `v_anchor_accepted`, `j_anchor_accepted`, `vj_in_frame`,
+  `stop_codon` and `j_tail_in_frame` are the five predicates it is the
+  conjunction of, each three-valued, beside `productivity_policy`,
+  `productivity_scope` and `productivity_reasons`. A record that disagrees with
+  a tool can now be localised to the predicate instead of the verdict -- and
+  `j_tail_in_frame` is the one a record can fail on its own, which the other
+  four cannot show.
+
+- `n_ambiguous_bases`: the positions `ambiguous_base_calls()` actually masked.
+  It is not `sequence.count("N")`, which also counts any `N` the reference
+  allele carries, and it moves neither error counter -- the documentation used
+  to attribute the masking count to `n_quality_errors`, which
+  `sequencing_errors()` owns.
+
 - `result.to_genotype_tsv(path)` and `CohortResult.to_genotype_tsv(path)`:
   a run writes the genotype it was given beside the records it produced, one
   row per carried allele, with `subject_id`, `locus`, `segment`, `gene`,
@@ -140,10 +243,14 @@ All notable changes to GenAIRR are documented here.
   different versions promise each other nothing at all. The number increments
   whenever a released change moves what a seed produces, and it travels on the
   record rather than in a sidecar because a dataset leaves this library as a
-  file of rows and is then passed on by itself. It is `2`; a dataset with no
-  such column was produced by the unnumbered model that preceded it, which is
-  why the numbering does not start at 1. The two changes below are what
-  separates version 2 from that model.
+  file of rows and is then passed on by itself. It ships at `4`; a dataset with
+  no such column was produced by the unnumbered model that preceded the stamp,
+  which is why the numbering does not start at 1. The table at the top of this
+  release says what separates each version from the one before it.
+
+  The reproducibility goldens assert the promise in CI on Linux, macOS and
+  Windows across Python 3.10-3.13. Linux aarch64 ships a wheel but is not
+  covered by them.
 
 - Six per-V-subregion recoverable mutation counters —
   `n_fwr1_observable_mutations`, `n_cdr1_observable_mutations`,
@@ -539,6 +646,22 @@ All notable changes to GenAIRR are documented here.
   work this way and never did after the change above: each takes a keyed
   substream, so adjacent clonal seeds share nothing.
 
+- Every code example in the README and on the documentation site was re-run
+  against this release and the values it prints were re-measured, so the
+  allele names, counts and field values on the page are the ones the engine
+  produces at `determinism_version` 4 rather than the ones the pre-stamp model
+  produced. The reproducibility promise now states what is actually checked
+  (same seed and same determinism version, on Linux, macOS and Windows across
+  Python 3.10-3.13), the quarantined-catalogue set is documented with the
+  `allow_curatable_refdata()` opt-in, and the pages that said the per-region
+  mutation counters, the cartridge model estimators or the NP origin fields
+  were deferred now describe them, because they ship.
+
+- `MIGRATING.md` gained a 2.3.1 to 2.4.0 section; the 1.x to 2.0 guide is
+  unchanged beneath it. A stale find/replace row that told 1.x users to rename
+  `expand_clones(n_clones=...)` to `n=...` was removed -- the keyword is and
+  always was `n_clones`, and the rename it described would raise `TypeError`.
+
 ### Compatibility
 
 - Standard `v_call`, `d_call`, and `j_call` now name single generating alleles.
@@ -576,6 +699,13 @@ All notable changes to GenAIRR are documented here.
 - NP length/base estimators reject records with explicitly nonzero P-length
   provenance. AIRR NP fields combine N and P; fitting them as N-only models
   while separately fitting P lengths would count P additions twice.
+- `pandas` is not part of any extra and never was. `result.to_dataframe()`
+  needs it; install it yourself. The install docs and the README said it
+  shipped under `[all]`, which installs numpy, scipy, graphviz, tqdm and
+  fastmcp.
+- The pytest matrix runs on Python 3.10, 3.11, 3.12 and 3.13 across Linux,
+  macOS and Windows. Python 3.9 remains supported and its wheels are
+  smoke-tested on all three platforms, but the suite is not run against it.
 
 ## [2.3.1] - 2026-07-05
 

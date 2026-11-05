@@ -1,6 +1,6 @@
 # Validation & reproducibility
 
-<p class="lead">GenAIRR's outputs are rich - 50+ AIRR fields per
+<p class="lead">GenAIRR's outputs are rich - over 120 fields per
 record, full event ledgers per outcome, recoverable traces per
 seed. Validation answers one question across all of it: does what
 the record reports agree with what the engine actually did? This
@@ -115,6 +115,10 @@ hot loops.
 | Clonal batch is consistently stamped with `clone_id`; truth V/D/J calls are invariant within clone when truth columns are present | `validate_families` |
 | Legacy `expand_clones` descendants agree with their parent `Outcome` | `validate_families_with_parents` |
 
+`expand_clones(...)` is deprecated and raises a `DeprecationWarning`;
+`validate_families` and `validate_families_with_parents` continue to
+cover it.
+
 The three layers are independent - `validate_records` doesn't
 require a clonal structure; `validate_families` doesn't require
 a refdata. They compose for the strongest possible gate:
@@ -137,8 +141,14 @@ assert families, families.summary()
 
 GenAIRR's reproducibility model rests on two facts:
 
-- **Same seed + same plan + same cartridge → byte-identical output.**
-  Across runs, machines, and platforms. The `seed=` argument on
+- **Same seed + same plan + same cartridge + same determinism
+  version → byte-identical output.** `GenAIRR.DETERMINISM_VERSION`
+  (currently `4`) names the sampling model the installed engine
+  implements, and every record carries it as a `determinism_version`
+  column; two runs at different versions promise each other nothing.
+  The reproducibility goldens check this in CI on Linux, macOS and
+  Windows across Python 3.10-3.13; Linux aarch64 ships a wheel but is
+  not covered by them. The `seed=` argument on
   `run_records(...)` is the canonical surface; `n` records use
   seeds `[seed, seed+1, …, seed+n-1]`, so batches stitch together
   if you offset the starting seed **by at least `n`**. Offsetting by
@@ -261,7 +271,8 @@ except ga.StrictSamplingError as e:
 
 The `reason` field is a stable lowercase code - common values:
 `"empty_admissible_support"`, `"support_unavailable"`,
-`"missing_allele.V.42"`, `"contract_violation.NoStopCodonInJunction"`.
+`"missing_allele.v.42"` (the whole code is lowercased),
+`"contract_violation.NoStopCodonInJunction"`.
 
 The recommended posture: **leave strict off in production**, where
 the sentinel fallback keeps your batch flowing; **turn strict on

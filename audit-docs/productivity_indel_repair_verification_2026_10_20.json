@@ -53,7 +53,7 @@
   "extension": {
     "build_command": ".venv/bin/maturin develop --release",
     "build_log": "/tmp/genairr_correctness_release_build_final.log",
-    "path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+    "path": "<repo>/src/GenAIRR/_engine.abi3.so",
     "sha256": "03b21c9769157a78eb4797477be6acfb02265acdd85d58ef8b362950ac8d0e78"
   },
   "fixed_precursors": {

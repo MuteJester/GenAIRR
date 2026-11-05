@@ -98,10 +98,14 @@ events per record. Use whichever shape matches your intent.
 
 ### `model="s5f"`
 
-The canonical Shapiro 5-mer model. Each site's mutability is
-weighted by its 5-base context, so hot spots concentrate in the
-CDRs (where SHM actually accumulates in vivo) rather than scattering
-uniformly across the V region.
+The S5F 5-mer model of Yaari et al. (2013). Each site's mutability is
+weighted by its 5-base context, so the V region's mutation density is
+uneven rather than flat. It is **context** weighting and nothing else -
+the kernel has no FWR/CDR awareness. Measured over 2,000 human IGH
+records at `count=(10, 20)`, S5F puts 22.9% of V mutations in CDR1+CDR2
+against 16.5% for the uniform model, while FWR3 alone still carries 42%
+under either. If you want mutations concentrated in the CDRs, ask for it
+with `v_subregion_rates` (below).
 
 ```python
 exp.mutate(model="s5f", rate=0.03)
@@ -116,7 +120,10 @@ cartridge through the manifest:
 manifest = cfg.cartridge_manifest()
 manifest["models"]["shm"]                     # full SHM model inventory
 manifest["models"]["shm"]["v_subregion_support"]
-# {"available": True, "annotated_v_count": 320, "total_v_count": 320}
+# {"available": True, "labels": ["FWR1", "CDR1", "FWR2", "CDR2", "FWR3"],
+#  "annotated_v_count": 198, "total_v_count": 198,
+#  "derivation": "bridge_imgt_gapped_seq", "in_content_hash": True}
+# (the numbers are HUMAN_IGH_OGRDB's; every cartridge reports its own)
 ```
 
 The `v_subregion_support.available` flag tells you whether the
@@ -350,6 +357,9 @@ Two diagnostics are most informative:
 one value in [0, 1] and the shape is sensitive to whether the
 model concentrates mutations in motifs or scatters them.
 
+The two plotting blocks below need `matplotlib` and `seaborn`, neither
+of which GenAIRR depends on; `pip install matplotlib seaborn` first.
+
 ```python
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -400,11 +410,11 @@ They never do. `n_mutations` is biology only. Use
 library-and-sequencing artefacts; use `n_mutations` only for SHM.
 
 **Setting every rate to zero.** `segment_rates={"V": 0, "D": 0,
-"J": 0, "NP": 0}` doesn't produce zero mutations with a "no
-sites available" error - it makes the proposal support empty, so
-the pass draws nothing. Every record will have `n_mutations: 0`.
-If you wanted that, fine; if you didn't, check which buckets you
-zeroed.
+"J": 0, "NP": 0}` is refused at the `mutate()` call with
+`ValueError: segment_rates: at least one bucket must have a positive
+rate` - a configuration that zeroes every biological segment would make
+the SHM pass a deterministic no-op, which is better said than silently
+done. Drop the pass instead, or leave one bucket positive.
 
 **Using `v_subregion_rates` on an unannotated cartridge.** Raises
 `ValueError` at builder time. The bundled OGRDB cartridges

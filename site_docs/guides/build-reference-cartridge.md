@@ -212,7 +212,12 @@ models = ReferenceEmpiricalModels(
         "NP1": NpBaseModelSpec(
             kind="markov",
             first_base={"A": 0.25, "C": 0.25, "G": 0.25, "T": 0.25},
-            transitions={...},
+            transitions={
+                "A": {"A": 0.0, "C": 0.3, "G": 0.4, "T": 0.3},
+                "C": {"A": 0.3, "C": 0.0, "G": 0.3, "T": 0.4},
+                "G": {"A": 0.4, "C": 0.3, "G": 0.0, "T": 0.3},
+                "T": {"A": 0.3, "C": 0.4, "G": 0.3, "T": 0.0},
+            },
         ),
     },
     p_nucleotide_lengths={
@@ -345,7 +350,7 @@ authored cartridge:
 manifest = cfg.cartridge_manifest()
 
 manifest["identity"]                          # species, locus, reference_set, name, source
-manifest["catalogue"]["v_allele_count"]       # post-curation count
+manifest["catalogue"]["v_count"]              # post-curation count
 manifest["rules"]["allowed_bases"]            # what the alphabet is
 manifest["models"]["allele_usage"]            # available + nonempty segments + soft-gap flag
 manifest["models"]["trim_models"]             # keys + source + plan-signature flag

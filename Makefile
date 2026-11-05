@@ -27,7 +27,7 @@ help:
 	@echo "  make validate-full      Tier 2: correctness + performance budgets"
 	@echo "  make validate-release   Tier 3: full + wheel build + golden trace compat"
 	@echo ""
-	@echo "Documentation (MkDocs Material — see docs/docs_mkdocs_migration_plan.md):"
+	@echo "Documentation (MkDocs Material — source at site_docs/):"
 	@echo "  make docs-install       Install docs-build deps from requirements-docs.txt"
 	@echo "  make docs-build         mkdocs build --strict (fails on broken links / nav drift)"
 	@echo "  make docs-serve         mkdocs serve (live-reload local preview on :8000)"
@@ -78,15 +78,15 @@ validate-release: validate-full
 	$(PYTHON) -m pytest tests/components/io/test_trace_file_compat.py -q
 	maturin build --release
 
-# --- Docs (MkDocs Material — Phase 1 onwards) ---------------------
+# --- Docs (MkDocs Material) ---------------------------------------
 #
 # The docs source lives at site_docs/. The contributor-only audit/
-# design markdowns at docs/*.md stay rendered on GitHub and are
-# linked from the future Architecture section of the site.
+# design markdowns at audit-docs/*.md are rendered on GitHub and are
+# linked from the site's Architecture section.
 #
 # `docs-build` uses `--strict` so broken nav links / missing files
-# / dead anchors fail the build. Run this in CI once Phase 6
-# cutover lands.
+# / dead anchors fail the build. CI runs it on every docs change
+# (.github/workflows/deploy-docs.yml).
 
 DOCS_REQ ?= requirements-docs.txt
 

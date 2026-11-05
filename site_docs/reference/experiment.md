@@ -22,9 +22,11 @@ The methods you'll reach for in most real pipelines:
 | `.mutate(...)` | Apply biological SHM (uniform or S5F) on top of recombination |
 | `.clonal_lineage(...)` | Grow BCR affinity-maturation lineage trees |
 | `.clonal_repertoire(...)` | Generate TCR / flat-BCR abundance repertoires with clone sizes and `duplicate_count` |
-| `.expand_clones(...)` | Legacy fixed-size clonal star model |
+| `.expand_clones(...)` | Legacy fixed-size clonal star model; deprecated and raises a `DeprecationWarning` |
+| `.with_genotype(genotype)` | Draw V/D/J from one subject's diploid complement, haplotype-phased |
 | `.paired_end(...)` | Project assembled sequences as paired R1 / R2 reads |
 | `.run_records(...)` | Compile + run + return a `SimulationResult` |
+| `.run_cohort(genotypes, ...)` | Run many genotyped subjects in one call; returns a `CohortResult` |
 
 For the full pipeline-stage map (constraints, trim overrides, all
 the corruption methods, compile reuse, strict mode), see
@@ -50,8 +52,10 @@ pilot for the wider generated-reference effort.
         - clonal_lineage
         - clonal_repertoire
         - expand_clones
+        - with_genotype
         - paired_end
         - run_records
+        - run_cohort
         - run
         - compile
         - describe

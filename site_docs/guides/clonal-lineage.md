@@ -47,7 +47,8 @@ result = (
           n_max=300,                     # living population each generation settles at
           n_sample=30,                   # cells sampled per family at the end
           rate=0.01,                     # per-base S5F SHM rate, per division
-          lambda_base=1.6,               # mean offspring per cell per generation
+          lambda_base=1.6,               # Poisson mean for a founder-baseline cell
+                                         # in an empty germinal center
           selection_strength=10.0,       # 0 = neutral; >0 = affinity selection
       )
       .run_records(seed=0)
@@ -390,10 +391,10 @@ seed draws a different repertoire rather than a reshuffling of the same one.
 | `n_max` | 1000 | **Per-generation LIVING-population carrying capacity** - the population each generation settles at. A generation may overshoot it; the next is regulated back. It is **not** a cap on total cells per clone - the tree contains far more nodes across generations |
 | `n_sample` | 50 | Cells sampled per family at the end; records per clone ≤ this (genotype-collapsed) |
 | `rate` | 0.05 | Per-base S5F SHM rate, per division |
-| `lambda_base` | 1.5 | Mean offspring per cell per generation |
+| `lambda_base` | 1.5 | Poisson mean offspring count for a **founder-baseline cell in an empty germinal center**. The mean a cell actually draws against is this damped by the live population (see `n_max`) and, under selection, scaled by the cell's fitness relative to the founder - so it is **not** the mean offspring count once either is active |
 | `selection_strength` | 0.0 | `0` = neutral drift (`fitness ≡ 1`); set `> 0` for affinity selection. Note `0` makes selection neutral but does **not** force `lineage_affinity` to 0 - affinities are still computed/reported whenever a `target_aa` is supplied |
 | `beta` | 1.0 | Affinity steepness in `exp(−beta·distance)` |
-| `target_aa` | `None` | Target amino-acid sequence (a full translated receptor) used as the selection target (BLOSUM62-weighted distance, position-wise; only the overlapping prefix is scored when lengths differ). A **sequence-distance proxy**, not a biophysical antigen. `None` ⇒ auto "mature" target |
+| `target_aa` | `None` | Target amino-acid sequence (a full translated receptor) used as the selection target (BLOSUM62-weighted distance, position-wise). It must be **exactly as long as the receptor's protein** or the run is refused - a wrong-length target used to be scored over the overlapping prefix and reported a number that was not a distance to it. A **sequence-distance proxy**, not a biophysical antigen. `None` ⇒ auto "mature" target |
 | `mature_substitutions` | 5 | aa substitutions for the auto target |
 | `s5f_model` | `"hh_s5f"` | Bundled S5F kernel |
 | `allow_extinction` | `False` | `False` ⇒ condition each clone on survival (retry extinct founders with fresh deterministic sub-seeds), so you reliably get `n_clones` families. `True` ⇒ accept extinction and skip extinct clones, producing fewer families |

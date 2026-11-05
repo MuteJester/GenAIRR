@@ -22,7 +22,7 @@
   },
   "extension": {
     "build_log": "/tmp/genairr_coupled_release_build.log",
-    "path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+    "path": "<repo>/src/GenAIRR/_engine.abi3.so",
     "sha256": "a59585ffc7e20db37e858d3ec1be13484b12d4367453afcd04cc72421187a302"
   },
   "local_model_unchanged": "experimental_duplex_repair_v1",

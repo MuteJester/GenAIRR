@@ -5,13 +5,10 @@
  * "bench-science palette v2" design language from the existing
  * hand-rolled site at website/styles.css.
  *
- * Sources:
- *   - website/styles.css — 3132-line canonical design system
- *     extracted by the Phase 1.5 inventory workflow.
- *   - docs/docs_mkdocs_migration_plan.md §5.2 — Phase 1.5
- *     contract.
+ * Source:
+ *   - website/styles.css — the 3132-line canonical design system.
  *
- * Goals (per docs_mkdocs_migration_plan.md §5.2.2):
+ * Goals:
  *   - Preserve IBM Plex triad (Sans / Mono / Serif).
  *   - Three-color semantic system: GREEN accent, COBALT info,
  *     PLUM archive — each with -ink (deep) + -soft (tint).
@@ -890,9 +887,9 @@ code, kbd, pre, samp,
   color: var(--ink);
 }
 
-/* Migration-status banner: when a page carries the "Migration placeholder"
-   admonition, give it a deliberate visual to signal "this isn't done yet"
-   so users don't mistake it for finished content. */
+/* Unwritten-page banner: when a page carries the "has not been written
+   yet" admonition, give it a deliberate visual so readers don't mistake
+   it for finished content. */
 .md-typeset .admonition.info:has(> .admonition-title:first-child) {
   /* Default styling is fine — the eyebrow label tells the story. */
 }

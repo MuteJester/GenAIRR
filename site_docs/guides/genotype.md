@@ -9,9 +9,9 @@ presence/absence, zygosity, and gene deletion. With no genotype attached the
 engine is byte-for-byte unchanged. This page explains exactly what a genotype is,
 how the engine samples from it, and how to build one - nothing here is a black
 box. Three companion pages cover the rest:
-<a href="genotype-priors/">sampling &amp; population priors</a>,
-<a href="genotype-cohorts/">cohorts</a> (many subjects at once), and
-<a href="genotype-benchmarking/">benchmarking genotype inference</a>.</p>
+<a href="genotype-priors.html">sampling &amp; population priors</a>,
+<a href="genotype-cohorts.html">cohorts</a> (many subjects at once), and
+<a href="genotype-benchmarking.html">benchmarking genotype inference</a>.</p>
 
 ## What a genotype is (and why it matters)
 
@@ -143,8 +143,10 @@ ground-truth benchmark.
 `Genotype.permissive(cfg)` is a separate, explicitly **non-diploid** fallback:
 unspecified genes are left to sample over *all* their reference alleles without
 phasing. It exists for the "I only want to constrain a few genes" case - it is
-**not** a biological genotype, and it is labelled as such in `to_table()` and
-`repr`.
+**not** a biological genotype. Each row of `to_table()` carries
+`permissive: True` to say so - note that an untouched permissive genotype has
+no rows yet, so the label appears only once you specify a gene, and `repr()`
+carries no label at all.
 
 In both modes, feasibility (e.g. `productive_only`) is applied the same way the
 non-genotype path applies it: candidates are filtered to the feasible set, and the
@@ -486,7 +488,11 @@ you can judge whether it fits your study):
 
 ## Backward compatibility
 
-The genotype machinery is purely additive. An experiment with **no** genotype
-attached produces byte-identical output to previous releases (pinned by a
-checksum test). Attaching a genotype is the only thing that switches recombination
-onto the phased path.
+The genotype machinery is purely additive **within one determinism version**:
+an experiment with no genotype attached draws exactly what it drew before
+genotypes existed, at the same `determinism_version`, and attaching a genotype is
+the only thing that switches recombination onto the phased path. It is *not*
+byte-identical to releases 2.3.1 and earlier - those predate
+`GenAIRR.DETERMINISM_VERSION`, which is now `4`, and each increment moved what a
+given seed produces for every pipeline. See
+[Trace, replay, reproducibility](trace-replay.md).

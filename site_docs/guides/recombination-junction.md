@@ -173,9 +173,11 @@ the fields without branching first; the values are just zero or
 empty string when D and NP2 don't exist.
 
 Authoring a VJ cartridge with D-end keys on `trims` or
-`p_nucleotide_lengths`, or with `NP2` on `np_lengths`, raises
-`ValueError` at the cartridge attach time - the validator catches
-the impossible shape before the engine gets the chance.
+`p_nucleotide_lengths` raises `ValueError` at cartridge attach time -
+the validator catches the impossible shape before the engine gets the
+chance. `NP2` on `np_lengths` / `np_bases` is **not** gated that way:
+the key is accepted and then has no NP2 region to apply to, so a VJ
+cartridge authored with one silently loses it.
 
 ## Allele calls and ambiguity
 

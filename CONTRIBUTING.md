@@ -38,11 +38,11 @@ make test-rust   # cargo test
 │       ├── passes/            # Concrete passes (recombination, mutation, corruption)
 │       ├── contract/          # Contract trait + filter/verify implementations
 │       ├── dist.rs            # Distribution trait + concrete distributions
-│       └── python/            # PyO3 wrappers exposed as `genairr_engine`
+│       └── python/            # PyO3 wrappers exposed as `GenAIRR._engine`
 └── src/GenAIRR/
     ├── experiment.py          # Experiment DSL (public entry point)
     ├── dataconfig/            # DataConfig + species metadata
-    ├── data/                  # 106+ built-in DataConfig pickles
+    ├── data/                  # the 106 built-in DataConfig pickles
     └── utilities/             # Helpers, IMGT regions
 ```
 
@@ -55,27 +55,34 @@ cd engine_rs && cargo test           # Rust tests (unit + integration)
 
 ## Release Process
 
-GenAIRR ships two PyPI packages:
-
-- **`genairr_engine`** — Rust kernel built per OS/arch via maturin (abi3-py39, so one wheel per platform covers Python 3.9+).
-- **`GenAIRR`** — pure Python (single universal wheel + sdist).
+GenAIRR ships as **one** PyPI package. `maturin` builds the Rust kernel
+(`engine_rs/`) and the Python wrappers (`src/GenAIRR/`) into a single wheel per
+OS/arch; the kernel is exposed as the private submodule `GenAIRR._engine`. The
+extension is `abi3-py39`, so one wheel per platform covers Python 3.9+.
 
 GitHub Actions handles CI and publishing:
 
-1. **Tests** run on every push/PR (Linux, macOS, Windows × Python 3.10–3.12) plus a separate `cargo test` job.
-2. **Wheels** are built when a tag is pushed: maturin builds engine wheels for Linux x86_64+aarch64, macOS x86_64+arm64, Windows x64; setuptools builds a universal Python wheel.
+1. **Tests** run on every push/PR (Linux, macOS, Windows × Python 3.10–3.13)
+   plus a separate `cargo test` job.
+2. **Wheels** are built when a tag is pushed, for Linux x86_64+aarch64, macOS
+   x86_64+arm64 and Windows x64, alongside a maturin sdist. Each built wheel is
+   installed and smoke-run on Python 3.9 and 3.13 on all three platforms before
+   anything is published.
 3. **Publishing** to PyPI happens automatically on GitHub Release or version tag.
 
 ### Creating a Release
 
-1. Update the version in `setup.py` and `engine_rs/Cargo.toml` (keep them in sync).
-2. Update `CHANGELOG.md`.
-3. Commit, tag, and push:
+1. Update `CHANGELOG.md` and `MIGRATING.md`. If the release changes what a seed
+   produces, bump `DETERMINISM_VERSION` in `engine_rs/src/determinism.rs`, add
+   its row to the table in that file's header, and regenerate the goldens.
+2. Tag and push — the release workflow derives the version from the tag name and
+   rewrites `pyproject.toml` and `engine_rs/Cargo.toml` itself, so there is no
+   version to edit by hand:
    ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v2.4.0
+   git push origin v2.4.0
    ```
-4. Create a GitHub Release from the tag.
+3. Create a GitHub Release from the tag.
 
 ### Prerequisites
 

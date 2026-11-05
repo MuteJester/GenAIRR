@@ -72,11 +72,15 @@ Leave it off when you specifically want the unconstrained mix (including
 non-productive rearrangements) - e.g. to study out-of-frame rates or to
 stress-test a tool on non-productive input.
 
-!!! warning "Immunoglobulin (BCR) only"
-    The productive contract's anchor checks assume BCR semantics, so it is an
-    immunoglobulin feature. TCR refdata accepts the call but raises a
-    `ValueError` at compile time - don't add `productive_only()` to a TCR
-    pipeline.
+!!! note "TCR loci too"
+    `productive_only()` works on TCR cartridges as well as immunoglobulin
+    ones: the anchor classes it requires (V Cys, J Phe/Trp) are the same
+    landmarks a TCR cartridge declares. The `ValueError` a TCR pipeline is
+    likely to hit first is unrelated to productivity - it is the
+    curatable-reference gate, because most bundled TCR catalogues carry
+    unresolved anchor findings. Pass `allow_curatable_refdata()` (or
+    `run_records(..., allow_curatable_refdata=True)`) and the productive
+    constraint applies normally.
 
 The constraint is implemented as a bundle of engine contracts (anchor
 preservation, junction frame, no-junction-stop); the contributor-facing details

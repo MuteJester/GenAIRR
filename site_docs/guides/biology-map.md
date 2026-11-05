@@ -30,24 +30,24 @@ better starting point.
 | **Allele restriction** | `.restrict_alleles(v=..., d=..., j=...)` | Constraint-aware sampling | Sampled `v_call`/`d_call`/`j_call` restricted to the listed alleles | [Recombination + junction biology](recombination-junction.md) |
 | **Somatic hypermutation (SHM)** | `.mutate(model="s5f", rate=...)` or `.mutate(model="uniform", count=...)` | Biology - descendant phase | `n_mutations`, `mutation_rate`, `n_v_mutations`, `n_d_mutations`, `n_j_mutations`, `n_np_mutations` | [SHM and mutation targeting](shm-targeting.md) |
 | **Targeted SHM** | `.mutate(..., segment_rates=..., v_subregion_rates=...)` | Biology - descendant phase | Same plus the six V-subregion counters (`n_fwr1_mutations` … `n_v_unannotated_mutations`) | [SHM and mutation targeting](shm-targeting.md) |
-| **PCR substitution errors** | `.pcr_amplify(count=...)` or `.pcr_amplify(rate=...)` | Library / sequencing artefact - descendant | `n_pcr_errors`, lowercase corruption markers in `sequence` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
+| **PCR substitution errors** | `.pcr_amplify(count=...)` or `.pcr_amplify(rate=...)` | Library / sequencing artefact - descendant | `n_pcr_errors` (the substituted bytes are written uppercase, like every engine-written base) | [Corruption + sequencing artefacts](corruption-sequencing.md) |
 | **Sequencing errors** | `.sequencing_errors(count=...)` or `.sequencing_errors(rate=...)` | Library / sequencing artefact - descendant | `n_quality_errors`, lowercase corruption markers in `sequence` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
-| **Ambiguous base calls (N)** | `.ambiguous_base_calls(count=...)` | Library / sequencing artefact - descendant | `n_quality_errors`, `N` characters in `sequence` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
+| **Ambiguous base calls (N)** | `.ambiguous_base_calls(count=...)` | Library / sequencing artefact - descendant | `n_ambiguous_bases`, `N` characters in `sequence` (it moves neither error counter) | [Corruption + sequencing artefacts](corruption-sequencing.md) |
 | **Polymerase indels** | `.polymerase_indels(count=..., insertion_prob=0.5)` | Library / sequencing artefact - descendant | `n_indels`, `n_v_indels`, `n_d_indels`, `n_j_indels` (NP indels count toward total only) | [Corruption + sequencing artefacts](corruption-sequencing.md) |
 | **End-loss (5′ / 3′)** | `.end_loss_5prime(length=...)`, `.end_loss_3prime(length=...)` (or `primer_trim_*prime` aliases) | Library / sequencing artefact - descendant | `end_loss_5_length`, `end_loss_3_length` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
 | **Random strand orientation** | `.random_strand_orientation(prob=0.5)` | Read layout - descendant | `rev_comp` | [Corruption + sequencing artefacts](corruption-sequencing.md) |
 | **Paired-end layout** | `.paired_end(r1_length=..., insert_size=...)` | Read layout - descendant | `read_layout`, `r1_sequence`, `r2_sequence`, `r1_start`, `r1_end`, `r2_start`, `r2_end`, `insert_size` | [Paired-end reads and FASTQ](paired-end-fastq.md) |
 | **BCR lineage trees** | `.clonal_lineage(...)` | BCR affinity-maturation tree | `clone_id`, `lineage_*`, `duplicate_count`, `result.lineage_trees` | [Clonal lineage trees](clonal-lineage.md) |
 | **TCR / flat-BCR clone-size repertoires** | `.clonal_repertoire(...)` | Non-tree clonal abundance | `clone_id`, `duplicate_count` | [Clonal repertoires](clonal-repertoire.md) |
-| **Legacy fixed-size clonal stars** | `.expand_clones(n_clones=..., per_clone=...)` | Ancestor / descendant fork | `clone_id`, `parent_id`, `result.parents` | [Clonal simulation overview](clonal-families.md) |
+| **Legacy fixed-size clonal stars** | `.expand_clones(n_clones=..., per_clone=...)` *(deprecated - raises a `DeprecationWarning`)* | Ancestor / descendant fork | `clone_id`, `parent_id`, `result.parents` | [Clonal simulation overview](clonal-families.md) |
 | **Contamination** | `.contaminate(prob=...)` | Library / sequencing artefact - descendant | `is_contaminant` | [Experiment builder](experiment-builder.md) |
 | **Sample metadata** | `.with_metadata(**fields)` | Bookkeeping - post-run | Arbitrary user-stamped columns | [Experiment builder](experiment-builder.md) |
 
 ## Stage ordering
 
-GenAIRR's pipeline splits into five conceptual stages. The
-engine enforces the ordering at compile time - any out-of-order
-call raises `ValueError`.
+GenAIRR's pipeline splits into five conceptual stages. The DSL
+enforces the ordering on the method call itself, before `compile()` -
+an out-of-order call raises `ValueError` where you wrote it.
 
 **1. Recombination.** `.recombine()` runs the V(D)J join,
 trim-and-fill, NP-region generation, and P-nucleotide

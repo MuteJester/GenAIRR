@@ -7,7 +7,7 @@
 # `tests/acceptance/test_docs_mkdocs_migration_contract.py` guard structure.
 #
 # To build:
-#   pip install -e ".[docs]"
+#   pip install -r requirements-docs.txt
 #   mkdocs build --strict
 #
 # Existing live URLs at `mutejester.github.io/GenAIRR/<page>.html`
@@ -22,16 +22,16 @@ repo_name: MuteJester/GenAIRR
 repo_url: https://github.com/MuteJester/GenAIRR
 edit_uri: edit/master/site_docs/
 
-# Source directory deliberately separate from `docs/` so the
-# 39 contributor-only audit/design markdowns at `docs/*.md`
-# stay untouched and continue to render on GitHub. The
-# user-facing site lives at `site_docs/`.
+# Source directory deliberately separate from `audit-docs/` so the
+# contributor-only audit and design markdowns there stay untouched
+# and continue to render on GitHub. The user-facing site lives at
+# `site_docs/`.
 docs_dir: site_docs
 
-# Emit `<page>.html` URLs (NOT `<page>/` clean-URLs). This is
-# the URL contract Slice 1 committed to preserve via the
-# `redirects` plugin — every existing `mutejester.github.io/GenAIRR/<page>.html`
-# remains resolvable post-cutover. With `use_directory_urls: false`,
+# Emit `<page>.html` URLs (NOT `<page>/` clean-URLs). This is the
+# URL contract the `redirects` plugin preserves — every existing
+# `mutejester.github.io/GenAIRR/<page>.html` stays resolvable.
+# With `use_directory_urls: false`,
 # the `redirects` plugin's `'old.md': 'new.md'` entries emit a
 # redirect file at `<old>.html` pointing at `<new>.html`, which
 # is exactly what we need.
@@ -73,10 +73,10 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
-# GenAIRR theme layer (Phase 1.5) — design tokens + component
-# overrides that prevent the site from looking like default MkDocs
-# Material. See site_docs/stylesheets/extra.css for the full
-# stylesheet (sourced from website/styles.css).
+# GenAIRR theme layer — design tokens + component overrides that
+# prevent the site from looking like default MkDocs Material. See
+# site_docs/stylesheets/extra.css for the full stylesheet (sourced
+# from website/styles.css).
 extra_css:
   - stylesheets/extra.css
 
@@ -110,27 +110,23 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
 
-# Plugins — Phase 1 of the migration (deps installable via
+# Plugins (deps installable via
 # `pip install -r requirements-docs.txt`).
 #
 # - `search` is provided by mkdocs core and enabled by default.
-# - `redirects` carries the live-URL → MkDocs-route map per
-#   docs/docs_mkdocs_migration_plan.md §3.1. Every existing
-#   website/*.html path stays resolvable after the Phase 6
-#   cutover.
-# - `mkdocstrings` is enabled but currently unused; the
-#   auto-generated API reference page is Phase 5 work. The
-#   plugin sits idle until a `:::` directive is added to a
-#   markdown source.
+# - `redirects` carries the live-URL → MkDocs-route map, so every
+#   existing `website/*.html` path stays resolvable.
+# - `mkdocstrings` drives the generated API-reference pages under
+#   `site_docs/reference/`.
 # - `mkdocs-jupyter` is intentionally NOT enabled here. It's
-#   listed in `requirements-docs.txt` so Phase 4 (notebook
-#   tutorials) can flip it on without a separate dep install.
+#   listed in `requirements-docs.txt` so notebook tutorials can
+#   flip it on without a separate dep install.
 plugins:
   - search
   - redirects:
       redirect_maps:
-        # Live-URL preservation per docs/docs_mkdocs_migration_plan.md §3.1.
-        # `mkdocs-redirects` treats the LEFT key as a fake source path: it
+        # Live-URL preservation. `mkdocs-redirects` treats the LEFT
+        # key as a fake source path: it
         # generates a redirect HTML file at the URL MkDocs would have
         # produced for that path. With `use_directory_urls: false`, `foo.md`
         # → `foo.html`. So `'learn.md': 'getting-started/index.md'` emits
@@ -179,11 +175,10 @@ plugins:
 
 # Navigation — curated path from beginner to contributor.
 #
-# Placeholder pages are intentionally NOT in nav. They stay on disk
+# Unwritten pages are intentionally NOT in nav. They stay on disk
 # (the `redirects` plugin needs them as targets for live-URL
-# preservation, see §3.1 of docs/docs_mkdocs_migration_plan.md),
-# but the user-visible nav lists only real content. As each
-# placeholder is migrated to real content, add it back to nav here.
+# preservation), but the user-visible nav lists only real content.
+# As each one is written, add it back to nav here.
 nav:
   - Home: index.md
   - Demo: demo.md

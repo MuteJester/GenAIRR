@@ -15,10 +15,12 @@ truth the simulator created.</p>
 | **BCR lineage reconstruction / affinity maturation** | [`clonal_lineage(...)`](clonal-lineage.md) | Generation-synchronous B-cell tree, per-division S5F SHM, optional sequence-distance selection, final live-cell sampling | AIRR records with `clone_id`, `lineage_*`, `duplicate_count`; one `LineageTree` per clone |
 | **TCR clone-size / abundance benchmark** | [`clonal_repertoire(...)`](clonal-repertoire.md) | One rearranged T cell copied to a heavy-tailed clone size; no SHM; optional per-read technical noise | AIRR records with `clone_id` and AIRR `duplicate_count` |
 | **Flat BCR abundance without genealogy** | [`clonal_repertoire(...)`](clonal-repertoire.md) | One BCR rearrangement copied to a heavy-tailed size; optional flat post-fork SHM per copy | AIRR records with `clone_id` and `duplicate_count` |
-| **Legacy fixed-size star** | `expand_clones(...)` | One parent rearrangement and a fixed `per_clone` descendant count | AIRR records with `clone_id`, `parent_id`; parent `Outcome`s on `result.parents` |
+| **Legacy fixed-size star** | `expand_clones(...)` *(deprecated - raises a `DeprecationWarning`)* | One parent rearrangement and a fixed `per_clone` descendant count | AIRR records with `clone_id`, `parent_id`; parent `Outcome`s on `result.parents` |
 
-`expand_clones` is still supported for old scripts, but new clone-related
-benchmarks should usually start with `clonal_lineage` or `clonal_repertoire`.
+`expand_clones` is still supported for old scripts and is still the only
+surface that gives an exact per-clone count, but it raises a
+`DeprecationWarning`; new clone-related benchmarks should start with
+`clonal_lineage` or `clonal_repertoire`.
 Those two encode the distinction AIRR users usually care about: BCR lineages are
 mutation trees, while TCR clones are abundance groups with technical read noise.
 
@@ -89,8 +91,10 @@ node_table = tree.to_node_table_tsv()
 What happens:
 
 1. `recombine()` creates one naive BCR founder per clone.
-2. The Rust lineage engine grows a tree for `max_generations`, with live-cell
-   carrying capacity `n_max`.
+2. The Rust lineage engine grows a tree for `max_generations`. `n_max` is the
+   live-cell population each generation **settles at** under Beverton-Holt
+   regulation, not a hard cap: a generation may overshoot it and the next is
+   regulated back below replacement.
 3. Each child receives per-division S5F SHM at `rate`.
 4. If selection is enabled, offspring rates are modulated by a BLOSUM62
    sequence-distance proxy, not a physical antigen-binding model.

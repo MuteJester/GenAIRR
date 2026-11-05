@@ -35,6 +35,9 @@ programmatically as `result.to_dataframe().columns`.
 
 The canonical groups, in the order they appear on the record:
 
+0. `determinism_version` - the record's first key: which sampling
+   model drew it (see [Trace, replay,
+   reproducibility](../guides/trace-replay.md))
 1. AIRR metadata (sequence + length + locus)
 2. V / D / J calls + alignment coordinates + trim
 3. Junction
@@ -50,6 +53,8 @@ The canonical groups, in the order they appear on the record:
 13. Read layout (paired-end)
 14. Clonal stamping (when a clonal workflow runs)
 15. Truth columns (when `expose_provenance=True`)
+16. Genotype stamping (`subject_id`, `haplotype`) when a genotype
+    or a cohort run is attached
 
 The remaining sections walk through each.
 
@@ -123,6 +128,15 @@ benchmarking workflows.
 | `productivity_policy` | str | `canonical_observed_vdj_v1` |
 | `productivity_scope` | str | `observed_coding_span` |
 | `productivity_reasons` | list[str] | Stable diagnostic codes, or `["accepted"]`; JSON in TSV/CSV cells |
+| `coding_frame_start`, `coding_frame_end` | int | The reading frame the assessment used: `sequence[coding_frame_start:coding_frame_end]` is the coding span |
+| `v_anchor_accepted`, `j_anchor_accepted` | bool or null | Whether each conserved anchor codon was accepted; `None` when an ambiguous base or an insertion inside the codon leaves it unresolved |
+| `j_tail_in_frame` | bool or null | Whether the J tail joins the constant region in frame - the fifth predicate of `productive`, and the one a record can fail on its own |
+
+`productive` is the conjunction of **five** exported predicates under
+three-valued logic: `v_anchor_accepted`, `j_anchor_accepted`,
+`vj_in_frame`, `stop_codon` being `False`, and `j_tail_in_frame`. Every
+one of them is on the record, so you can recompute the verdict and see
+which predicate a disagreement comes from.
 
 The policy requires original V/J landmark provenance, V Cys and J Phe/Trp
 residue classes, V/J and J-tail frame agreement, and definitely stop-free
@@ -447,6 +461,24 @@ code that assumes they're always present; check with `"clone_id" in rec`.
 `validate_families()` is a safe no-op on non-clonal batches because it handles
 the absent case explicitly. See
 [Clonal simulation overview](../guides/clonal-families.md).
+
+## Genotype fields
+
+When an experiment carries a genotype (`.with_genotype(...)`), or when
+records come from `run_cohort(...)`, two more columns are stamped on
+every record:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `subject_id` | str | The genotype's subject label, carried from `Genotype.with_subject(...)` or auto-assigned (`subject_0`, `subject_1`, …) by `run_cohort` |
+| `haplotype` | int | `0` or `1` - which chromosome this rearrangement's V, D and J were all drawn from |
+
+Whether a given read drew a **novel** allele is deliberately not a
+record column: it is a join of `truth_v_call` (from
+`expose_provenance=True`) against the genotype truth sidecar that
+`result.to_genotype_tsv(path)` writes, on `(subject_id, allele)`. The
+record already carries both halves. See
+[Genotypes](../guides/genotype.md).
 
 ## Validation
 

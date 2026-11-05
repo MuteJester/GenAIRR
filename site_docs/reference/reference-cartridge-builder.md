@@ -30,6 +30,8 @@ for the estimator deep dive, see
 | `.estimate_np_length_distributions(records)` | Estimate NP1 / NP2 length distributions |
 | `.estimate_np_base_model(records, kind=...)` | Estimate NP-base model (Markov or empirical first-base) |
 | `.estimate_p_nucleotide_lengths(records)` | Estimate palindromic-insertion length distributions |
+| `.estimate_genotype_priors(genotypes, ...)` | Estimate a per-gene population genotype prior from observed genotypes |
+| `.set_genotype_priors(model)` | Attach a `PopulationGenotypeModel` you already have |
 | `.build()` | Finalise, stamp checksum, return the `DataConfig` |
 | `.report()` | Get the `CartridgeBuildReport` with stages / warnings / rejections |
 
@@ -56,5 +58,7 @@ for source requirements, conservative anchor inference and legacy compatibility.
         - estimate_np_length_distributions
         - estimate_np_base_model
         - estimate_p_nucleotide_lengths
+        - estimate_genotype_priors
+        - set_genotype_priors
         - build
         - report

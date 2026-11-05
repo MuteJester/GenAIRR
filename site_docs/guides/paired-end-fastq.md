@@ -82,9 +82,9 @@ default:
 
 | Field | Default (no paired-end) |
 |---|---|
-| `read_layout` | `'single'` |
+| `read_layout` | `''` (empty string) |
 | `r1_sequence`, `r2_sequence` | `''` (empty string) |
-| `r1_start`, `r1_end`, `r2_start`, `r2_end` | `0` |
+| `r1_start`, `r1_end`, `r2_start`, `r2_end` | `None` |
 | `insert_size` | `0` |
 
 Code that may receive either shape can safely check
@@ -162,9 +162,15 @@ few interactions are worth knowing:
 - **End-loss happens before read layout.** When
   `.end_loss_5prime(...)` and `.end_loss_3prime(...)` are in the
   pipeline, they shorten the molecule first; `paired_end` then
-  slices R1/R2 windows over what's left. A 300-bp insert request
-  against a 290-bp post-end-loss molecule clips to what's
-  available - no error, just a shorter insert.
+  slices R1/R2 windows over what's left. **The insert is not clipped
+  to fit.** A requested insert longer than the surviving molecule
+  leaves the record with `read_layout='paired_end'` but
+  `insert_size=0`, all four window coordinates `None` and both read
+  sequences empty: `validate_records` then reports
+  `ReadWindowOutOfBounds`, and `to_paired_fastq` raises on the empty
+  `r1_sequence`. Size `insert_size` against the shortest molecule the
+  pipeline can produce - on human IGH that is about 350 nt before end
+  loss.
 - **Random strand orientation flips before R1/R2 windows.** When
   `.random_strand_orientation(prob=0.5)` is in the pipeline and
   the record draws a strand flip, the molecule's sequence is
@@ -182,7 +188,8 @@ few interactions are worth knowing:
 
 `paired_end` is a descendant-phase pass - R1/R2 windows are
 per-read, so each emitted clone member gets its own independent layout
-draw. It is fully supported after legacy `expand_clones(...)`, and
+draw. It is fully supported after legacy `expand_clones(...)` - which is
+deprecated and raises a `DeprecationWarning` - and
 accepted after `clonal_repertoire(...)` with one important caveat:
 `clonal_repertoire` collapses identical assembled sequences into one
 record with `duplicate_count`, and FASTQ export does not expand that
@@ -236,8 +243,9 @@ validity, run `validate_records` on the `SimulationResult` before
 exporting:
 
 ```python
+refdata = exp.compile().refdata          # a RefDataConfig, not a DataConfig
 report = result.validate_records(refdata)
-assert report, report.summary()
+assert report, report.summary()          # summary() is a dict of issue counts
 result.to_paired_fastq("R1.fastq", "R2.fastq")
 ```
 
@@ -252,7 +260,9 @@ A handful of issues that show up repeatedly with paired-end.
 are per-read, so `paired_end` is descendant-phase. Move
 `.paired_end(...)` after `clonal_repertoire(...)` or legacy
 `expand_clones(...)`. For exact per-copy paired FASTQ depth today,
-use legacy `expand_clones`; `clonal_repertoire` is abundance-collapsed
+use legacy `expand_clones` - it is deprecated and raises a
+`DeprecationWarning`, but it is still the only surface that gives an
+exact per-copy count; `clonal_repertoire` is abundance-collapsed
 and exposes copy number through `duplicate_count`. `clonal_lineage(...)`
 currently rejects `.paired_end(...)` even after the fork; paired-end
 lineage output is a future addition.
@@ -269,13 +279,15 @@ is already reverse-complemented at AIRR-projection time. Reading
 it and applying another `reverse_complement()` would flip it
 back to the forward orientation and the FASTQ would no longer
 match what a sequencer actually emits. Trust the field as
-written; the validator's `PairedEndWindowMismatch { side: R2 }`
-check enforces it.
+written; the validator's `ReadSequenceMismatch` check enforces it
+(the other paired-end issue kinds are
+`PairedEndFieldWithoutLayout`, `ReadWindowOutOfBounds`,
+`ReadInsertSizeMismatch` and `ReadLayoutMismatch`).
 
 **Expecting FASTQ export without `.paired_end()` in the
-pipeline.** `to_paired_fastq` raises on records whose
-`read_layout == "single"` (or whose `r1_sequence` / `r2_sequence`
-are empty). For single-end FASTQ output, use `to_fastq(...)`
+pipeline.** `to_paired_fastq` raises on records whose `read_layout` is not
+`"paired_end"` (it is `''` without the pass), and on records whose
+`r1_sequence` / `r2_sequence` are empty. For single-end FASTQ output, use `to_fastq(...)`
 instead.
 
 ## Where to go next

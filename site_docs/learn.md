@@ -11,7 +11,7 @@ The fastest path from `pip install` to a productive heavy-chain
 batch.
 
 1. **[Quick start](getting-started/quick-start.md)** - 5 minutes,
-   100 productive heavy chains, AIRR records returned.
+   1,000 productive heavy chains, AIRR records returned.
 2. **[Your first AIRR record](getting-started/first-airr-record.md)**
    field-by-field tour of what the engine emits.
 3. **[The Experiment builder](guides/experiment-builder.md)** -

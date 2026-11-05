@@ -1,9 +1,8 @@
 # Documentation-build dependencies for the MkDocs Material site.
 #
-# Phase 1 of the migration plan in `docs/docs_mkdocs_migration_plan.md`.
 # Install via:
 #
-#     pip install -r docs/requirements-docs.txt
+#     pip install -r requirements-docs.txt
 #
 # Or via `make docs-install`.
 #

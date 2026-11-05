@@ -47,15 +47,16 @@ result = (
 
 report = result.validate_records(refdata)
 assert report                     # ValidationReport is truthy iff every record passed
-print(report.summary())           # Histogram of issue kinds (empty when ok)
+print(report.summary())           # dict[str, int] of issue kinds (empty when ok)
 ```
 
 `refdata` is the cartridge in its engine-side `RefDataConfig` shape.
 When you bound the `Experiment` to a string like `"human_igh"` or a
 `DataConfig`, the bridge produces a `RefDataConfig` for the engine;
 you can obtain the same object via `ga.dataconfig_to_refdata(cfg)`
-on the Python side, or read it off
-`exp.compile().simulator.refdata` after a compile.
+on the Python side, or read it off `exp.compile().refdata` after a
+compile. Passing a `DataConfig` straight in raises `TypeError` - the
+validator wants the engine-side shape.
 
 ## Runtime validation
 
@@ -87,7 +88,7 @@ report = result.validate_records(refdata)
 report.ok            # True / False - short-circuit gate for CI
 report.count         # int - total records validated
 report.failures      # list[dict] - one entry per failing record
-report.summary()     # str - single-line histogram of issue kinds
+report.summary()     # dict[str, int] - issue kind -> count ({} when ok)
 bool(report)         # equivalent to report.ok
 
 assert report, report.summary()   # the canonical CI one-liner
@@ -100,8 +101,8 @@ When `ok` is `False`, each entry of `failures` carries:
     "record_index": 17,
     "sequence_id": "seq17",
     "issues": [
-        {"kind": "JunctionLength", "details": {...}},
-        {"kind": "VCallMismatch",  "details": {...}},
+        {"kind": "JunctionLengthMismatch",    "details": {...}},
+        {"kind": "RecalledAlleleCallMismatch", "details": {...}},
     ],
 }
 ```
@@ -112,10 +113,15 @@ problem.
 
 ## Common issue categories
 
-The validator catalogues divergences into five families. Each family
+The validator catalogues divergences into six families, plus two
+assessment-level checks (`ProductivityAssessmentMismatch` and
+`CodingEndProcessingMismatch`) that sit outside them. Each family
 groups together the checks that share the same upstream source, so
 when you see one fire you can localise the suspect code path
-quickly.
+quickly. The five described below are the ones a user meets; the
+sixth covers region and live-call structural invariants
+(`MultipleRegionsForSegment`, `MultipleHypothesesInLiveCall`), which
+fire only on engine-level corruption.
 
 ### Sequence + coordinate consistency
 
@@ -138,7 +144,12 @@ Every counter on the record is re-derived from a canonical source:
 | `n_v_mutations` / `n_d_mutations` / `n_j_mutations` / `n_np_mutations` | The same SHM events, partitioned by carried segment |
 | `n_pcr_errors` / `n_quality_errors` / `n_ambiguous_bases` | Each pass's own `BaseChanged` events, counting only writes that changed a base |
 | `n_indels` / `n_v_indels` / `n_d_indels` / `n_j_indels` | `IndelInserted` + `IndelDeleted` events from the indel pass |
-| `end_loss_5_length` / `end_loss_3_length` | Trace addresses on the end-loss pass |
+| `end_loss_5_length` / `end_loss_3_length` | Trace addresses on the end-loss pass, summed when more than one pass trims the same end |
+| `mutation_rate` | Each mutation stage's realized events over that stage's input molecule length |
+| `n_observable_mutations` | The SHM writes still in the molecule and still differing from the germline base recorded there (`NObservableMutationsMismatch`, plus the cross-field `ObservableMutationsExceedCount`) |
+| the six `n_*_observable_mutations` | The same, bucketed by IMGT V subregion (`VSubregionObservableExceedsEvents`, `VSubregionObservableSumExceedsTotal`) |
+| `np1_n_tdt` / `np1_n_p` / `np1_n_inserted` and the `np2_*` triple | Per-base origin of each NP region, which must partition its length (`NpPartitionMismatch`, `NpPartitionOriginAmbiguous`) |
+| `p_v_3_length` / `p_d_5_length` / `p_d_3_length` / `p_j_5_length` | The templated P bytes emitted at each junction side (`PLengthMismatch`) |
 
 A `MutationCountSumMismatch` issue means the per-segment counters
 don't add up to `n_mutations` - almost always a sign that a

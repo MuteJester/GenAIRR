@@ -3,7 +3,7 @@
     "branch": "fix/biological-metadata-correctness",
     "commit": "6413a6bbf321a492f6c79f679b71506dabf101ae",
     "dirty": true,
-    "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+    "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
     "extension_sha256": "6e45f13f74a170caa8f9fb861192350659586b315812deb2701fc0a9ad1909d4",
     "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
     "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
@@ -25,7 +25,7 @@
       "compile_peak_increase_kib": 832,
       "compile_seconds": 0.0009993479907279834,
       "distinct_histories_sampled": 8,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000007",
         "model_digest": "sha256:c257de0b03b439eb6cd5fca7fd9c633c12829e5134bd95be4909485c957ed9c6",
@@ -51,7 +51,7 @@
       "compile_peak_increase_kib": 960,
       "compile_seconds": 0.001016237001749687,
       "distinct_histories_sampled": 8,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000007",
         "model_digest": "sha256:c257de0b03b439eb6cd5fca7fd9c633c12829e5134bd95be4909485c957ed9c6",
@@ -77,7 +77,7 @@
       "compile_peak_increase_kib": 832,
       "compile_seconds": 0.0010169219895033166,
       "distinct_histories_sampled": 8,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000000",
         "model_digest": "sha256:c257de0b03b439eb6cd5fca7fd9c633c12829e5134bd95be4909485c957ed9c6",
@@ -103,7 +103,7 @@
       "compile_peak_increase_kib": 1728,
       "compile_seconds": 0.0032104130077641457,
       "distinct_histories_sampled": 32,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000030",
         "model_digest": "sha256:d53f6a07e73d86006c0f3efafac6f8991bf9f610fe99bd43c5f3fb858ee554a1",
@@ -129,7 +129,7 @@
       "compile_peak_increase_kib": 1728,
       "compile_seconds": 0.00322621499071829,
       "distinct_histories_sampled": 32,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000030",
         "model_digest": "sha256:d53f6a07e73d86006c0f3efafac6f8991bf9f610fe99bd43c5f3fb858ee554a1",
@@ -155,7 +155,7 @@
       "compile_peak_increase_kib": 1600,
       "compile_seconds": 0.004085260006831959,
       "distinct_histories_sampled": 32,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000003",
         "model_digest": "sha256:d53f6a07e73d86006c0f3efafac6f8991bf9f610fe99bd43c5f3fb858ee554a1",
@@ -181,7 +181,7 @@
       "compile_peak_increase_kib": 4544,
       "compile_seconds": 0.012196705996757373,
       "distinct_histories_sampled": 128,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000120",
         "model_digest": "sha256:8ae42bb7db72df5b22b1a764d44e24d83579a24d5fe2ef36b36e06ecd0cdcf55",
@@ -207,7 +207,7 @@
       "compile_peak_increase_kib": 4544,
       "compile_seconds": 0.012122743006329983,
       "distinct_histories_sampled": 128,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000122",
         "model_digest": "sha256:8ae42bb7db72df5b22b1a764d44e24d83579a24d5fe2ef36b36e06ecd0cdcf55",
@@ -233,7 +233,7 @@
       "compile_peak_increase_kib": 4544,
       "compile_seconds": 0.011953912995522842,
       "distinct_histories_sampled": 128,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000012",
         "model_digest": "sha256:8ae42bb7db72df5b22b1a764d44e24d83579a24d5fe2ef36b36e06ecd0cdcf55",
@@ -259,7 +259,7 @@
       "compile_peak_increase_kib": 960,
       "compile_seconds": 0.001114522005082108,
       "distinct_histories_sampled": 8,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000002",
         "model_digest": "sha256:d2cdb7434de5271ab3b73ebd9196671672f54da9d9143caa076b371df52dd3fd",
@@ -285,7 +285,7 @@
       "compile_peak_increase_kib": 960,
       "compile_seconds": 0.0011133459920529276,
       "distinct_histories_sampled": 8,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000005",
         "model_digest": "sha256:d2cdb7434de5271ab3b73ebd9196671672f54da9d9143caa076b371df52dd3fd",
@@ -311,7 +311,7 @@
       "compile_peak_increase_kib": 832,
       "compile_seconds": 0.0011279000027570873,
       "distinct_histories_sampled": 8,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000000",
         "model_digest": "sha256:d2cdb7434de5271ab3b73ebd9196671672f54da9d9143caa076b371df52dd3fd",
@@ -337,7 +337,7 @@
       "compile_peak_increase_kib": 1728,
       "compile_seconds": 0.00369748700177297,
       "distinct_histories_sampled": 32,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000026",
         "model_digest": "sha256:03ffd2e6189ca098690f4148b1ae7babb8e3c6279124d4354938313812733dcf",
@@ -363,7 +363,7 @@
       "compile_peak_increase_kib": 1728,
       "compile_seconds": 0.0036066010070499033,
       "distinct_histories_sampled": 32,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000029",
         "model_digest": "sha256:03ffd2e6189ca098690f4148b1ae7babb8e3c6279124d4354938313812733dcf",
@@ -389,7 +389,7 @@
       "compile_peak_increase_kib": 1728,
       "compile_seconds": 0.0036449659965001047,
       "distinct_histories_sampled": 32,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000000",
         "model_digest": "sha256:03ffd2e6189ca098690f4148b1ae7babb8e3c6279124d4354938313812733dcf",
@@ -415,7 +415,7 @@
       "compile_peak_increase_kib": 4544,
       "compile_seconds": 0.013903794999350794,
       "distinct_histories_sampled": 128,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000122",
         "model_digest": "sha256:9e9bec8822e3e6bbbf82831f0ee9dcbf6f48b2f0402a15a0a399fd2ae3a627d3",
@@ -441,7 +441,7 @@
       "compile_peak_increase_kib": 4544,
       "compile_seconds": 0.013659849995747209,
       "distinct_histories_sampled": 128,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000125",
         "model_digest": "sha256:9e9bec8822e3e6bbbf82831f0ee9dcbf6f48b2f0402a15a0a399fd2ae3a627d3",
@@ -467,7 +467,7 @@
       "compile_peak_increase_kib": 4544,
       "compile_seconds": 0.013803929003188387,
       "distinct_histories_sampled": 128,
-      "extension_path": "/home/thomas/Desktop/GenAIRR/src/GenAIRR/_engine.abi3.so",
+      "extension_path": "<repo>/src/GenAIRR/_engine.abi3.so",
       "first_record": {
         "history_id": "history-000008",
         "model_digest": "sha256:9e9bec8822e3e6bbbf82831f0ee9dcbf6f48b2f0402a15a0a399fd2ae3a627d3",

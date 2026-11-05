@@ -26,6 +26,23 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _relative_extension_path() -> str:
+    """The extension's path relative to the repo, so a record names no machine.
+
+    An absolute path identifies the author's filesystem, not the artifact; the
+    sha256 beside this field is what identifies the binary.
+    """
+    from GenAIRR import _engine
+
+    extension = Path(_engine.__file__).resolve()
+    try:
+        return str(extension.relative_to(ROOT))
+    except ValueError:
+        return extension.name
+
+
 PARAMETERS = {
     "n_clones": 2,
     "n_max": 32,
@@ -72,7 +89,7 @@ def _identity():
         "source_sha256": digest.hexdigest(),
         "source_hash_scope": "engine_rs/src/**/*.rs,src/GenAIRR/**/*.py,engine_rs/Cargo.toml,Cargo.lock",
         "benchmark_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "extension_path": str(extension),
+        "extension_path": _relative_extension_path(),
         "extension_sha256": hashlib.sha256(extension.read_bytes()).hexdigest(),
         "python": sys.version,
         "platform": platform.platform(),

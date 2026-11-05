@@ -57,7 +57,8 @@ differently; the trace files for their runs are not confusable.
 cfg.metadata.species         # Species.HUMAN
 cfg.metadata.chain_type      # ChainType.BCR_HEAVY
 cfg.metadata.reference_set   # "OGRDB V8"
-cfg.name                     # "human_igh"
+cfg.name                     # "Heavy Chain" - the cartridge's own display
+                             # name, not the "human_igh" string shortcut
 ```
 
 The cartridge validator cross-checks `chain_type` against the locus
@@ -137,7 +138,12 @@ cfg.reference_models = ReferenceEmpiricalModels(
         "NP1": NpBaseModelSpec(
             kind="markov",
             first_base={"A": 0.25, "C": 0.25, "G": 0.25, "T": 0.25},
-            transitions={...},
+            transitions={
+                "A": {"A": 0.0, "C": 0.3, "G": 0.4, "T": 0.3},
+                "C": {"A": 0.3, "C": 0.0, "G": 0.3, "T": 0.4},
+                "G": {"A": 0.4, "C": 0.3, "G": 0.0, "T": 0.3},
+                "T": {"A": 0.3, "C": 0.4, "G": 0.3, "T": 0.0},
+            },
         ),
     },
     p_nucleotide_lengths={
@@ -271,7 +277,8 @@ introspection:
 manifest = cfg.cartridge_manifest()
 
 manifest["identity"]                       # name, species, locus, reference_set, source
-manifest["catalogue"]["v_allele_count"]    # int
+manifest["catalogue"]["v_count"]           # int (also d_count / j_count /
+                                           # c_count / functional_status_counts)
 manifest["rules"]                          # anchor expectations, allowed bases
 manifest["models"]["allele_usage"]         # available / nonempty_segments / soft-gap flag
 manifest["models"]["trim_models"]          # keys / source / plan-signature flag
@@ -337,8 +344,9 @@ explicitly use `allow_curatable_refdata`.
 Three layers, in the order they fire:
 
 1. **Validation** describes the catalogue against the cartridge's
-   rules. Returns a list of issue dicts each tagged with severity
-   (`"fatal"` or `"curatable"`).
+   rules. On the engine-side `RefDataConfig`, `validate()` returns a
+   list of issue dicts each tagged with severity (`"fatal"` or
+   `"curatable"`).
 2. **Curation** selects which alleles participate. Re-runs validation
    on the curated cartridge. Fatal structural issues are NOT fixed
    by curation - they still surface.
@@ -348,10 +356,13 @@ Three layers, in the order they fire:
    strict mode.
 
 ```python
-# Direct authoring
-issues = cfg.validate()
-cfg.validate_strict()                          # raises on any issue
-cfg.validate_with_mode(mode="allow_curatable") # raises only on Fatal
+# Direct authoring. The three mode-aware entry points live on the
+# engine-side bridge object, not on the Python DataConfig:
+# DataConfig.validate() raises DataConfigError and returns nothing.
+refdata = ga.dataconfig_to_refdata(cfg)
+issues = refdata.validate()                        # list[dict], [] when clean
+refdata.validate_strict()                          # raises on any issue
+refdata.validate_with_mode(mode="allow_curatable") # raises only on Fatal
 
 # Through Experiment
 ga.Experiment.on(cfg).curate_refdata("functional_anchors_only").compile()

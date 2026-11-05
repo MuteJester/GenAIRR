@@ -10,6 +10,14 @@ specific biological mechanisms or pipeline patterns.</p>
   control panel. Every pipeline goes through this builder; this
   is the one guide every user should read.
 
+## Constraints
+
+- **[Sample only productive sequences](productive.md)** - what
+  `productive_only()` guarantees, the named policy, and strict
+  vs permissive failure.
+- **[Biology map](biology-map.md)** - every biological mechanism,
+  the DSL call that turns it on, and the fields it writes.
+
 ## Biology mechanisms
 
 - **[Recombination + junction biology](recombination-junction.md)**
@@ -29,6 +37,22 @@ specific biological mechanisms or pipeline patterns.</p>
   ground-truth exports.
 - **[Clonal repertoires](clonal-repertoire.md)** - TCR and flat-BCR
   abundance models with heavy-tailed clone sizes and `duplicate_count`.
+- **[Retained coding end calibration](coding-end-calibration.md)**
+  signed net coding-end outcomes, fitting and held-out scoring.
+- **[Experimental duplex repair](experimental-duplex-repair.md)**
+  authored two-strand coding-end opening, resection and ligation.
+
+## Per-individual genotypes
+
+- **[Genotypes](genotype.md)** - one subject's diploid germline
+  complement, haplotype-phased recombination, novel alleles, and
+  the genotype truth sidecar.
+- **[Genotype sampling & population priors](genotype-priors.md)**
+  draw genotypes from a per-gene population model.
+- **[Genotype cohorts](genotype-cohorts.md)** - many subjects in
+  one run, namespaced records, one truth table.
+- **[Benchmarking genotype inference](genotype-benchmarking.md)**
+  scoring a genotype caller against planted truth.
 
 ## Library + sequencing
 
@@ -41,7 +65,14 @@ specific biological mechanisms or pipeline patterns.</p>
 ## Reproducibility
 
 - **[Trace, replay, reproducibility](trace-replay.md)** - what
-  a trace contains, how to replay it, every failure mode.
+  a trace contains, how to replay it, every failure mode, and
+  what `determinism_version` promises.
+
+## Portable references
+
+- **[Portable local references](portable-references.md)** - build
+  a reference from your own V/D/J FASTA plus an annotation
+  sidecar, and carry it between machines.
 
 ## Cartridge authoring (separate section)
 

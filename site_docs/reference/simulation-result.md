@@ -12,7 +12,7 @@ and export helpers below.</p>
 
 ## Common methods
 
-The eight methods you'll reach for in real pipelines:
+The methods you'll reach for in real pipelines:
 
 | Method | Purpose |
 |---|---|
@@ -22,14 +22,16 @@ The eight methods you'll reach for in real pipelines:
 | `.to_dataframe(*, airr_strict=False)` | Return a pandas DataFrame with canonical AIRR columns |
 | `.to_tsv(path, *, airr_strict=True)` | Write TSV with AIRR coordinates, CIGAR placement offsets, and `T` / `F` booleans |
 | `.to_csv(path, *, airr_strict=False)` | Write CSV with Python record conventions by default |
-| `.to_genotype_tsv(path)` | Write the run's genotype ground truth as a sidecar, one row per carried allele, joined to the records on `subject_id` + allele. Raises if the run carried no genotype |
+| `.to_genotype_tsv(path)` | Write the run's genotype ground truth as a sidecar, one row per carried allele, joined to the records on `subject_id` + allele. Raises if the run carried no genotype, if its genotypes carry no `subject_id`, or if a permissive genotype leaves reference genes unspecified |
 | `.to_fasta(path, *, prefix="seq")` | Write assembled sequences as FASTA |
 | `.to_fastq(...)` / `.to_paired_fastq(...)` | Write FASTQ; paired-end requires `read_layout="paired_end"` |
+| `.to_genotype_tsv(path)` on a `CohortResult` | The same sidecar for every subject of a cohort run |
 
 `clonal_repertoire` returns ordinary `SimulationResult` records with
 `clone_id` and `duplicate_count`. `clonal_lineage` returns
 `SimulationResultWithLineages`, a subclass that adds `.lineage_trees`.
-Legacy `expand_clones` returns `SimulationResult` with `.parents`.
+Legacy `expand_clones` returns `SimulationResult` with `.parents`; the
+call itself is deprecated and raises a `DeprecationWarning`.
 
 Record dicts, default CSV, and default DataFrames use 0-based,
 half-open biological coordinates and local per-segment CIGARs.
