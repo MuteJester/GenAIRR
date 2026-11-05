@@ -22,6 +22,7 @@ The eight methods you'll reach for in real pipelines:
 | `.to_dataframe(*, airr_strict=False)` | Return a pandas DataFrame with canonical AIRR columns |
 | `.to_tsv(path, *, airr_strict=True)` | Write TSV with AIRR coordinates, CIGAR placement offsets, and `T` / `F` booleans |
 | `.to_csv(path, *, airr_strict=False)` | Write CSV with Python record conventions by default |
+| `.to_genotype_tsv(path)` | Write the run's genotype ground truth as a sidecar, one row per carried allele, joined to the records on `subject_id` + allele. Raises if the run carried no genotype |
 | `.to_fasta(path, *, prefix="seq")` | Write assembled sequences as FASTA |
 | `.to_fastq(...)` / `.to_paired_fastq(...)` | Write FASTQ; paired-end requires `read_layout="paired_end"` |
 
@@ -90,5 +91,6 @@ output file unless you pass `overwrite=True`.
         - to_dataframe
         - to_tsv
         - to_csv
+        - to_genotype_tsv
         - to_fasta
         - from_outcomes

@@ -1,5 +1,13 @@
 {
-  "revised": {},
+  "revised": {
+    "test_a_field_the_catalog_calls_unclaimed_does_not_count_toward_coverage": "docstring only: the overlap between UNCLAIMED_FIELDS and some mechanism's truth fields grew from thirteen to fourteen when germline.genotype claimed subject_id. The assertions are unchanged.",
+    "test_the_fields_excluded_from_coverage_are_pinned": "subject_id added to the pinned exclusion set. It is the subject label the caller supplied, identical on every record of a subject with no per-record outcome in it -- the same shape as read_layout -- and it is listed beside germline.genotype because it is the key the genotype sidecar joins on. The pin is deliberately widened, which is what this test exists to force.",
+    "test_the_coverage_report_numbers_are_pinned": "germline.genotype moves from no-truth-exported to verified, so the per-mechanism pin and the distribution move with it: verified 22 -> 23, no-truth-exported 4 -> 3. The reason is in the docstring: its truth_gap claimed there is 'no haplotype or chromosome field' while the engine had been stamping one, and the field census had no genotype mode to show it.",
+    "test_vdj_phasing_links_v_and_j_to_one_chromosome": "gains a @verifies registration for germline.genotype on `haplotype` (reference basis), and a premise guard that both chromosomes are actually drawn from. Without the guard the haplotype claim holds in one direction only: a run that never left hap0 satisfies every existing assertion while proving nothing about hap1. No existing assertion was weakened or removed.",
+    "fields_by_mode": "a `genotype` mode is added to the field census. subject_id and haplotype are stamped on every record of a genotype run and no mode produced them, so the catalog's completeness checks could not see them -- the same blind spot the duplex mode was added to fix. The census grows; nothing it asserted was relaxed.",
+    "MECHANISMS": "germline.genotype's truth_fields grow from (locus,) to (locus, haplotype, subject_id) and its truth_gap is removed in favour of a notes field. The gap said the genotype 'is not exported' and that there is 'no haplotype or chromosome field'; the second half was never true and the first is closed by to_genotype_tsv. Widening truth_fields lowers a coverage ratio rather than raising it, and the coverage pin is updated in the same commit.",
+    "UNCLAIMED_FIELDS": "the `locus` entry no longer points at a truth_gap that has been removed, and `subject_id` is added with its reason. The added entry raises germline.genotype's ratio, so it is also pinned in test_the_fields_excluded_from_coverage_are_pinned, which is the argument this gate asks for."
+  },
   "replaced": {},
   "allow": {}
 }

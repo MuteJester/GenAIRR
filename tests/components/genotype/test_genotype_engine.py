@@ -2,6 +2,7 @@
 import GenAIRR as ga
 import GenAIRR.data as gdata
 from GenAIRR.genotype import Genotype
+from tests.biology.catalog import verifies
 
 import pytest
 
@@ -98,6 +99,16 @@ def test_heterozygous_expression_is_roughly_balanced():
     assert 0.35 < frac0 < 0.65, frac0
 
 
+@verifies("germline.genotype",
+          claim="`haplotype` names the chromosome the rearrangement actually "
+                "drew from. The genotype is phased so that each chromosome "
+                "carries exactly one V gene and one J gene, which makes the "
+                "drawn chromosome readable off the calls themselves, and the "
+                "field agrees with it on every record. The phasing comes from "
+                "the genotype this test constructs, so a wrong `haplotype` "
+                "cannot also move what it is checked against",
+          fields=("haplotype",),
+          basis="reference")
 def test_vdj_phasing_links_v_and_j_to_one_chromosome():
     """The core phasing guarantee: with hap0 = {V:gv0, J:gj0} and
     hap1 = {V:gv1, J:gj1}, every rearrangement's V and J must come from
@@ -123,6 +134,11 @@ def test_vdj_phasing_links_v_and_j_to_one_chromosome():
     res = ga.Experiment.on(cfg).with_genotype(g).recombine().run_records(
         n=200, seed=4, expose_provenance=True
     )
+    # Both chromosomes must actually be drawn from, or the haplotype claim
+    # below holds in one direction only: a run that never left hap0 satisfies
+    # every assertion while proving nothing about hap1.
+    assert {r["haplotype"] for r in res} == {0, 1}, (
+        f"only drew from {sorted({r['haplotype'] for r in res})}")
     for r in res:
         v_is_0 = r["truth_v_call"].startswith(gv0 + "*")
         j_is_0 = r["truth_j_call"].startswith(gj0 + "*")

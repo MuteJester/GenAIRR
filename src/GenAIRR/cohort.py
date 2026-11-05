@@ -147,6 +147,17 @@ class CohortResult:
         DataFrame)."""
         self.to_dataframe(airr_strict=airr_strict).to_csv(path, index=False)
 
+    def to_genotype_tsv(self, path: str) -> None:
+        """Write every subject's genotype ground truth into one table.
+
+        The cohort counterpart of :meth:`SimulationResult.to_genotype_tsv`:
+        the same long form, with ``subject_id`` distinguishing the subjects,
+        so one sidecar joins to the concatenated records file.
+        """
+        from ._genotype_truth import write_genotype_tsv
+
+        write_genotype_tsv(path, self.genotypes)
+
     def to_fasta(self, path: str) -> None:
         """Write one FASTA record per concatenated record. Header is exactly
         ``>{sequence_id}`` (the namespaced id); body is the record's

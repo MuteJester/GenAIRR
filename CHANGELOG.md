@@ -6,6 +6,34 @@ All notable changes to GenAIRR are documented here.
 
 ### Added
 
+- `result.to_genotype_tsv(path)` and `CohortResult.to_genotype_tsv(path)`:
+  a run writes the genotype it was given beside the records it produced, one
+  row per carried allele, with `subject_id`, `locus`, `segment`, `gene`,
+  `allele`, `chromosome`, `novel` and `gene_state`. Until now the planted
+  truth and the records left the library by separate doors -- the records from
+  the result, the genotype from the `Genotype` object the caller still had to
+  be holding -- so a dataset handed to someone else arrived without the thing
+  it was meant to be scored against. A gene deleted on a chromosome keeps its
+  row with the literal allele `(none)`, because an empty TSV cell cannot be
+  told apart from a missing value, and a result with no genotype raises rather
+  than writing a zero-row file that looks like success. Whether a given read
+  drew a novel allele is a join of `truth_v_call` against this table on
+  `(subject_id, allele)`, which the genotype guide now shows; it is
+  deliberately not a record column, since the record already carries both
+  halves.
+
+  The writer refuses more than an absent genotype. It refuses a permissive
+  genotype that still leaves reference genes unspecified, because the engine
+  samples those genes over the whole reference and their alleles would reach
+  the records but no row of the file: measured on `HUMAN_IGH_OGRDB`, a
+  permissive genotype with one gene pinned writes two rows while the records
+  draw 119 alleles that are not in it, and a benchmark scoring a caller
+  against that file marks correct calls wrong. It also refuses a cohort where
+  only some subjects carry a genotype, and two subjects sharing one
+  `subject_id`, since both produce a table that looks complete and is not.
+  Per-chromosome expression weight (`chromosome_weights`) is *not* in the
+  sidecar and is documented as such.
+
 - `determinism_version` on a trace file as well as on every exported record.
   A trace recorded a seed and a plan signature, which together say what to
   draw and from where, but not which model does the drawing: replaying a file

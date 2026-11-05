@@ -390,12 +390,64 @@ A genotype experiment emits, by construction, everything an evaluation needs:
   (`homozygous` / `heterozygous` / `hemizygous` / `deleted`), the carried alleles
   per haplotype, and per-haplotype `allele:copies:weight` detail. This is the
   reference a genotype-inference benchmark compares against.
+- **`result.to_genotype_tsv(path)`:** the same truth in **long** form, written
+  as a sidecar beside the records: one row per carried allele, with
+  `subject_id`, `locus`, `segment`, `gene`, `allele`, `chromosome` (`0`/`1`),
+  `novel` and `gene_state`. A gene deleted on a chromosome keeps its row with
+  the literal allele `(none)`, so an absence is distinguishable from a missing
+  value. `CohortResult.to_genotype_tsv(path)` writes every subject into one
+  table, which joins to the concatenated records file on `subject_id`. A run
+  with no genotype raises rather than writing an empty file.
 
 ```python
 for row in result.genotypes[0].to_table():
     if row["zygosity"] != "homozygous":      # show the interesting genes
         print(row["gene"], row["zygosity"], row["haplotype_0"], row["haplotype_1"])
 ```
+
+### Was this read's allele novel?
+
+There is deliberately no per-read novelty column. The question is a join: the
+record names the allele it was generated from, and the sidecar says whether
+that allele is novel in that subject. Keeping it a join is what stops the
+record carrying a field derived from two others it already has.
+
+```python
+import csv
+
+result.to_tsv("repertoire.tsv")
+result.to_genotype_tsv("truth_genotype.tsv")
+
+with open("truth_genotype.tsv", encoding="utf-8") as fh:
+    novel = {(row["subject_id"], row["allele"])
+             for row in csv.DictReader(fh, delimiter="\t")
+             if row["novel"] == "True"}
+
+# `truth_v_call` needs expose_provenance=True; prefer it over `v_call`, which
+# may be a comma-separated tie list.
+for rec in result.records:
+    drew_novel_v = (rec["subject_id"], rec["truth_v_call"]) in novel
+```
+
+The `gene_state` column answers the zygosity question per read the same way.
+The deletion question is **not** a per-read question: a deleted gene is never
+drawn from, so no record's `truth_v_call` can ever match a `(none)` row. Ask
+it of the subject, by reading the rows whose `gene_state` is `deleted`.
+
+!!! warning "Join on the allele, not on the locus"
+    A record carries one `locus` for the whole rearrangement, taken from its V
+    call. A sidecar row carries the locus of *its own* gene. On a cartridge
+    whose V pool mixes loci — `HUMAN_TCRD_IMGT` has both `TRAV` and `TRDV`
+    genes — a read with a `TRAV` V call is labelled `TRA` while the `TRDJ`
+    allele it was generated from is a `TRD` row. Filtering the sidecar by the
+    record's locus before joining therefore drops the D and J truth for most
+    reads. Join on `(subject_id, allele)`.
+
+!!! note "Per-chromosome expression weight is not in the sidecar"
+    `chromosome_weights(w0, w1)` changes how often each chromosome is drawn
+    from, and no export carries it. With `(1.0, 0.0)` the table still lists
+    every haplotype-1 allele as carried, while no record can draw one. If you
+    set non-equal weights, record them alongside the run yourself.
 
 ## More genotype topics
 
