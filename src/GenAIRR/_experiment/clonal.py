@@ -321,9 +321,13 @@ class _ClonalMixin:
             Maximum depth of the lineage tree (≤ 1000).
         n_max:
             Per-generation LIVING-population carrying capacity: the live
-            population per generation is capped at this (the tree can contain
-            more total nodes across generations). It is NOT a hard cap on the
-            total number of cells per clone.
+            population each generation settles at. Beverton-Holt regulation
+            makes the effective offspring rate exactly 1 here, so the
+            population levels off instead of growing or collapsing. A
+            generation may overshoot it -- nothing truncates one, and the next
+            generation's rate is below replacement. It is NOT a cap on the
+            total number of cells per clone; the tree contains far more nodes
+            across generations.
         n_sample:
             Number of cells to sample as observed leaves. Records returned
             per clone are ≤ ``n_sample``. Legacy mode collapses identical
@@ -332,7 +336,11 @@ class _ClonalMixin:
         rate:
             Per-base SHM rate for within-lineage mutations.
         lambda_base:
-            Poisson mean for offspring count at affinity 0.
+            Poisson mean offspring count for a founder-baseline cell in an
+            empty germinal center. The mean a cell actually draws against is
+            this damped by the live population (see ``n_max``) and, under
+            selection, scaled by the cell's fitness relative to the founder --
+            which at affinity 0 is not generally 1.
         selection_strength:
             Selection pressure; ``0.0`` = neutral drift (fitness is 1.0 for
             every cell). This disables selection but does not force

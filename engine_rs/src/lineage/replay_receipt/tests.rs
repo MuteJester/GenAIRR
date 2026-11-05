@@ -215,6 +215,26 @@ fn literal_capacity_receipt(
     let driver = FamilyReplayDriver::new(config.clone(), founder, None, &mut budget).unwrap();
     // Build static commitments through the real zero-mutation pass. The
     // topology and sample arithmetic below are literal independent controls.
+    //
+    // The arithmetic is Beverton-Holt at lambda_base 3 and n_max 4:
+    // generation 1 draws against 3/(1 + 2*(1/4)) = 2.0 from one live cell, and
+    // generation 2 against 3/(1 + 2*(3/4)) = 1.2 from three. Generation 2's
+    // nine proposed offspring overshoot the capacity of 4 and every one of them
+    // is created: regulation answers an overshoot by lowering the next
+    // generation's rate, not by discarding cells. Under the logistic law this
+    // replaces the rates were 2.25 and 0.75, and a hard cap discarded parent
+    // 3's child -- node 8 here -- once the generation had filled n_max.
+    //
+    // Node 8 is the cell that cap once suppressed.
+    let parent_of = |id: u32| -> u32 {
+        if id <= 3 {
+            0
+        } else if id <= 7 {
+            1
+        } else {
+            3
+        }
+    };
     let context = LineageMutationContext {
         refdata: reference,
         contracts: None,
@@ -232,32 +252,32 @@ fn literal_capacity_receipt(
         ParentProposal {
             generation: 1,
             parent_id: 0,
-            rate: F64Bits::new(2.25).unwrap(),
+            rate: F64Bits::new(2.0).unwrap(),
             proposed_offspring: 3,
         },
         ParentProposal {
             generation: 2,
             parent_id: 1,
-            rate: F64Bits::new(0.75).unwrap(),
+            rate: F64Bits::new(1.2).unwrap(),
             proposed_offspring: 4,
         },
         ParentProposal {
             generation: 2,
             parent_id: 2,
-            rate: F64Bits::new(0.75).unwrap(),
+            rate: F64Bits::new(1.2).unwrap(),
             proposed_offspring: 0,
         },
         ParentProposal {
             generation: 2,
             parent_id: 3,
-            rate: F64Bits::new(0.75).unwrap(),
+            rate: F64Bits::new(1.2).unwrap(),
             proposed_offspring: 1,
         },
     ];
-    result.edges = (1..=7)
+    result.edges = (1..=8)
         .map(|id| DivisionReceipt {
             node_id: id,
-            parent_id: if id <= 3 { 0 } else { 1 },
+            parent_id: parent_of(id),
             generation: if id <= 3 { 1 } else { 2 },
             seed_label: id.to_string(),
             trace: trace.clone(),
@@ -266,7 +286,7 @@ fn literal_capacity_receipt(
             events_digest: events.clone(),
         })
         .collect();
-    result.final_live = vec![4, 5, 6, 7];
+    result.final_live = vec![4, 5, 6, 7, 8];
     result.samples = vec![
         SampleChoice {
             live_index: 0,
@@ -282,16 +302,12 @@ fn literal_capacity_receipt(
         },
     ];
     result.completed_generations = 2;
-    result.peak_live = 4;
+    result.peak_live = 5;
     result.termination = "max_generations".into();
-    result.nodes = (0..=7)
+    result.nodes = (0..=8)
         .map(|id| NodeSummary {
             node_id: id,
-            parent_id: if id == 0 {
-                None
-            } else {
-                Some(if id <= 3 { 0 } else { 1 })
-            },
+            parent_id: if id == 0 { None } else { Some(parent_of(id)) },
             generation: if id == 0 {
                 0
             } else if id <= 3 {
@@ -314,11 +330,14 @@ fn literal_capacity_receipt(
     result
 }
 #[test]
-fn literal_capacity_replay_consumes_suppressed_proposal_without_inventing_child() {
+fn literal_overshoot_replay_creates_every_proposed_child() {
     let (reference, founder, config) = setup();
     let receipt = literal_capacity_receipt(&reference, &founder, config);
     let (tree, _, _) = run(&reference, &founder, receipt.config.clone(), Some(&receipt)).unwrap();
-    assert_eq!(tree.nodes.len(), 8);
+    assert_eq!(tree.nodes.len(), 9);
+    // Node 8 exists because nothing truncates a generation that overshoots
+    // capacity. Under the hard cap this proposal was consumed and dropped.
+    assert_eq!(tree.nodes[8].parent_id, Some(3));
     assert_eq!(tree.nodes[4].parent_id, Some(1));
     assert_eq!(tree.nodes[4].abundance, 2);
     assert_eq!(tree.nodes[7].abundance, 1);

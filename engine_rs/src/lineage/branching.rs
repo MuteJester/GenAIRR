@@ -23,9 +23,11 @@ pub struct BranchingParams {
     pub lambda_mut: f64,
     /// Maximum number of generations to grow.
     pub max_generations: u32,
-    /// Carrying capacity: the live population per generation is capped at this,
-    /// and it is the pivot for logistic offspring-rate damping (the effective
-    /// rate falls to zero as the live set approaches `n_max`).
+    /// Carrying capacity: the live population a lineage settles at. It is the
+    /// pivot for Beverton-Holt offspring-rate regulation -- the effective rate
+    /// is `lambda_base` in an empty environment and exactly 1 at `n_max`, so
+    /// the population levels off there rather than being truncated. A single
+    /// generation may overshoot it; the next one is regulated back.
     pub n_max: u32,
     /// Number of cells to sample at the end (used in a later task).
     pub n_sample: u32,
@@ -272,13 +274,31 @@ fn grow_core(
         if live.is_empty() {
             break; // lineage went extinct (every cell drew 0 offspring)
         }
-        // Logistic carrying-capacity damping: as the live population approaches
-        // n_max, the effective offspring rate falls toward zero (plateau).
-        let live_frac = (live.len() as f64) / (params.n_max as f64);
-        let eff_lambda = params.lambda_base * (1.0 - live_frac).max(0.0);
+        // Beverton-Holt regulation. The effective offspring rate falls from
+        // `lambda_base` toward 1 as the live population approaches `n_max`, and
+        // below 1 above it, so `n_max` is the population a lineage settles at.
+        //
+        // The discrete logistic law this replaces, `lambda * (1 - N/n_max)`,
+        // settled at `n_max * (1 - 1/lambda)` rather than at `n_max`; above
+        // `lambda = 3` it had no stable population at all and oscillated; and
+        // paired with a hard cap that landed the population on `n_max` exactly
+        // it returned an effective rate of exactly zero there, so reaching
+        // capacity extinguished the lineage with certainty. Beverton-Holt is
+        // monotone in N, so it cannot oscillate at any lambda, and it is
+        // exactly 1 at N = n_max: a population at capacity replaces itself.
+        //
+        // Sub-replacement growth is excluded rather than damped. It is already
+        // shrinking, so there is nothing to regulate, and the denominator would
+        // turn negative past `n_max / (1 - lambda)`.
+        let eff_lambda = if params.lambda_base <= 1.0 {
+            params.lambda_base
+        } else {
+            let live_frac = (live.len() as f64) / (params.n_max as f64);
+            params.lambda_base / (1.0 + (params.lambda_base - 1.0) * live_frac)
+        };
 
         let mut next_live: Vec<u32> = Vec::new();
-        'generation: for &parent_id in &live {
+        for &parent_id in &live {
             let cell_lambda = match affinity {
                 Some(m) => eff_lambda * m.fitness_from_affinity(nodes[parent_id as usize].affinity),
                 None => eff_lambda,
@@ -289,10 +309,13 @@ fn grow_core(
                 poisson_sample(&mut rng, cell_lambda)
             };
             for _ in 0..k {
-                // Hard cap: a Poisson draw can still overshoot near saturation.
-                if next_live.len() >= params.n_max as usize {
-                    break 'generation;
-                }
+                // No truncation. A generation may overshoot `n_max`; regulation
+                // returns an effective rate below 1 there and the next
+                // generation shrinks. Discarding the overshoot instead would
+                // have to choose which cells die, and the cheap choice -- stop
+                // at the first parent that fills the quota -- kept the broods of
+                // early-indexed parents and dropped every later parent's brood
+                // entire, letting vector position decide survival.
                 let parent_mut_count = sims[parent_id as usize].mutation_count;
                 let (child_sim, edge) = match mutator {
                     Some(m) => {
@@ -768,7 +791,7 @@ mod tests {
     }
 
     #[test]
-    fn carrying_capacity_bounds_live_population() {
+    fn regulation_settles_the_population_at_capacity() {
         let params = BranchingParams {
             lambda_base: 4.0, // would explode unbounded
             lambda_mut: 0.0,
@@ -777,20 +800,100 @@ mod tests {
             n_sample: 10,
             seed: 7,
         };
-        let (_tree, peak_live, _sims, _live, _edges) =
+        let (_tree, peak_live, _sims, live, _edges) =
             grow_core(&founder(), &params, None, None, None, None).unwrap();
-        // hard cap: live population never exceeds n_max
+        // This is the assertion that was missing. For 40 generations the test
+        // asserted a bound on a lineage that had been extinct since generation
+        // 11 and called the result a plateau: the hard cap landed the
+        // population on n_max exactly, where the old logistic law returned an
+        // effective rate of exactly zero.
         assert!(
-            peak_live <= params.n_max as usize,
-            "peak live {peak_live} exceeded n_max {}",
+            !live.is_empty(),
+            "the population was regulated and then died: peak {peak_live}, \
+             nothing alive after {} generations",
+            params.max_generations
+        );
+        // Beverton-Holt's fixed point is n_max itself. The logistic law it
+        // replaces settled at n_max * (1 - 1/lambda) = 150 here, so this bound
+        // also distinguishes the two laws rather than merely bounding growth.
+        let n = params.n_max as f64;
+        assert!(
+            (live.len() as f64) > 0.8 * n && (live.len() as f64) < 1.2 * n,
+            "final live {} is not at capacity {}",
+            live.len(),
             params.n_max
         );
-        // damping plateau (equilibrium ~ (1 - 1/lambda_base) * n_max = 150) is
-        // comfortably above half capacity — confirms it grew, not died early
+        // A generation may overshoot capacity, by design -- truncating it would
+        // have to pick which cells die. Regulation returns a rate below 1 above
+        // n_max, so the overshoot stays small and self-correcting.
         assert!(
-            peak_live > (params.n_max as usize) / 2,
-            "peak live {peak_live} did not approach capacity"
+            peak_live < 2 * params.n_max as usize,
+            "peak live {peak_live} ran away from capacity {}",
+            params.n_max
         );
+    }
+
+    /// The plateau is `n_max` whatever `lambda_base` is. Under the logistic law
+    /// this replaces it was `n_max * (1 - 1/lambda)` -- 100 at lambda 2, 150 at
+    /// lambda 4 -- so `n_max` named a capacity the population never reached.
+    #[test]
+    fn the_plateau_does_not_depend_on_lambda_base() {
+        let settled = |lambda_base: f64| {
+            let params = BranchingParams {
+                lambda_base,
+                lambda_mut: 0.0,
+                max_generations: 40,
+                n_max: 200,
+                n_sample: 1,
+                seed: 7,
+            };
+            let (_t, _peak, _s, live, _e) =
+                grow_core(&founder(), &params, None, None, None, None).unwrap();
+            live.len()
+        };
+        let slow = settled(2.0);
+        let fast = settled(4.0);
+        // Guard the premise: two dead lineages would agree at zero.
+        assert!(slow > 0 && fast > 0, "a lineage died: slow {slow}, fast {fast}");
+        for (name, n) in [("lambda 2", slow), ("lambda 4", fast)] {
+            assert!(
+                n > 160 && n < 240,
+                "{name} settled at {n}, not at the capacity 200"
+            );
+        }
+    }
+
+    /// Reaching the carrying capacity must not be fatal. The parameter's name
+    /// and the damping comment both promised a population that levels off at
+    /// `n_max`; the logistic law plus a hard cap delivered a population that
+    /// landed on `n_max` exactly, drew an effective rate of exactly zero, and
+    /// died in one generation with certainty -- 67 cap hits, 67 extinctions.
+    #[test]
+    fn no_lineage_that_reaches_capacity_dies_from_reaching_it() {
+        let mut reached = 0;
+        let mut died = 0;
+        for seed in 1..40u64 {
+            let params = BranchingParams {
+                lambda_base: 4.0,
+                lambda_mut: 0.0,
+                max_generations: 40,
+                n_max: 50,
+                n_sample: 1,
+                seed,
+            };
+            let (_t, peak, _s, live, _e) =
+                grow_core(&founder(), &params, None, None, None, None).unwrap();
+            if peak >= params.n_max as usize {
+                reached += 1;
+                if live.is_empty() {
+                    died += 1;
+                }
+            }
+        }
+        // Guard the premise: seeds that never reach capacity say nothing about
+        // what reaching it costs.
+        assert!(reached > 30, "only {reached} of 39 seeds reached capacity");
+        assert_eq!(died, 0, "{died} of {reached} lineages died after reaching capacity");
     }
 
     #[test]

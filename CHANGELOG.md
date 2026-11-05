@@ -4,6 +4,47 @@ All notable changes to GenAIRR are documented here.
 
 ## Unreleased
 
+### Changed
+
+- **`DETERMINISM_VERSION` is now 3.** Clonal lineage population regulation is
+  Beverton-Holt, `lambda_base / (1 + (lambda_base - 1) * P / n_max)`, in place
+  of the discrete logistic map `lambda_base * max(0, 1 - P / n_max)` and the
+  hard cap that truncated any generation exceeding `n_max`. A seed does not
+  carry across the two: every `clonal_lineage()` and duplex family run moves.
+  Datasets generated before this are datasets from the old law and carry
+  `determinism_version` 2 to say so.
+
+  The old law was wrong in three ways. Reaching capacity was fatal: the cap
+  truncated a generation to exactly `n_max`, where `1 - P/n_max` is exactly 0,
+  so the whole next generation drew zero offspring and the lineage died with
+  certainty. Measured across 180 runs, 67 reached capacity and all 67 went
+  extinct in the following generation; over 40 generations at `lambda_base=4.0`
+  every cap hit was fatal at every capacity tested. With the default
+  `allow_extinction=False` such a family is silently discarded and re-grown
+  under a fresh seed, so the delivered data quietly excluded the clones that
+  expanded most; when every attempt hit the cap the run raised an error whose
+  advice -- raise `lambda_base` -- made the failure more likely, because a
+  faster-growing population reaches capacity sooner.
+
+  `n_max` was also not the capacity it is named for. The logistic law settles
+  at `n_max * (1 - 1/lambda_base)`, so a requested 1000 delivered 333 cells at
+  the default `lambda_base=1.5`. And above `lambda_base=3` the map is past its
+  period-doubling threshold, so there was no settled population at all: it
+  cycled between 383 and 875 at 3.5 and moved chaotically between 218 and 942
+  at 4.0, while the documentation promised a plateau.
+
+  Beverton-Holt is monotone in `P`, so it settles at `n_max` for every
+  `lambda_base` and cannot oscillate. It is exactly 1 at `P = n_max`, so a
+  population at capacity replaces itself. The hard cap is gone rather than
+  repaired: a generation may overshoot capacity -- about 6% in practice -- and
+  the next one is regulated back below replacement. Truncating has to choose
+  which cells die, and the previous choice let vector position decide, keeping
+  the broods of early-indexed parents and dropping every later parent's brood
+  entire. **`n_max` now means what it says, so the same `n_max` yields more
+  cells than before** -- about 3x at the default `lambda_base=1.5`, with
+  proportional memory and runtime. Lower `n_max` to recover the old
+  population: the old plateau was `n_max * (1 - 1/lambda_base)`.
+
 ### Added
 
 - `result.to_genotype_tsv(path)` and `CohortResult.to_genotype_tsv(path)`:
