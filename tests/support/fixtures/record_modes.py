@@ -43,6 +43,24 @@ def _duplex():
     return set(exp.run(n=1, seed=1)[0].airr_record(refs))
 
 
+def _genotype():
+    """A record from a run with a genotype attached.
+
+    Attaching one stamps ``subject_id`` and ``haplotype`` (the chromosome the
+    rearrangement drew from) onto every record, and those two fields exist in
+    no other mode. Leaving the mode out is how the catalog came to describe
+    them as unexported while the engine was exporting them.
+    """
+    import GenAIRR.data as gdata
+    from GenAIRR.genotype import Genotype
+
+    cfg = gdata.HUMAN_IGH_OGRDB
+    genotype = Genotype.permissive(cfg).with_subject("census")
+    result = (ga.Experiment.on(cfg).recombine()
+              .with_genotype(genotype).compile().run_records(n=1, seed=1))
+    return set(result.records[0])
+
+
 @functools.lru_cache(maxsize=1)
 def fields_by_mode() -> dict[str, frozenset[str]]:
     """Mode name -> the record fields that mode produces."""
@@ -55,6 +73,7 @@ def fields_by_mode() -> dict[str, frozenset[str]]:
             ga.Experiment.on("human_igh").recombine()
             .clonal_repertoire(n_clones=2, max_size=4))),
         "duplex": frozenset(_duplex()),
+        "genotype": frozenset(_genotype()),
     }
 
 

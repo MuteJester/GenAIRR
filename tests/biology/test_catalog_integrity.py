@@ -188,7 +188,7 @@ def test_a_truth_gap_stays_visible_even_when_the_mechanism_verifies():
 
 
 def test_a_field_the_catalog_calls_unclaimed_does_not_count_toward_coverage():
-    """Thirteen fields are in both UNCLAIMED_FIELDS and some mechanism's truth
+    """Fourteen fields are in both UNCLAIMED_FIELDS and some mechanism's truth
     fields, and the entries say why: a configuration echo, a harness label, a
     derived ratio, or an inference output of a search this tool does not run.
     Each is listed beside the mechanism it belongs to but is not something that
@@ -234,6 +234,7 @@ def test_the_fields_excluded_from_coverage_are_pinned():
     assert excluded == {
         "sequence_id",             # clonality.founder
         "locus",                   # germline.genotype
+        "subject_id",              # germline.genotype
         "productivity_policy",     # expression.productivity
         "productivity_scope",      # expression.productivity
         "read_layout",             # assay.paired_end
@@ -589,7 +590,21 @@ def test_the_coverage_report_numbers_are_pinned():
     that check on every record. A partition claim needs a test that the
     buckets *differ*, not only that they add up.
 
-    So the surface is now: 22 verified, 3 at a declared gapped ceiling, 4
+    germline.genotype then left `no-truth-exported`, and like
+    assay.ambiguous_calls it left by the gap closing rather than by a test
+    being added. Its gap claimed the genotype "is not exported" and that there
+    is "no haplotype or chromosome field": the second half had never been
+    true. `haplotype` is stamped on every record of a genotype run, and the
+    field census had no genotype mode, so no completeness check here could see
+    it -- the same blind spot the duplex mode was added to fix, and the reason
+    a wrong statement about the record survived in the catalog. The first half
+    is closed by `to_genotype_tsv`, which writes the carried-allele set beside
+    the records. The row is verified on `haplotype` by the phasing test, which
+    reads the drawn chromosome off a genotype it constructed itself; `locus`
+    and `subject_id` are listed beside the mechanism and excluded from the
+    denominator, which is why one field carries the row.
+
+    So the surface is now: 23 verified, 3 at a declared gapped ceiling, 3
     with no exported truth at all, and 2 consistent. `unverified` is empty.
     """
     tests, covered, bases = _declared_registrations()
@@ -605,7 +620,7 @@ def test_the_coverage_report_numbers_are_pinned():
     status = {row.mechanism_id: row.status for row in rows}
     expected = {
         "germline.allele_choice":         "verified",
-        "germline.genotype":              "no-truth-exported",
+        "germline.genotype":              "verified",
         "recombination.assembly":         "consistent",
         "recombination.d_inversion":      "verified",
         "recombination.trimming":         "verified",
@@ -649,8 +664,8 @@ def test_the_coverage_report_numbers_are_pinned():
         "field moved without anyone noticing.")
     counts = {name: sum(1 for value in status.values() if value == name)
               for name in sorted(set(status.values()))}
-    assert counts == {"consistent": 2, "gap-limited": 3, "no-truth-exported": 4,
-                      "verified": 22}, counts
+    assert counts == {"consistent": 2, "gap-limited": 3, "no-truth-exported": 3,
+                      "verified": 23}, counts
 
 
 def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():
@@ -786,3 +801,20 @@ def test_a_registered_test_that_can_skip_its_assertions_proves_it_did_not():
         + "\n".join(f"  {name}" for name in offenders)
         + "\n\nAdd an assertion on the count compared, or on the collection "
           "filled, so a run that compared nothing fails.")
+
+
+def test_the_field_census_includes_a_genotype_run():
+    """A genotype run stamps two fields no other mode produces.
+
+    ``subject_id`` and ``haplotype`` are written onto every record when a
+    genotype is attached, and no mode in the census attaches one -- so the
+    completeness checks above cannot see them. That is the same failure the
+    duplex mode was added to fix, and it is how ``germline.genotype``'s
+    truth_gap came to say there is "no haplotype or chromosome field" while
+    the engine had been stamping one all along.
+    """
+    from tests.support.fixtures.record_modes import fields_by_mode
+    modes = fields_by_mode()
+    assert "genotype" in modes, f"census modes: {sorted(modes)}"
+    assert {"subject_id", "haplotype"} <= modes["genotype"], (
+        f"genotype mode produced: {sorted(modes['genotype'])}")

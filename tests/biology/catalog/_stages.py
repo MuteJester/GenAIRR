@@ -40,8 +40,16 @@ INFRASTRUCTURE = {
 UNCLAIMED_FIELDS = {
     "sequence_id": "a label the harness assigns, not simulated biology; "
                    "clonality.founder claims it for clone identity instead",
-    "locus": "claimed by germline.genotype as the only exported field it has; "
-             "see that mechanism's truth_gap",
+    "locus": "the locus the genotype was drawn from, echoed onto every record "
+             "from the cartridge's identity rather than sampled per record; "
+             "claimed by germline.genotype because that is where a reader "
+             "looks for it",
+    "subject_id": "the subject label the caller supplied, identical on every "
+                  "record of a subject with no per-record outcome in it -- the "
+                  "same shape as read_layout. It is listed beside "
+                  "germline.genotype because it is the key the genotype "
+                  "sidecar joins on, which is what makes it worth exporting at "
+                  "all",
     "productivity_policy": "configuration echoed back, not an outcome",
     "productivity_scope": "configuration echoed back, not an outcome",
     "read_layout": "the configured layout name echoed back -- 'paired_end' "
@@ -99,14 +107,24 @@ MECHANISMS = (
         stage="germline",
         summary="Which alleles this individual carries, across both haplotypes, "
                 "including whether a haplotype is functional at all.",
-        truth_fields=("locus",),
+        truth_fields=("locus", "haplotype", "subject_id"),
         engine_passes=("SampleGenotypePass",),
-        truth_gap="The genotype itself is not exported. There is no haplotype or "
-                  "chromosome field, no carried-allele set, and no per-read "
-                  "novel-allele or deletion truth, so `locus` is the only field "
-                  "available to claim. Until that truth is exported, "
-                  "genotype and haplotype inference tools (TIgGER, piglet, "
-                  "RAbHIT) cannot be benchmarked against GenAIRR.",
+        notes="This mechanism carried a truth_gap saying the genotype "
+              "\"is not exported\" and that there is \"no haplotype or "
+              "chromosome field\". Both halves were wrong. The engine has "
+              "been stamping `haplotype` -- the chromosome this rearrangement "
+              "drew from -- on every record of a genotype run all along, and "
+              "no mode in the field census attached a genotype, so the "
+              "completeness checks could not see it. The carried-allele set "
+              "is now exported too, beside the records rather than in them: "
+              "`to_genotype_tsv` writes one row per carried allele, keyed on "
+              "`subject_id`, with a chromosome column, a novel flag and a "
+              "`(none)` sentinel where a gene is deleted. It is a sidecar "
+              "because it is per subject, not per read -- a million reads "
+              "would otherwise carry the same table a million times. Whether "
+              "a given read's allele was novel is answered by joining "
+              "`truth_v_call` to that table on (subject_id, allele), which is "
+              "why no per-read novelty field exists.",
     ),
     Mechanism(
         id="germline.allele_choice",
