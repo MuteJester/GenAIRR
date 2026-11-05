@@ -75,7 +75,7 @@ REGISTRY: Mapping[str, BundledDossier] = MappingProxyType({
     # coding spans, with source-annotated junction anchors.
     "human_igh_ogrdb_10_observed_v1": BundledDossier(
         "GenAIRR.data", "published_references/human_igh_ogrdb_10_observed_v1.zip",
-        "sha256:9ab6ba63490c06af94098152af388141f8f946bd6eab3c2ef86f8e5ddb512550"),
+        "sha256:101abcebe884e17ff52c8da6c583ef2740bda19c42e6cac450e4b181a0dc6f9b"),
 })
 
 

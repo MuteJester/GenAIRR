@@ -470,12 +470,12 @@ def test_the_generator_writes_only_a_new_zip_file(tmp_path, capsys):
 
 # Pinned from the reviewed build: the typed manifest hash of the packaged dossier (it covers
 # the GenAIRR version that generated it) and the runtime hashes of its reference.
-MANIFEST_PIN = "sha256:9ab6ba63490c06af94098152af388141f8f946bd6eab3c2ef86f8e5ddb512550"
+MANIFEST_PIN = "sha256:101abcebe884e17ff52c8da6c583ef2740bda19c42e6cac450e4b181a0dc6f9b"
 RUNTIME_PINS = {"execution": "sha256:bacd155a623189d5acd7c1720a9decbde4d4c5b6e6f6c5581e6ce263683df6dc",
                 "catalogue": "sha256:fc8d35b4682385b1ef10c1405c7427ca2d7551ee626f4257f7bee4fadafb5266",
                 "models": "sha256:e96b1404c64d36a55c0457163ef3a4aa706e1bc5114914147715cd0f964dffd8"}
 # The raw sha256 of the packaged archive (it holds the manifest, so it also changes with the version).
-ARCHIVE_PIN = "sha256:52df85b32d417c67f882cce18113237eb4889f54962695853dd398bc8a3e33d8"
+ARCHIVE_PIN = "sha256:d8d82abcaa21b736cf31fd3eab26d59a2ed59fcdad72738ad4fbf95e731b207a"
 RECORD_OUTCOMES = {"selected": 230, "excluded": 259, "rejected": 0}
 PACKAGE, RESOURCE = "GenAIRR.data", f"published_references/{STARTER_ID}.zip"
 DOSSIER_DIRECTORIES = ["cache", "cache/blobs", "cache/blobs/sha256", "inputs"]
