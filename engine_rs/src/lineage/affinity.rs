@@ -7,13 +7,24 @@ use crate::rng::Rng;
 /// 20 standard amino acids in the BLOSUM62 matrix's row/column order.
 pub(crate) const AA_ORDER: &[u8; 20] = b"ARNDCQEGHILKMFPSTWYV";
 
+/// Position of `aa` in `AA_ORDER`, or `None` for anything that is not one of
+/// the twenty residues -- a stop (`*`), an unresolved base (`X`), any other
+/// byte. `substitution_cost` keys on this rather than on the matrix, because
+/// the matrix cannot express "not a protein".
+fn residue_index(aa: u8) -> Option<usize> {
+    AA_ORDER.iter().position(|&x| x == aa)
+}
+
 /// BLOSUM62 substitution score for two amino-acid bytes (uppercase one-letter
-/// codes). Unknown / non-standard residues (including `*` and `X`) score as a
-/// strong mismatch so they contribute maximally to distance.
+/// codes). Unknown / non-standard residues (including `*` and `X`) score `-4`.
+///
+/// That is *not* the same as contributing maximally to distance, which this
+/// comment used to claim: `substitution_cost` subtracts `S(a,a)` from `S(a,b)`,
+/// and for a non-residue `a` both terms are this same `-4`, so the cost
+/// cancelled to zero. The maximal-contribution rule lives in
+/// `substitution_cost`, where it can see which side the non-residue is on.
 pub fn blosum62(a: u8, b: u8) -> i8 {
-    fn idx(aa: u8) -> Option<usize> {
-        AA_ORDER.iter().position(|&x| x == aa)
-    }
+    let idx = residue_index;
     // Canonical BLOSUM62, rows/cols in AA_ORDER.
     const M: [[i8; 20]; 20] = [
         // A  R  N  D  C  Q  E  G  H  I  L  K  M  F  P  S  T  W  Y  V
@@ -44,9 +55,26 @@ pub fn blosum62(a: u8, b: u8) -> i8 {
     }
 }
 
+/// The largest cost any substitution between two real residues can carry:
+/// `S(W,W) - S(W,D) = 11 - (-4)`. `max_real_substitution_cost_is_the_constant`
+/// holds this against the matrix.
+const MAX_SUBSTITUTION_COST: f64 = 15.0;
+
 /// Per-position substitution cost from BLOSUM62: `S(a,a) - S(a,b)`, which is 0
 /// when `b == a` and grows as the substitution becomes less favorable.
+///
+/// A character that is not one of the twenty residues -- a stop (`*`) or an
+/// unresolved base (`X`) -- is charged `MAX_SUBSTITUTION_COST` instead of being
+/// scored through the matrix. Through the matrix it fell through to `-4` on
+/// *both* terms, so `S(a,a) - S(a,b)` was exactly 0 and a stop cost nothing
+/// against any target: a cell whose receptor cannot be translated scored
+/// affinity 1.0, the perfect antibody, against every target. The asymmetry was
+/// the tell -- a stop in the target cost the full amount, a stop in the cell
+/// was free. A sequence that is not a protein is not a near match for one.
 fn substitution_cost(a: u8, b: u8) -> f64 {
+    if residue_index(a).is_none() || residue_index(b).is_none() {
+        return MAX_SUBSTITUTION_COST;
+    }
     (blosum62(a, a) as f64 - blosum62(a, b) as f64).max(0.0)
 }
 
@@ -207,6 +235,66 @@ mod tests {
         // 8 'A' bases -> codons AAA, AAA (last 2 ignored) -> "KK" (Lys, Lys)
         let sim = aa_founder(b"AAAAAAAA");
         assert_eq!(sim_to_aa(&sim), b"KK".to_vec());
+    }
+
+    #[test]
+    fn max_real_substitution_cost_is_the_constant() {
+        // The constant stands in for "worse than any real substitution", so it
+        // has to actually be that. Derived here rather than trusted.
+        let residues = b"ACDEFGHIKLMNPQRSTVWY";
+        let worst = residues
+            .iter()
+            .flat_map(|a| residues.iter().map(move |b| (*a, *b)))
+            .map(|(a, b)| blosum62(a, a) as f64 - blosum62(a, b) as f64)
+            .fold(0.0f64, f64::max);
+        assert_eq!(worst, MAX_SUBSTITUTION_COST, "matrix maximum is {worst}");
+    }
+
+    #[test]
+    fn a_stop_in_the_cell_costs_the_most_against_every_target() {
+        // `blosum62` falls through to -4 for anything outside the 20 residues,
+        // and the cost is S(a,a) - S(a,b). For a == '*' both terms are -4, so a
+        // stop cost nothing against any target and a cell whose receptor cannot
+        // be translated scored as the perfect antibody.
+        for target in b"ACDEFGHIKLMNPQRSTVWY" {
+            let stop = substitution_cost(b'*', *target);
+            assert!(
+                stop > 0.0,
+                "a stop costs {stop} against {}",
+                *target as char
+            );
+            // It must also be the worst available cost, not merely nonzero: a
+            // residue that cannot exist is not a mild substitution.
+            let worst_real = b"ACDEFGHIKLMNPQRSTVWY"
+                .iter()
+                .map(|a| substitution_cost(*a, *target))
+                .fold(0.0f64, f64::max);
+            assert!(
+                stop >= worst_real,
+                "a stop costs {stop} against {}, less than the worst real \
+                 substitution at {worst_real}",
+                *target as char
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_residue_costs_the_most_too() {
+        // `X` is a base the simulator could not resolve, not a known protein.
+        // It shared the stop's -4 fallthrough and so shared its zero cost.
+        assert!(substitution_cost(b'X', b'A') > 0.0);
+    }
+
+    #[test]
+    fn a_cell_full_of_stops_is_not_a_perfect_match() {
+        // Reproduced on the real model before the fix: a KPGT* cell reported
+        // affinity 1.0 against KPGTA, KPGTW and KPGTAAAAAAAA alike.
+        let m = AffinityModel::new(b"KPGTA".to_vec(), vec![1.0; 5], 1.0, 1.0, b"KPGTA");
+        let with_stop = m.affinity_value(b"KPGT*");
+        assert!(
+            with_stop < 1.0,
+            "a cell whose receptor ends in a stop scored {with_stop}"
+        );
     }
 
     #[test]
