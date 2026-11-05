@@ -48,7 +48,8 @@
 //! | (absent) / 1 | one random stream shared by the whole plan; a substitution could redraw the base already present |
 //! | 2 | one random substream per pass, and one per clonal-family role (growth, sampling, target) instead of a seed salted by XOR; a clone, a survival retry and a read take keyed substreams of the run seed instead of offsets added to it; a cohort subject and a genotype viability attempt take keyed substreams instead of words from a `random.Random` seeded with the run seed; a substitution draws a base the site does not hold |
 //! | 3 | clonal lineage population regulation is Beverton-Holt, `lambda/(1 + (lambda-1)N/n_max)`, in place of the discrete logistic map `lambda(1 - N/n_max)`; `n_max` is the population a lineage settles at rather than the pivot of a law settling at `n_max(1 - 1/lambda)`, the law is monotone so it no longer oscillates above `lambda = 3`, and a generation may overshoot `n_max` instead of being truncated at it -- the truncation landed the population on `n_max` exactly, where the old law returned a rate of exactly zero, so reaching capacity extinguished the lineage |
+//! | 4 | affinity selection scores the protein the cell expresses. The cell's amino-acid sequence is the continuous translation of its coding span (`productivity::coding_span`, resolved from the V allele's native reference phase) instead of the per-region codon rail, which dropped every codon straddling a region boundary -- all of them junction codons, so all of them CDR3; a stop or an unresolved residue is charged the maximal substitution cost instead of cancelling to zero against every target; and under active selection a cell whose coding span contains a stop expresses no receptor and leaves no offspring |
 
 /// The engine's sampling-model version. Stamped on every exported
 /// record and readable as `GenAIRR.DETERMINISM_VERSION`.
-pub const DETERMINISM_VERSION: u32 = 3;
+pub const DETERMINISM_VERSION: u32 = 4;

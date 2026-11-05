@@ -132,9 +132,20 @@ pub(crate) fn make_mature_target_with_choices(
     Ok(target)
 }
 
-/// Translate a `Simulation` to its amino-acid sequence by concatenating the
-/// in-frame translation of each region (respecting each region's frame phase),
-/// in biological order. Used to score a cell's affinity to a target antigen.
+/// Translate a `Simulation` by concatenating the in-frame translation of each
+/// region. **Not the protein the cell expresses**, and no longer used to score
+/// affinity -- see `coding_sim_to_aa`.
+///
+/// `compute_codon_rail` keeps a codon only if it fits wholly inside one region,
+/// so every codon straddling a region boundary is dropped and the amino-acid
+/// indices after it shift left. Every region boundary in a rearrangement is a
+/// junction boundary, so what this drops is CDR3: measured over 200
+/// `human_igh` records, 2.68 codons per record, and 536 of 536 of them
+/// straddling V/NP1, NP1/D, D/NP2 or NP2/J. Scored against a real protein, a
+/// cell identical to the target reported an affinity of 3.57e-67.
+///
+/// Retained because the per-region rail is what the region-level stop and
+/// frame bookkeeping is defined against; it is not a translation of the cell.
 pub fn sim_to_aa(sim: &Simulation) -> Vec<u8> {
     let mut aa = Vec::new();
     for region in sim.sequence.regions.iter() {
@@ -144,9 +155,17 @@ pub fn sim_to_aa(sim: &Simulation) -> Vec<u8> {
     aa
 }
 
-/// Translate the observed coding span across source and junction boundaries.
-/// Duplex body placement is independent of the region's legacy phase cache.
-pub fn duplex_sim_to_aa(
+/// Translate the cell's coding span continuously, across source and junction
+/// boundaries. **This is the protein the cell expresses**, and the one affinity
+/// is scored on.
+///
+/// `productivity::coding_span` resolves the frame from the V allele's native
+/// reference phase, its 5' trim and its observation loss, which is why this
+/// needs the reference and why concatenating pool bytes and translating from
+/// zero would not do: the frame itself can be wrong. It agrees with the
+/// record's own `sequence_aa`, which the projection derives independently from
+/// `coding_frame_start`.
+pub fn coding_sim_to_aa(
     sim: &Simulation,
     refdata: &crate::refdata::RefDataConfig,
 ) -> Result<Vec<u8>, String> {
@@ -200,6 +219,15 @@ impl AffinityModel {
     /// Affinity in (0, 1]: `exp(-beta * region-weighted BLOSUM distance to target)`.
     pub fn affinity_value(&self, aa: &[u8]) -> f64 {
         (-self.beta * weighted_aa_distance(aa, &self.target_aa, &self.aa_weights)).exp()
+    }
+
+    /// Whether this model selects at all. At `selection_strength == 0` fitness
+    /// is identically 1 for every cell, which is a documented guarantee, so
+    /// nothing conditions growth -- including a cell's inability to express a
+    /// receptor. Lethality is part of the selection model, not a fact the
+    /// engine asserts over a run the caller asked to be neutral.
+    pub fn selects(&self) -> bool {
+        self.selection_strength > 0.0
     }
 
     /// Fitness from an already-computed affinity value (avoids re-translation).

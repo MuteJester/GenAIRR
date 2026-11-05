@@ -3,7 +3,7 @@ use crate::duplex_repair::model::tests::fixture;
 use crate::family_replay::{with_budget_scope, FamilyReplayLimits};
 use crate::lineage::branching::{execute_mutation_choices, LineageMutationContext};
 use crate::lineage::{
-    affinity::{duplex_sim_to_aa, make_mature_target, AffinityModel},
+    affinity::{coding_sim_to_aa, make_mature_target, AffinityModel},
     family,
 };
 use crate::passes::S5FMutationPass;
@@ -75,7 +75,7 @@ fn complete_attempt_roundtrips_targets_growth_edges_samples_and_actual_states() 
 #[test]
 fn capture_preserves_existing_generation_target_and_sampling_streams() {
     let (reference, founder, config) = setup();
-    let aa = duplex_sim_to_aa(founder.final_simulation(), &reference).unwrap();
+    let aa = coding_sim_to_aa(founder.final_simulation(), &reference).unwrap();
     let target = make_mature_target(
         &aa,
         config.mature_substitutions,
@@ -101,7 +101,7 @@ fn capture_preserves_existing_generation_target_and_sampling_streams() {
         founder.final_simulation(),
         &config.params().unwrap(),
         &mutator,
-        Some(&affinity),
+        Some((&affinity, &reference)),
         &context,
     )
     .unwrap();
