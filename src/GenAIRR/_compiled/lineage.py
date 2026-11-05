@@ -227,11 +227,15 @@ class CompiledLineageExperiment:
                 # Exhausted the retry bound without a surviving family.
                 raise ValueError(
                     f"clonal_lineage: clone {clone_idx} went extinct on every "
-                    f"one of {_MAX_SURVIVAL_ATTEMPTS} survival attempts (each "
-                    "founder drew 0 offspring). Increase lambda_base (offspring "
-                    "Poisson mean) and/or max_generations so families reliably "
-                    "survive, or pass allow_extinction=True to accept extinct "
-                    "clones (producing fewer than n_clones families)."
+                    f"one of {_MAX_SURVIVAL_ATTEMPTS} survival attempts. A "
+                    "family with no living cells at the last generation yields "
+                    "no observed cells. Raising lambda_base makes founder "
+                    "extinction less likely -- a Poisson(lambda_base) founder "
+                    "dies out with probability q solving q = exp(lambda_base "
+                    "(q - 1)), about 0.42 at the default 1.5 -- as does raising "
+                    "n_max, since a small population drifts to zero. Or pass "
+                    "allow_extinction=True to accept extinct clones, producing "
+                    "fewer than n_clones families."
                 )
 
             if fam is None:

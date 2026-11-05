@@ -44,7 +44,7 @@ result = (
       .clonal_lineage(
           n_clones=20,                   # grow 20 independent families
           max_generations=6,             # germinal-center rounds
-          n_max=300,                     # per-generation living-population carrying capacity
+          n_max=300,                     # living population each generation settles at
           n_sample=30,                   # cells sampled per family at the end
           rate=0.01,                     # per-base S5F SHM rate, per division
           lambda_base=1.6,               # mean offspring per cell per generation
@@ -107,17 +107,36 @@ k ~ Poisson(λ_eff)
 children for the next generation. `λ_eff` is the base offspring rate `lambda_base`
 modulated by two factors below.
 
-### 3. Carrying capacity (logistic damping)
+### 3. Carrying capacity (Beverton–Holt regulation)
 
-A germinal center is population-bounded, so the effective rate is damped as the
-live population `P` approaches `n_max`:
+A germinal center is population-bounded, so the effective rate falls as the live
+population `P` approaches `n_max`:
 
 ```
-λ_eff = lambda_base × max(0, 1 − P / n_max)
+λ_eff = lambda_base / (1 + (lambda_base − 1) × P / n_max)
 ```
 
-Near saturation `λ_eff → 0` and growth plateaus instead of exploding. A hard cap
-also prevents the live set from exceeding `n_max` even on a lucky Poisson draw.
+At `P = n_max` this is exactly `1`: a population at capacity replaces itself, so
+growth levels off at `n_max` rather than overshooting or collapsing. Above
+capacity it drops below `1` and the population is drawn back down. The law is
+monotone in `P`, so it settles at `n_max` for every `lambda_base` instead of
+oscillating at large ones.
+
+A single generation may exceed `n_max` on a lucky Poisson draw. Nothing truncates
+it — the next generation's rate is below replacement and corrects it. Overshoot
+measures around 6%.
+
+!!! warning "This changed in determinism version 3"
+
+    Before version 3 the law was the discrete logistic map
+    `lambda_base × max(0, 1 − P / n_max)`, and a hard cap truncated any
+    generation that exceeded `n_max`. That combination settled at
+    `n_max × (1 − 1/lambda_base)` rather than at `n_max` — 333 cells for a
+    requested 1000 at `lambda_base=1.5` — had no settled population at all above
+    `lambda_base=3`, and killed any lineage that reached capacity, because
+    truncating to `n_max` exactly made the next generation's rate exactly zero.
+    Datasets generated before version 3 carry the old law; a seed does not
+    carry across the two.
 
 ### 4. Per-division somatic hypermutation (S5F)
 
@@ -328,7 +347,7 @@ seed draws a different repertoire rather than a reshuffling of the same one.
 |---|---|---|
 | `n_clones` | - | Number of independent families to grow |
 | `max_generations` | 10 | Germinal-center rounds (≤ 1000) |
-| `n_max` | 1000 | **Per-generation LIVING-population carrying capacity** - the live population each generation is capped at this. It is **not** a hard cap on total cells per clone; the tree can contain more total nodes across generations |
+| `n_max` | 1000 | **Per-generation LIVING-population carrying capacity** - the population each generation settles at. A generation may overshoot it; the next is regulated back. It is **not** a cap on total cells per clone - the tree contains far more nodes across generations |
 | `n_sample` | 50 | Cells sampled per family at the end; records per clone ≤ this (genotype-collapsed) |
 | `rate` | 0.05 | Per-base S5F SHM rate, per division |
 | `lambda_base` | 1.5 | Mean offspring per cell per generation |
