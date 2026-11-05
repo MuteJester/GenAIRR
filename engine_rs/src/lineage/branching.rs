@@ -204,13 +204,6 @@ fn affinity_aa(sim: &Simulation, refdata: &RefDataConfig) -> Result<Vec<u8>, Pas
         .map_err(|reason| PassError::invalid_plan_state("lineage.affinity", reason))
 }
 
-/// Whether a cell expresses a receptor at all. A stop inside the coding span
-/// means it does not, and in a germinal center a B cell with no functional BCR
-/// receives no survival signal.
-fn expresses_a_receptor(aa: &[u8]) -> bool {
-    !aa.contains(&crate::codon::AMINO_STOP)
-}
-
 /// Core generation-synchronous growth. With `mutator = None`, children are exact
 /// clones (and NO extra RNG is consumed). With `Some(m)`, each division draws a
 /// deterministic sub-seed and applies `m`. With `affinity = Some(model)`, each
@@ -257,15 +250,10 @@ fn grow_core(
     let mut sims: Vec<Simulation> = Vec::new();
     let mut rng = super::streams::stream(params.seed, super::streams::GROWTH);
 
-    let (root_affinity, root_expresses) = match affinity {
-        Some((m, refdata)) => {
-            let aa = affinity_aa(founder, refdata)?;
-            (m.affinity_value(&aa), expresses_a_receptor(&aa))
-        }
-        None => (0.0, true),
+    let root_affinity = match affinity {
+        Some((m, refdata)) => m.affinity_value(&affinity_aa(founder, refdata)?),
+        None => 0.0,
     };
-    // Index-aligned with `nodes` and `sims`: node id == index in all three.
-    let mut expresses: Vec<bool> = Vec::new();
 
     nodes.push(LineageNode {
         id: 0,
@@ -278,7 +266,6 @@ fn grow_core(
         observed: false,
     });
     sims.push(founder.clone());
-    expresses.push(root_expresses);
 
     let mut live: Vec<u32> = vec![0];
     let mut next_id: u32 = 1;
@@ -315,12 +302,6 @@ fn grow_core(
         let mut next_live: Vec<u32> = Vec::new();
         for &parent_id in &live {
             let cell_lambda = match affinity {
-                // A stop in the coding span means no receptor, so no survival
-                // signal and no offspring. Scored through the substitution
-                // matrix such a cell used to be free -- and before that it was
-                // invisible, because the stop usually sat in one of the
-                // junction-boundary codons the old translation dropped.
-                Some((m, _)) if m.selects() && !expresses[parent_id as usize] => 0.0,
                 Some((m, _)) => {
                     eff_lambda * m.fitness_from_affinity(nodes[parent_id as usize].affinity)
                 }
@@ -395,12 +376,9 @@ fn grow_core(
                     None => (sims[parent_id as usize].clone(), None),
                 };
                 let muts = child_sim.mutation_count.saturating_sub(parent_mut_count);
-                let (child_affinity, child_expresses) = match affinity {
-                    Some((m, refdata)) => {
-                        let aa = affinity_aa(&child_sim, refdata)?;
-                        (m.affinity_value(&aa), expresses_a_receptor(&aa))
-                    }
-                    None => (0.0, true),
+                let child_affinity = match affinity {
+                    Some((m, refdata)) => m.affinity_value(&affinity_aa(&child_sim, refdata)?),
+                    None => 0.0,
                 };
                 nodes.push(LineageNode {
                     id: next_id,
@@ -413,7 +391,6 @@ fn grow_core(
                     observed: false,
                 });
                 sims.push(child_sim);
-                expresses.push(child_expresses);
                 if retain_edges {
                     edges.push(edge);
                 }
@@ -700,69 +677,6 @@ mod tests {
         // plain path, so the provenance is dropped.
         sim.duplex_provenance = None;
         (reference, sim)
-    }
-
-    /// A cell whose coding span acquired a stop expresses no receptor, so under
-    /// active selection it receives no survival signal and divides no further.
-    /// Before this, a stop cost nothing against any target -- `S(a,a) - S(a,b)`
-    /// cancelled to zero -- so such a cell scored as the perfect antibody and
-    /// outgrew its productive siblings.
-    #[test]
-    fn a_cell_that_cannot_express_a_receptor_leaves_no_offspring() {
-        use crate::lineage::affinity::{coding_sim_to_aa, AffinityModel};
-        let (reference, f) = affinity_founder();
-        let founder_aa = coding_sim_to_aa(&f, &reference).expect("founder has a coding span");
-        let model = AffinityModel::new(
-            founder_aa.clone(),
-            vec![1.0; founder_aa.len()],
-            1.0,
-            1.0,
-            &founder_aa,
-        );
-        let params = BranchingParams {
-            lambda_base: 2.0,
-            lambda_mut: 0.0,
-            max_generations: 6,
-            n_max: 500,
-            n_sample: 10,
-            // One of the seeds whose tree actually contains a stop-bearing
-            // cell; most do not, and the premise guard below says so.
-            seed: 18,
-        };
-        let (tree, _peak, sims, _live, _edges) = grow_core(
-            &f,
-            &params,
-            Some(&two_mut_mutator()),
-            Some((&model, &reference)),
-            None,
-            None,
-        )
-        .unwrap();
-        let mut stop_bearing = 0;
-        for node in &tree.nodes {
-            let aa = coding_sim_to_aa(&sims[node.id as usize], &reference)
-                .expect("every cell has a coding span");
-            if aa.contains(&crate::codon::AMINO_STOP) {
-                stop_bearing += 1;
-                let children = tree
-                    .nodes
-                    .iter()
-                    .filter(|n| n.parent_id == Some(node.id))
-                    .count();
-                assert_eq!(
-                    children, 0,
-                    "node {} translates to {:?} and still has {children} children",
-                    node.id,
-                    String::from_utf8_lossy(&aa)
-                );
-            }
-        }
-        // Guard the premise: with no stop anywhere in the tree the loop above
-        // asserts nothing at all.
-        assert!(
-            stop_bearing > 0,
-            "no cell acquired a stop, so the rule was never exercised"
-        );
     }
 
     fn neutral_params() -> BranchingParams {

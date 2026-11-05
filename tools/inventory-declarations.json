@@ -1,5 +1,13 @@
 {
-  "revised": {},
-  "replaced": {},
+  "revised": {
+    "test_affinity_selection_raises_mean_affinity": "the target was `\"A\" * 100` with the note \"target length need not match; distance uses min length\" -- which is the defect: a target shorter than the receptor was compared over its own length and the remainder ignored, so the affinity reported was not a distance to it. A supplied target must now match the receptor's protein length, so the test builds one from the founder's own protein (from the record projection, not the affinity path) and keeps the same assertions. Also passes refdata, which affinity now requires because the coding frame is resolved from the V allele's reference phase.",
+    "test_affinity_auto_target_is_deterministic": "passes refdata to both runs; affinity scoring now requires it. The determinism assertion is unchanged."
+  },
+  "replaced": {
+    "test_clonal_lineage_selection_raises_mean_affinity": {
+      "by": "test_clonal_lineage_selection_populates_affinities_in_range",
+      "why": "The old test asserted that selection raises the mean affinity using target_aa=\"A\" * 100 -- shorter than the receptors it scored, so the distance covered the first 100 positions and ignored the rest and every affinity underflowed to near zero, which is what made the comparison stable. With the translation corrected the distances are real and that claim is not stably testable at this level: over 7 to 17 sampled cells the mean is sampling noise (0.637, 0.642, 0.634, 0.631, 0.628, 0.651 across strengths 0.05 to 0.7), and a strength large enough to separate the arms drives fitness to zero for diverged cells and extinguishes the family. The claim is kept where the founder can be pinned and the target sized correctly: test_affinity_selection_raises_mean_affinity in tests/components/clonal/test_lineage_engine.py. The successor keeps what only the DSL can break -- the keyword reaching the engine, affinities populated and in range, and a neutral run reporting 0.0 because it builds no model."
+    }
+  },
   "allow": {}
 }

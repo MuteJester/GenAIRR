@@ -221,15 +221,6 @@ impl AffinityModel {
         (-self.beta * weighted_aa_distance(aa, &self.target_aa, &self.aa_weights)).exp()
     }
 
-    /// Whether this model selects at all. At `selection_strength == 0` fitness
-    /// is identically 1 for every cell, which is a documented guarantee, so
-    /// nothing conditions growth -- including a cell's inability to express a
-    /// receptor. Lethality is part of the selection model, not a fact the
-    /// engine asserts over a run the caller asked to be neutral.
-    pub fn selects(&self) -> bool {
-        self.selection_strength > 0.0
-    }
-
     /// Fitness from an already-computed affinity value (avoids re-translation).
     pub fn fitness_from_affinity(&self, affinity_value: f64) -> f64 {
         (1.0 + self.selection_strength * (affinity_value - self.founder_affinity)).max(0.0)

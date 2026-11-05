@@ -14,6 +14,22 @@ def _founder():
     return outcome.final_simulation()
 
 
+def _refdata():
+    """Affinity scoring needs the reference: the coding frame is resolved from
+    the V allele's native phase, so a cell's protein cannot be read off its
+    pool alone."""
+    return ga.Experiment.on("human_igh").recombine().compile().refdata
+
+
+def _founder_protein():
+    """The founder's own protein, from the record projection rather than from
+    the affinity path, so a target built on it is the right length by
+    construction. Receptor lengths vary by rearrangement -- 122 to 132 across
+    six records -- so a fixed-length target cannot be assumed to fit."""
+    records = ga.Experiment.on("human_igh").recombine().compile().run_records(n=1, seed=0)
+    return records.records[0]["sequence_aa"]
+
+
 def _kernel():
     return load_builtin_s5f_kernel(S5F_MODEL)
 
@@ -113,12 +129,20 @@ def test_affinity_node_getter_and_neutral_default():
 def test_affinity_selection_raises_mean_affinity():
     founder = _founder()
     mut, sub = _kernel()
-    founder_aa_len = 100  # target length need not match; distance uses min length
-    # Use "A" (alanine) target with small beta so exp(-beta*d) stays in (0,1)
-    # and doesn't underflow. "W"*100 + beta=1.0 collapses to denorm for IgH
-    # sequences, making neutral and selected indistinguishable.
-    target = "A" * founder_aa_len  # a fixed explicit target both runs share
-    common = dict(target_aa=target, beta=0.001, mature_substitutions=5)
+    # A target must be exactly as long as the receptor it is scored against.
+    # This used to read `"A" * 100` with the note "target length need not
+    # match; distance uses min length" -- which is what made a truncated target
+    # score a prefix silently and report a number that was not a distance to it.
+    protein = _founder_protein()
+    # Build a near target from the founder's own protein: same length by
+    # construction, a handful of residues away so selection has somewhere to
+    # go. Stops are mapped out because a non-residue now costs the maximum at
+    # that position for every cell, which is a constant, not a gradient.
+    target = ("A" * 5 + protein[5:]).replace("*", "A").replace("X", "A")
+    # Small beta so exp(-beta*d) stays in (0,1) and does not underflow to a
+    # denormal, which would make neutral and selected indistinguishable.
+    common = dict(target_aa=target, beta=0.001, mature_substitutions=5,
+                  refdata=_refdata())
     # neutral: selection_strength = 0 (affinities populated but not selected on)
     neutral = _engine.simulate_lineage(
         founder, mut, sub, 0.1, 1.6, 0.0, 12, 800, 60, 4242,
@@ -146,9 +170,9 @@ def test_affinity_auto_target_is_deterministic():
     founder = _founder()
     mut, sub = _kernel()
     a = _engine.simulate_lineage(founder, mut, sub, 0.1, 1.5, 0.0, 10, 500, 40, 7,
-                                 selection_strength=5.0)
+                                 selection_strength=5.0, refdata=_refdata())
     b = _engine.simulate_lineage(founder, mut, sub, 0.1, 1.5, 0.0, 10, 500, 40, 7,
-                                 selection_strength=5.0)
+                                 selection_strength=5.0, refdata=_refdata())
     assert a.to_newick() == b.to_newick()
     assert [n.affinity for n in a.nodes()] == [n.affinity for n in b.nodes()]
 
