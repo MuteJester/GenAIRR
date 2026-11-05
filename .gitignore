@@ -49,6 +49,7 @@ htmlcov/
 debug.py
 /scripts/
 .private/
+.superpowers/
 _old_docs/
 .mcp.json
 .claude/
