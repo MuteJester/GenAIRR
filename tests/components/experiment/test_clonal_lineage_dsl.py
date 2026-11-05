@@ -43,15 +43,40 @@ def test_clonal_lineage_exposes_per_clone_trees():
         assert t.to_fasta().startswith(">node")
 
 
-def test_clonal_lineage_selection_raises_mean_affinity():
-    neutral = _exp(n_clones=2, selection_strength=0.0, target_aa="A" * 100,
-                   beta=0.001, max_generations=10, n_sample=40).run_records(seed=5)
-    selected = _exp(n_clones=2, selection_strength=50.0, target_aa="A" * 100,
-                    beta=0.001, max_generations=10, n_sample=40).run_records(seed=5)
-    def mean_aff(res):
-        a = [r["lineage_affinity"] for r in res.records]
-        return sum(a) / max(1, len(a))
-    assert mean_aff(selected) > mean_aff(neutral)
+def test_clonal_lineage_selection_populates_affinities_in_range():
+    """The DSL plumbs `selection_strength` through and affinities come back.
+
+    This test used to assert that selection raises the mean affinity, with
+    `target_aa="A" * 100`. That target was shorter than the receptors it scored,
+    so the distance compared the first 100 positions and ignored the rest, and
+    the resulting affinities underflowed to near zero for every cell -- which is
+    what made the comparison stable.
+
+    With the translation corrected the distances are real, and the claim is no
+    longer stably testable here: at beta=0.001 the mean over 7 to 17 sampled
+    cells is dominated by sampling noise (0.637, 0.642, 0.634, 0.631, 0.628,
+    0.651 across strengths 0.05 to 0.7), and raising the strength enough to
+    separate the arms drives fitness to zero for diverged cells and extinguishes
+    the family. The claim is kept where the founder can be pinned and the target
+    given the right length: `test_affinity_selection_raises_mean_affinity` in
+    tests/components/clonal/test_lineage_engine.py.
+
+    What is left here is what only the DSL can break: the keyword reaching the
+    engine, and affinities arriving populated and in range.
+    """
+    selected = _exp(n_clones=2, selection_strength=0.5, beta=0.001,
+                    mature_substitutions=5, max_generations=10,
+                    n_sample=40).run_records(seed=5)
+    affinities = [r["lineage_affinity"] for r in selected.records]
+    # Guard the premise: no records means the assertion below is vacuous.
+    assert affinities, "no cells were sampled"
+    assert all(0.0 < a <= 1.0 for a in affinities), (
+        f"affinity outside (0, 1]: {sorted(affinities)[:3]}")
+    # A neutral run with no target builds no model at all and reports 0.0, so a
+    # populated affinity is itself evidence the selection keyword arrived.
+    neutral = _exp(n_clones=2, selection_strength=0.0, max_generations=10,
+                   n_sample=40).run_records(seed=5)
+    assert all(r["lineage_affinity"] == 0.0 for r in neutral.records)
 
 
 def test_clonal_lineage_validation_rejects_bad_args():

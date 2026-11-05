@@ -184,22 +184,24 @@ pub(crate) fn validate_duplex_founder(
     Ok(())
 }
 
-fn affinity_aa(
-    sim: &Simulation,
-    context: Option<&LineageMutationContext<'_>>,
-) -> Result<Vec<u8>, PassError> {
-    if sim.duplex_provenance.is_some() {
-        let context = context.ok_or_else(|| {
-            PassError::invalid_plan_state(
-                "lineage.duplex",
-                "duplex affinity requires reference data",
-            )
-        })?;
-        super::affinity::duplex_sim_to_aa(sim, context.refdata)
-            .map_err(|reason| PassError::invalid_plan_state("lineage.duplex", reason))
-    } else {
-        Ok(sim_to_aa(sim))
-    }
+/// The protein a cell expresses, for affinity scoring.
+///
+/// Both paths now translate the coding span continuously. The plain path used
+/// to concatenate the per-region codon rail (`sim_to_aa`), which drops every
+/// codon straddling a region boundary -- and every boundary in a rearrangement
+/// is a junction boundary, so it dropped CDR3. A cell scored against its own
+/// protein reported an affinity of 3.57e-67 instead of 1.
+///
+/// The reference is not optional here: `coding_span` resolves the frame from
+/// the V allele's native phase, its 5' trim and its observation loss, so a
+/// translation that starts at pool position zero can be in the wrong frame
+/// entirely. That is why an affinity model travels with its `RefDataConfig`
+/// rather than borrowing one from the mutation context -- the context also
+/// selects the mutator's execution policy, and giving the neutral path one
+/// just to reach its reference would move its draws.
+fn affinity_aa(sim: &Simulation, refdata: &RefDataConfig) -> Result<Vec<u8>, PassError> {
+    super::affinity::coding_sim_to_aa(sim, refdata)
+        .map_err(|reason| PassError::invalid_plan_state("lineage.affinity", reason))
 }
 
 /// Core generation-synchronous growth. With `mutator = None`, children are exact
@@ -217,7 +219,7 @@ fn grow_core(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: Option<&dyn Pass>,
-    affinity: Option<&AffinityModel>,
+    affinity: Option<(&AffinityModel, &RefDataConfig)>,
     context: Option<&LineageMutationContext<'_>>,
     mut replay: Option<&mut super::replay_receipt::FamilyReplayDriver<'_>>,
 ) -> Result<
@@ -249,7 +251,7 @@ fn grow_core(
     let mut rng = super::streams::stream(params.seed, super::streams::GROWTH);
 
     let root_affinity = match affinity {
-        Some(m) => m.affinity_value(&affinity_aa(founder, context)?),
+        Some((m, refdata)) => m.affinity_value(&affinity_aa(founder, refdata)?),
         None => 0.0,
     };
 
@@ -300,7 +302,9 @@ fn grow_core(
         let mut next_live: Vec<u32> = Vec::new();
         for &parent_id in &live {
             let cell_lambda = match affinity {
-                Some(m) => eff_lambda * m.fitness_from_affinity(nodes[parent_id as usize].affinity),
+                Some((m, _)) => {
+                    eff_lambda * m.fitness_from_affinity(nodes[parent_id as usize].affinity)
+                }
                 None => eff_lambda,
             };
             let k = if let Some(driver) = replay.as_deref_mut() {
@@ -373,7 +377,7 @@ fn grow_core(
                 };
                 let muts = child_sim.mutation_count.saturating_sub(parent_mut_count);
                 let child_affinity = match affinity {
-                    Some(m) => m.affinity_value(&affinity_aa(&child_sim, context)?),
+                    Some((m, refdata)) => m.affinity_value(&affinity_aa(&child_sim, refdata)?),
                     None => 0.0,
                 };
                 nodes.push(LineageNode {
@@ -457,8 +461,9 @@ pub fn grow_lineage_with_affinity(
     params: &BranchingParams,
     mutator: &dyn Pass,
     model: &AffinityModel,
+    refdata: &RefDataConfig,
 ) -> LineageTree {
-    grow_core(founder, params, Some(mutator), Some(model), None, None)
+    grow_core(founder, params, Some(mutator), Some((model, refdata)), None, None)
         .expect("unconstrained lineage")
         .0
 }
@@ -471,7 +476,7 @@ pub fn grow_lineage_retaining_sims(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: &dyn Pass,
-    affinity: Option<&AffinityModel>,
+    affinity: Option<(&AffinityModel, &RefDataConfig)>,
 ) -> (LineageTree, Vec<Simulation>, Vec<u32>) {
     let (tree, _peak, sims, live, _edges) =
         grow_core(founder, params, Some(mutator), affinity, None, None)
@@ -483,7 +488,7 @@ pub fn grow_lineage_retaining_sims_with_context(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: &dyn Pass,
-    affinity: Option<&AffinityModel>,
+    affinity: Option<(&AffinityModel, &RefDataConfig)>,
     context: &LineageMutationContext<'_>,
 ) -> Result<(LineageTree, Vec<Simulation>, Vec<u32>), PassError> {
     let (tree, _peak, sims, live, _edges) = grow_core(
@@ -503,7 +508,7 @@ pub fn grow_lineage_retaining_edges_with_context(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: &dyn Pass,
-    affinity: Option<&AffinityModel>,
+    affinity: Option<(&AffinityModel, &RefDataConfig)>,
     context: &LineageMutationContext<'_>,
 ) -> Result<(LineageTree, Vec<Simulation>, Vec<u32>, Vec<Option<Outcome>>), PassError> {
     let (tree, _peak, sims, live, edges) = grow_core(
@@ -521,7 +526,7 @@ pub(crate) fn grow_lineage_with_receipt(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: &dyn Pass,
-    affinity: Option<&AffinityModel>,
+    affinity: Option<(&AffinityModel, &RefDataConfig)>,
     context: &LineageMutationContext<'_>,
     driver: &mut super::replay_receipt::FamilyReplayDriver<'_>,
 ) -> Result<(LineageTree, Vec<Simulation>, Vec<u32>, Vec<Option<Outcome>>), PassError> {
@@ -656,6 +661,22 @@ mod tests {
             NucHandle::new(0),
             NucHandle::new(4),
         ))
+    }
+
+    /// A founder with a resolved V assignment, and the reference it was built
+    /// from. Affinity scoring needs both: the coding frame comes from the V
+    /// allele's native reference phase, so a translation cannot be derived from
+    /// the pool alone. The synthetic `founder()` has no assignment and no
+    /// reference, which is why these tests used to score the per-region rail.
+    fn affinity_founder() -> (crate::refdata::RefDataConfig, Simulation) {
+        let (reference, model) = crate::duplex_repair::model::tests::fixture();
+        let mut sim = model.prepare_row(0, &reference).unwrap().seed;
+        // That fixture is the reachable reference-plus-assignment pair, but its
+        // founder carries duplex provenance, which routes growth down the
+        // duplex path and demands a mutation context. These tests exercise the
+        // plain path, so the provenance is dropped.
+        sim.duplex_provenance = None;
+        (reference, sim)
     }
 
     fn neutral_params() -> BranchingParams {
@@ -1024,9 +1045,9 @@ mod tests {
 
     #[test]
     fn affinity_run_populates_node_affinities_and_root_matches() {
-        use crate::lineage::affinity::{sim_to_aa, AffinityModel};
-        let f = founder();
-        let founder_aa = sim_to_aa(&f);
+        use crate::lineage::affinity::{coding_sim_to_aa, AffinityModel};
+        let (reference, f) = affinity_founder();
+        let founder_aa = coding_sim_to_aa(&f, &reference).expect("founder has a coding span");
         let w = vec![1.0; founder_aa.len().max(1)];
         let model = AffinityModel::new(b"W".to_vec(), w, 1.0, 1.0, &founder_aa);
         let params = BranchingParams {
@@ -1037,7 +1058,7 @@ mod tests {
             n_sample: 10,
             seed: 11,
         };
-        let tree = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &model);
+        let tree = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &model, &reference);
         assert!((tree.root().affinity - model.affinity_value(&founder_aa)).abs() < 1e-9);
         for n in &tree.nodes {
             assert!(
@@ -1050,9 +1071,9 @@ mod tests {
 
     #[test]
     fn affinity_strength_zero_matches_neutral_topology() {
-        use crate::lineage::affinity::{sim_to_aa, AffinityModel};
-        let f = founder();
-        let founder_aa = sim_to_aa(&f);
+        use crate::lineage::affinity::{coding_sim_to_aa, AffinityModel};
+        let (reference, f) = affinity_founder();
+        let founder_aa = coding_sim_to_aa(&f, &reference).expect("founder has a coding span");
         let w = vec![1.0; founder_aa.len().max(1)];
         // selection_strength = 0 => fitness identically 1 => identical topology/genotypes to neutral
         let model = AffinityModel::new(b"W".to_vec(), w, 1.0, 0.0, &founder_aa);
@@ -1064,7 +1085,7 @@ mod tests {
             n_sample: 10,
             seed: 11,
         };
-        let with_aff = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &model);
+        let with_aff = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &model, &reference);
         let neutral = grow_lineage(&f, &params, &two_mut_mutator());
         assert_eq!(with_aff.len(), neutral.len());
         for (a, b) in with_aff.nodes.iter().zip(neutral.nodes.iter()) {
@@ -1077,9 +1098,9 @@ mod tests {
 
     #[test]
     fn affinity_growth_is_deterministic() {
-        use crate::lineage::affinity::{sim_to_aa, AffinityModel};
-        let f = founder();
-        let founder_aa = sim_to_aa(&f);
+        use crate::lineage::affinity::{coding_sim_to_aa, AffinityModel};
+        let (reference, f) = affinity_founder();
+        let founder_aa = coding_sim_to_aa(&f, &reference).expect("founder has a coding span");
         let mk = || {
             AffinityModel::new(
                 b"W".to_vec(),
@@ -1097,8 +1118,8 @@ mod tests {
             n_sample: 10,
             seed: 21,
         };
-        let a = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &mk());
-        let b = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &mk());
+        let a = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &mk(), &reference);
+        let b = grow_lineage_with_affinity(&f, &params, &two_mut_mutator(), &mk(), &reference);
         assert_eq!(a.len(), b.len());
         for (x, y) in a.nodes.iter().zip(b.nodes.iter()) {
             assert_eq!(x.genotype, y.genotype);

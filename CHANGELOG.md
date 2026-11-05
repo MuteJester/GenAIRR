@@ -6,6 +6,56 @@ All notable changes to GenAIRR are documented here.
 
 ### Changed
 
+- **`DETERMINISM_VERSION` is now 4.** Affinity selection scores the protein the
+  cell actually expresses. Seed-moving wherever selection is active;
+  `selection_strength=0` runs with no target are unaffected.
+
+  The cell's amino acids came from concatenating a per-region translation, and a
+  codon was kept only if it fitted wholly inside one region. Every region
+  boundary in a rearrangement is a junction boundary, so the residues selection
+  could not see were exactly the ones it exists to select on: measured over 200
+  `human_igh` records, 2.68 codons dropped per record (range 0 to 4) and **536
+  of 536 of them straddling V/NP1, NP1/D, D/NP2 or NP2/J**. The frame did not
+  restart, so every scored codon was real - the dropped ones simply vanished and
+  shifted every amino-acid position after them left. For one record the scored
+  protein began `VYYCARGYCSSTSC` where the real one is `VYYCARDRGYCSSTSC*KK`:
+  the loss starts at the conserved CDR3 anchor.
+
+  Measured through the public API: a cell grown with `rate=0`, and therefore
+  identical to its founder, scored against the founder's own protein reported
+  an affinity of **3.57e-67 instead of 1.0**. The model could not recognise a
+  cell as identical to itself.
+
+  Both paths now translate the coding span continuously, in the frame resolved
+  from the V allele's native reference phase - the same protein a record reports
+  as `sequence_aa`. Because the frame comes from the reference, an affinity
+  model now travels with its reference data, and `simulate_lineage` requires
+  `refdata` when selection is active.
+
+- **A stop codon no longer scores as a perfect match.** `substitution_cost` is
+  `S(a,a) - S(a,b)`, and for a stop or an unresolved `X` both terms fell through
+  to the same `-4`, so the cost cancelled to exactly zero against every target
+  residue and `affinity` came out at 1.0 - the maximum. A `KPGT*` cell reported
+  affinity 1.0 against `KPGTA`, `KPGTW` and `KPGTAAAAAAAA` alike. Non-residues
+  are now charged the maximal substitution cost, so a receptor that cannot be
+  translated is scored as far from the target rather than close to it.
+
+  It is deliberately *not* treated as lethal. SHM here is not constrained to
+  keep a receptor productive, so stops accumulate fast -- **96% of sampled
+  cells carry one at the default `rate=0.05`**, 89% at `rate=0.01`, and 50% even
+  at `rate=0`, inherited from founders, 54% of which carry one already. Giving a
+  stop-bearing cell no offspring would therefore extinguish essentially every
+  lineage under selection rather than modelling a germinal centre. That the
+  mutation model produces mostly untranslatable receptors is a separate matter
+  from how affinity scores them.
+
+- **A `target_aa` of the wrong length is refused.** The distance compared
+  `min(len, len)` positions and ignored the rest, so a truncated or over-long
+  target scored silently and reported a number that was not a distance to it.
+  A supplied target must now match the receptor protein's length; the error
+  names both.
+
+
 - **`DETERMINISM_VERSION` is now 3.** Clonal lineage population regulation is
   Beverton-Holt, `lambda_base / (1 + (lambda_base - 1) * P / n_max)`, in place
   of the discrete logistic map `lambda_base * max(0, 1 - P / n_max)` and the

@@ -33,9 +33,10 @@ pub fn simulate_family_with_affinity(
     params: &BranchingParams,
     mutator: &dyn Pass,
     model: &AffinityModel,
+    refdata: &crate::refdata::RefDataConfig,
 ) -> LineageTree {
     let (mut tree, _sims, live) =
-        grow_lineage_retaining_sims(founder, params, mutator, Some(model));
+        grow_lineage_retaining_sims(founder, params, mutator, Some((model, refdata)));
     let mut sample_rng = streams::stream(params.seed, streams::SAMPLING);
     sample_observed(&mut tree, &live, params, founder, &mut sample_rng);
     tree
@@ -49,7 +50,7 @@ pub fn simulate_family_sims(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: &dyn Pass,
-    affinity: Option<&AffinityModel>,
+    affinity: Option<(&AffinityModel, &crate::refdata::RefDataConfig)>,
 ) -> (LineageTree, Vec<Simulation>) {
     let (mut tree, sims, live) = grow_lineage_retaining_sims(founder, params, mutator, affinity);
     let mut sample_rng = streams::stream(params.seed, streams::SAMPLING);
@@ -62,7 +63,7 @@ pub fn simulate_family_sims_with_context(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: &dyn Pass,
-    affinity: Option<&AffinityModel>,
+    affinity: Option<(&AffinityModel, &crate::refdata::RefDataConfig)>,
     context: &super::branching::LineageMutationContext<'_>,
 ) -> Result<(LineageTree, Vec<Simulation>), crate::pass::PassError> {
     let (mut tree, sims, live) = super::branching::grow_lineage_retaining_sims_with_context(
@@ -91,7 +92,7 @@ pub fn simulate_family_edges_with_context(
     founder: &Simulation,
     params: &BranchingParams,
     mutator: &dyn Pass,
-    affinity: Option<&AffinityModel>,
+    affinity: Option<(&AffinityModel, &crate::refdata::RefDataConfig)>,
     context: &super::branching::LineageMutationContext<'_>,
 ) -> Result<
     (
@@ -152,7 +153,7 @@ pub fn simulate_family_receipt(
         driver.resolved_target(None)?;
         None
     } else {
-        let aa = super::affinity::duplex_sim_to_aa(sim, refdata).map_err(error)?;
+        let aa = super::affinity::coding_sim_to_aa(sim, refdata).map_err(error)?;
         let target = if let Some(t) = &config.target_aa {
             t.as_bytes().to_vec()
         } else {
@@ -179,7 +180,7 @@ pub fn simulate_family_receipt(
         sim,
         &params,
         &mutator,
-        model.as_ref(),
+        model.as_ref().map(|m| (m, refdata)),
         &context,
         &mut driver,
     )?;

@@ -138,6 +138,43 @@ impl PyLineageTree {
 /// SHM rate in [0, 1]. Determinism is keyed on `seed`. `lambda_mut` is reserved
 /// for a future plan and currently has no effect (mutations are driven by the
 /// S5F `rate`).
+/// Resolve the affinity target against the founder's protein.
+///
+/// A supplied target must be exactly as long as the receptor it is scored
+/// against. `weighted_aa_distance` compares `min(len(a), len(b))` positions and
+/// ignores the rest, so a truncated or over-long target used to score silently:
+/// `KPGTA` and `KPGTAAAAAAAA` were equidistant from a cell. For a tool whose
+/// output is someone else's ground truth, a misaligned target that produces a
+/// plausible number is worse than one that refuses.
+fn resolve_affinity_target(
+    target_aa: Option<String>,
+    founder_aa: &[u8],
+    seed: u64,
+    mature_substitutions: u32,
+    what: &str,
+) -> PyResult<Vec<u8>> {
+    match target_aa {
+        Some(supplied) => {
+            let target = supplied.into_bytes();
+            if target.len() != founder_aa.len() {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "{what}: target_aa is {} residues but the founder's receptor \
+                     translates to {}. A target of a different length is compared \
+                     over whichever is shorter and the remainder is ignored, so \
+                     the affinity it reports is not a distance to this target.",
+                    target.len(),
+                    founder_aa.len()
+                )));
+            }
+            Ok(target)
+        }
+        None => {
+            let mut trng = streams::stream(seed, streams::TARGET);
+            Ok(make_mature_target(founder_aa, mature_substitutions, &mut trng))
+        }
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (
     founder, mutability, substitution, rate,
@@ -255,7 +292,7 @@ pub(crate) fn simulate_lineage(
         let model = if selection_strength == 0.0 && target_aa.is_none() {
             None
         } else {
-            let aa = crate::lineage::affinity::duplex_sim_to_aa(&founder.inner, refdata.inner())
+            let aa = crate::lineage::affinity::coding_sim_to_aa(&founder.inner, refdata.inner())
                 .map_err(PyValueError::new_err)?;
             let target = match target_aa {
                 Some(s) => s.into_bytes(),
@@ -277,7 +314,7 @@ pub(crate) fn simulate_lineage(
             &founder.inner,
             &params,
             &mutator,
-            model.as_ref(),
+            model.as_ref().map(|m| (m, refdata.inner())),
             &context,
         )
         .map_err(super::contract::pass_error_to_pyerr)?;
@@ -293,18 +330,34 @@ pub(crate) fn simulate_lineage(
 
     // Build the affinity model. Uniform per-position weights for v1 (the model
     // accepts arbitrary weights; CDR3 region-weighting is a follow-up).
-    let founder_aa = sim_to_aa(&founder.inner);
-    let target = match target_aa {
-        Some(s) => s.into_bytes(),
-        None => {
-            // Deterministic auto "mature" target derived from the seed.
-            let mut trng = streams::stream(seed, streams::TARGET);
-            make_mature_target(&founder_aa, mature_substitutions, &mut trng)
-        }
-    };
+    // Reference-aware translation is not optional for affinity: the coding
+    // frame is resolved from the V allele's native reference phase, its 5' trim
+    // and its observation loss, so a translation starting at pool position zero
+    // can be in the wrong frame entirely.
+    let refdata = refdata.ok_or_else(|| {
+        PyValueError::new_err(
+            "simulate_lineage: affinity selection requires refdata -- the coding \
+             frame comes from the V allele's reference phase",
+        )
+    })?;
+    let founder_aa = crate::lineage::affinity::coding_sim_to_aa(&founder.inner, refdata.inner())
+        .map_err(PyValueError::new_err)?;
+    let target = resolve_affinity_target(
+        target_aa,
+        &founder_aa,
+        seed,
+        mature_substitutions,
+        "simulate_lineage",
+    )?;
     let weights = vec![1.0; founder_aa.len()];
     let model = AffinityModel::new(target, weights, beta, selection_strength, &founder_aa);
-    let tree = simulate_family_with_affinity(&founder.inner, &params, &mutator, &model);
+    let tree = simulate_family_with_affinity(
+        &founder.inner,
+        &params,
+        &mutator,
+        &model,
+        refdata.inner(),
+    );
     Ok(PyLineageTree::new(tree))
 }
 
@@ -887,19 +940,19 @@ pub(crate) fn simulate_family_outcomes(
     let model: Option<AffinityModel> = if selection_strength == 0.0 && target_aa.is_none() {
         None
     } else {
-        let founder_aa = if founder_sim.duplex_provenance.is_some() {
-            crate::lineage::affinity::duplex_sim_to_aa(&founder_sim, refdata.inner())
-                .map_err(PyValueError::new_err)?
-        } else {
-            sim_to_aa(&founder_sim)
-        };
-        let target = match target_aa {
-            Some(s) => s.into_bytes(),
-            None => {
-                let mut trng = streams::stream(seed, streams::TARGET);
-                make_mature_target(&founder_aa, mature_substitutions, &mut trng)
-            }
-        };
+        // One translation for both paths. The plain branch used to call
+        // `sim_to_aa`, which drops every codon straddling a region boundary --
+        // and every boundary in a rearrangement is a junction boundary, so it
+        // dropped CDR3 while holding the reference it needed right here.
+        let founder_aa = crate::lineage::affinity::coding_sim_to_aa(&founder_sim, refdata.inner())
+            .map_err(PyValueError::new_err)?;
+        let target = resolve_affinity_target(
+            target_aa,
+            &founder_aa,
+            seed,
+            mature_substitutions,
+            "simulate_family_outcomes",
+        )?;
         let weights = vec![1.0; founder_aa.len()];
         Some(AffinityModel::new(
             target,
@@ -920,7 +973,7 @@ pub(crate) fn simulate_family_outcomes(
             &founder_sim,
             &params,
             &mutator,
-            model.as_ref(),
+            model.as_ref().map(|m| (m, refdata.inner())),
             &context,
         )
         .map_err(super::contract::pass_error_to_pyerr)?;
@@ -963,12 +1016,17 @@ pub(crate) fn simulate_family_outcomes(
             &founder_sim,
             &params,
             &mutator,
-            model.as_ref(),
+            model.as_ref().map(|m| (m, refdata.inner())),
             &context,
         )
         .map_err(super::contract::pass_error_to_pyerr)?
     } else {
-        simulate_family_sims(&founder_sim, &params, &mutator, model.as_ref())
+        simulate_family_sims(
+            &founder_sim,
+            &params,
+            &mutator,
+            model.as_ref().map(|m| (m, refdata.inner())),
+        )
     };
 
     // The branching loop mutates child sims with a bare `Pass::execute`

@@ -172,13 +172,53 @@ affinity = exp(−beta · weighted_aa_distance(cell, target))
 
 `weighted_aa_distance` is a **BLOSUM62 substitution-aware** amino-acid distance
 between the cell's translated receptor and the target (region weights let CDRs be
-emphasized; v1 uses uniform weights, with CDR3-weighting as a planned refinement).
-`affinity` is 1.0 at the target sequence and decays toward 0 as the cell diverges.
+emphasized; weights are currently uniform, with CDR3-weighting a planned
+refinement). `affinity` is 1.0 at the target sequence and decays toward 0 as the
+cell diverges.
+
+The cell's receptor is translated **continuously across its whole coding span**,
+in the reading frame resolved from the V allele's reference phase. It is the
+same protein the record reports as `sequence_aa`, so you can read a cell's
+scored protein straight off its record.
 
 The target is either supplied by you (`target_aa=...`, a target amino-acid
 sequence) or auto-generated as a "mature" target - the founder's amino-acid
 sequence with `mature_substitutions` random residue changes (the standard
 benchmark convention).
+
+A supplied `target_aa` must be **exactly as long as the receptor's protein**, or
+the run is refused. The distance compares the two sequences position by position
+and stops at the shorter one, so a truncated or over-long target would otherwise
+score silently and report a number that is not a distance to it. Use the
+`sequence_aa` of a record from the same cartridge to get the length right.
+
+A **stop codon** or an unresolved residue in the cell carries the maximal
+substitution cost, so a receptor that cannot be translated is scored as far from
+the target rather than close to it. It is *not* treated as lethal: cells carrying
+a stop still divide, at the reduced rate their distance implies.
+
+!!! note "Most cells carry a stop, so read affinity accordingly"
+
+    SHM here is not constrained to keep a receptor productive, so stops
+    accumulate quickly: measured on `human_igh`, **96% of sampled cells carry a
+    stop at the default `rate=0.05`**, 89% at `rate=0.01`, and 50% even at
+    `rate=0` - inherited from founders, 54% of which carry one already. Pair
+    selection with a productivity constraint if you want a family of
+    translatable receptors, and treat `lineage_affinity` on a stop-bearing cell
+    as the distance it is, not as a statement that the cell is viable.
+
+!!! warning "This changed in determinism version 4"
+
+    Before version 4 the scored protein was built by translating each region
+    separately and concatenating the results, which dropped every codon
+    straddling a region boundary. Every boundary in a rearrangement is a
+    junction boundary, so what it dropped was CDR3 - 2.68 codons per record on
+    average, and the amino-acid positions after each loss shifted left. A cell
+    grown without mutation, scored against its own protein, reported an affinity
+    of `3.57e-67` instead of `1.0`. A stop codon separately cost *nothing*
+    against any target, so a cell that could not be translated scored as the
+    perfect antibody. Affinity numbers from before version 4 are not comparable
+    with these, and neither are the genealogies that selection shaped.
 
 Affinity feeds back into the offspring rate through a **fitness multiplier**:
 
