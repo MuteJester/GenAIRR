@@ -429,8 +429,25 @@ for rec in result.records:
     drew_novel_v = (rec["subject_id"], rec["truth_v_call"]) in novel
 ```
 
-The same join answers the deletion question (`allele == "(none)"`) and the
-zygosity question (`gene_state`) per read.
+The `gene_state` column answers the zygosity question per read the same way.
+The deletion question is **not** a per-read question: a deleted gene is never
+drawn from, so no record's `truth_v_call` can ever match a `(none)` row. Ask
+it of the subject, by reading the rows whose `gene_state` is `deleted`.
+
+!!! warning "Join on the allele, not on the locus"
+    A record carries one `locus` for the whole rearrangement, taken from its V
+    call. A sidecar row carries the locus of *its own* gene. On a cartridge
+    whose V pool mixes loci — `HUMAN_TCRD_IMGT` has both `TRAV` and `TRDV`
+    genes — a read with a `TRAV` V call is labelled `TRA` while the `TRDJ`
+    allele it was generated from is a `TRD` row. Filtering the sidecar by the
+    record's locus before joining therefore drops the D and J truth for most
+    reads. Join on `(subject_id, allele)`.
+
+!!! note "Per-chromosome expression weight is not in the sidecar"
+    `chromosome_weights(w0, w1)` changes how often each chromosome is drawn
+    from, and no export carries it. With `(1.0, 0.0)` the table still lists
+    every haplotype-1 allele as carried, while no record can draw one. If you
+    set non-equal weights, record them alongside the run yourself.
 
 ## More genotype topics
 

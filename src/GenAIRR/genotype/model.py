@@ -519,7 +519,9 @@ class Genotype(_GenotypeSampling):
             return ";".join(f"{a}:{c}:{w}" for (a, c, w) in detail)
 
         rows = self.to_table()
-        with open(path, "w", newline="") as fh:
+        # Explicit encoding: the default is locale-dependent, so on Windows
+        # this wrote cp1252 and a non-ASCII subject_id raised.
+        with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh, delimiter="\t")
             w.writerow(
                 [

@@ -79,14 +79,22 @@ class TestThePremisesThisRunMustSatisfy:
             drawn.discard("")
             assert len(drawn) > 1, f"only {drawn} drawn for {segment}; too degenerate"
 
-    def test_at_least_one_subject_carries_a_deleted_gene(self, cohort):
+    def test_at_least_one_subject_carries_a_fully_deleted_gene(self, cohort):
+        """Fully deleted, not merely one chromosome short.
+
+        `test_a_fully_deleted_gene_is_never_drawn_from` skips any subject
+        with no gene deleted on BOTH chromosomes. A guard keyed on the
+        `(none)` sentinel alone is satisfied by a hemizygous deletion, which
+        would leave that test asserting nothing while this one still passed,
+        so the guard has to match the state the test actually needs.
+        """
         deleted = [
             (s.subject_id, r["gene"])
             for s in cohort.subjects
             for r in genotype_truth_rows(s.genotype)
-            if r["allele"] == DELETED_ALLELE
+            if r["allele"] == DELETED_ALLELE and r["gene_state"] == "deleted"
         ]
-        assert deleted, "no deletion anywhere; the deletion path is untested"
+        assert deleted, "no fully deleted gene anywhere; that path is untested"
 
     def test_the_subjects_genotypes_are_not_identical(self, cohort):
         signatures = {

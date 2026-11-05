@@ -31,7 +31,7 @@ INFRASTRUCTURE = {
 #: field nobody is answerable for is a field nobody has to get right, so the
 #: alternative to a claim is an explicit entry here -- not silence.
 #:
-#: Nine of these are also listed in the ``truth_fields`` of the mechanism they
+#: Fourteen of these are also listed in the ``truth_fields`` of the mechanism they
 #: belong to, which is deliberate and is not a contradiction: that is where a
 #: reader looks for them. An entry here means the field does not count toward
 #: its mechanism's coverage, because nothing a test could do would establish a
@@ -40,16 +40,19 @@ INFRASTRUCTURE = {
 UNCLAIMED_FIELDS = {
     "sequence_id": "a label the harness assigns, not simulated biology; "
                    "clonality.founder claims it for clone identity instead",
-    "locus": "the locus the genotype was drawn from, echoed onto every record "
+    "locus": "the locus the rearrangement was drawn from, echoed onto every record "
              "from the cartridge's identity rather than sampled per record; "
              "claimed by germline.genotype because that is where a reader "
              "looks for it",
-    "subject_id": "the subject label the caller supplied, identical on every "
-                  "record of a subject with no per-record outcome in it -- the "
-                  "same shape as read_layout. It is listed beside "
-                  "germline.genotype because it is the key the genotype "
-                  "sidecar joins on, which is what makes it worth exporting at "
-                  "all",
+    "subject_id": "a label the caller supplied, not a drawn outcome: the "
+                  "engine samples nothing per record for it and it is the same "
+                  "string on every record of a subject, the same shape as "
+                  "sequence_id. Excluded because no test can establish its "
+                  "VALUE, which is not the same as nothing being asserted "
+                  "about it -- the export tests do hold it to the join, "
+                  "requiring the sidecar's key to equal the records' key. It "
+                  "is listed beside germline.genotype because that join is "
+                  "what makes it worth exporting at all",
     "productivity_policy": "configuration echoed back, not an outcome",
     "productivity_scope": "configuration echoed back, not an outcome",
     "read_layout": "the configured layout name echoed back -- 'paired_end' "
@@ -109,13 +112,27 @@ MECHANISMS = (
                 "including whether a haplotype is functional at all.",
         truth_fields=("locus", "haplotype", "subject_id"),
         engine_passes=("SampleGenotypePass",),
-        notes="This mechanism carried a truth_gap saying the genotype "
+        truth_gap="Per-chromosome expression weight is not exported. "
+                  "`Genotype.chromosome_weights(w0, w1)` decides how often "
+                  "each chromosome is drawn from, and no export carries it: "
+                  "not the record, not `to_table`, not the sidecar, and "
+                  "`to_metadata` records only that the value was set "
+                  "manually, never the value. So a genotype with weights "
+                  "(1.0, 0.0) projects 85 rows on this cartridge claiming "
+                  "haplotype-1 alleles are carried while no record can ever "
+                  "draw one, and a caller that correctly reports them absent "
+                  "is scored wrong with nothing in the truth files to explain "
+                  "why. This is the remaining part of the summary's clause "
+                  "\"whether a haplotype is functional at all\".",
+        notes="This mechanism carried a wider truth_gap saying the genotype "
               "\"is not exported\" and that there is \"no haplotype or "
-              "chromosome field\". Both halves were wrong. The engine has "
-              "been stamping `haplotype` -- the chromosome this rearrangement "
-              "drew from -- on every record of a genotype run all along, and "
-              "no mode in the field census attached a genotype, so the "
-              "completeness checks could not see it. The carried-allele set "
+              "chromosome field\". The second half was simply wrong: "
+              "`haplotype` -- the chromosome this rearrangement drew from -- "
+              "has been recorded by the engine as a `sample_haplotype` trace "
+              "value and stamped onto every record of a genotype run by "
+              "`_compiled/plain.py` all along, and no mode in the field "
+              "census attached a genotype, so the completeness checks could "
+              "not see it. The carried-allele set "
               "is now exported too, beside the records rather than in them: "
               "`to_genotype_tsv` writes one row per carried allele, keyed on "
               "`subject_id`, with a chromosome column, a novel flag and a "

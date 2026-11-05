@@ -590,21 +590,28 @@ def test_the_coverage_report_numbers_are_pinned():
     that check on every record. A partition claim needs a test that the
     buckets *differ*, not only that they add up.
 
-    germline.genotype then left `no-truth-exported`, and like
-    assay.ambiguous_calls it left by the gap closing rather than by a test
-    being added. Its gap claimed the genotype "is not exported" and that there
-    is "no haplotype or chromosome field": the second half had never been
-    true. `haplotype` is stamped on every record of a genotype run, and the
-    field census had no genotype mode, so no completeness check here could see
-    it -- the same blind spot the duplex mode was added to fix, and the reason
-    a wrong statement about the record survived in the catalog. The first half
-    is closed by `to_genotype_tsv`, which writes the carried-allele set beside
-    the records. The row is verified on `haplotype` by the phasing test, which
-    reads the drawn chromosome off a genotype it constructed itself; `locus`
-    and `subject_id` are listed beside the mechanism and excluded from the
-    denominator, which is why one field carries the row.
+    germline.genotype then moved from `no-truth-exported` to a declared
+    gapped ceiling, which is a narrowing of its gap rather than a test being
+    added. The old gap claimed the genotype "is not exported" and that there
+    is "no haplotype or chromosome field". The second half had never been
+    true: `haplotype` is recorded by the engine and stamped on every record
+    of a genotype run, and the field census had no genotype mode, so no
+    completeness check here could see it -- the same blind spot the duplex
+    mode was added to fix, and the reason a wrong statement about the record
+    survived in the catalog at all. The first half is closed by
+    `to_genotype_tsv`, which writes the carried-allele set beside the records.
 
-    So the surface is now: 23 verified, 3 at a declared gapped ceiling, 3
+    What is left is narrower and real, so the gap stays in that reduced form:
+    per-chromosome expression weight is not exported anywhere. A genotype
+    with weights (1.0, 0.0) projects rows claiming haplotype-1 alleles are
+    carried while no record can ever draw one. That is the remaining piece of
+    this mechanism's own summary clause, "whether a haplotype is functional
+    at all", which is why deleting the gap outright would have over-claimed.
+    The row is covered on `haplotype` by the phasing test, which reads the
+    drawn chromosome off a genotype it constructed itself; `locus` and
+    `subject_id` are excluded from the denominator, so one field carries it.
+
+    So the surface is now: 22 verified, 4 at a declared gapped ceiling, 3
     with no exported truth at all, and 2 consistent. `unverified` is empty.
     """
     tests, covered, bases = _declared_registrations()
@@ -620,7 +627,7 @@ def test_the_coverage_report_numbers_are_pinned():
     status = {row.mechanism_id: row.status for row in rows}
     expected = {
         "germline.allele_choice":         "verified",
-        "germline.genotype":              "verified",
+        "germline.genotype":              "gap-limited",
         "recombination.assembly":         "consistent",
         "recombination.d_inversion":      "verified",
         "recombination.trimming":         "verified",
@@ -664,8 +671,8 @@ def test_the_coverage_report_numbers_are_pinned():
         "field moved without anyone noticing.")
     counts = {name: sum(1 for value in status.values() if value == name)
               for name in sorted(set(status.values()))}
-    assert counts == {"consistent": 2, "gap-limited": 3, "no-truth-exported": 3,
-                      "verified": 23}, counts
+    assert counts == {"consistent": 2, "gap-limited": 4, "no-truth-exported": 3,
+                      "verified": 22}, counts
 
 
 def test_the_pinned_report_is_not_a_fiction_about_which_tests_exist():

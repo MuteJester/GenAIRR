@@ -159,9 +159,18 @@ class TestNovelAlleles:
             "an unplaced novel allele must not appear as carried")
 
 
-class TestTheLocusColumnMatchesTheRecords:
-    """A sidecar whose join key disagrees with the records is worse than no
-    sidecar: the join silently returns nothing."""
+class TestTheLocusColumn:
+    """What the locus column is, and what it is not.
+
+    The class was once named for the records and never looked at one, which
+    is how it missed the case below: on a cartridge whose V pool mixes loci,
+    a record's locus and its own allele's sidecar locus genuinely differ.
+    The record carries one locus for the whole rearrangement, taken from the
+    V call; a row carries the locus of its gene. The join key is
+    `(subject_id, allele)`, so the difference is a readability property of
+    the column rather than a broken join -- but it has to be pinned, because
+    the obvious wrong move is to filter the sidecar by the record's locus.
+    """
 
     def test_the_locus_is_the_prefix_the_engine_derives(self):
         gene, alleles = _gene_with_at_least(1)
@@ -179,3 +188,48 @@ class TestTheLocusColumnMatchesTheRecords:
         assert locus_of("igkv1-5") == "IGK"
         assert locus_of("SYNTHETIC1") == ""
         assert locus_of("XX") == ""
+
+    def test_on_a_single_locus_cartridge_it_agrees_with_every_record(self):
+        """The property the class name used to assert, now against records."""
+        import GenAIRR as ga
+
+        g = (Genotype.from_dataconfig(_cfg()).complete_from_reference()
+             .with_subject("S1"))
+        result = (ga.Experiment.on(_cfg()).with_genotype(g).recombine()
+                  .run_records(n=20, seed=3))
+        rows = genotype_truth_rows(g)
+        assert rows, "premise: the genotype projects to rows"
+        record_loci = {rec["locus"] for rec in result}
+        assert record_loci == {"IGH"}, record_loci
+        assert {r["locus"] for r in rows} == record_loci
+
+    def test_on_a_mixed_locus_cartridge_a_rows_locus_is_its_genes_not_the_reads(self):
+        """`HUMAN_TCRD_IMGT` carries both TRAV and TRDV genes, so a read with
+        a TRAV V call is labelled TRA while the TRDJ allele it was generated
+        from is a TRD row. Pinned so nobody 'fixes' the column to match the
+        record and loses the D/J truth."""
+        import GenAIRR as ga
+        import GenAIRR.data as gdata
+
+        cfg = gdata.HUMAN_TCRD_IMGT
+        v_prefixes = {gene[:4] for gene in cfg.v_alleles}
+        assert v_prefixes >= {"TRAV", "TRDV"}, (
+            f"premise: this cartridge's V pool mixes loci, got {v_prefixes}")
+
+        g = (Genotype.from_dataconfig(cfg).complete_from_reference()
+             .with_subject("T0"))
+        result = (ga.Experiment.on(cfg).with_genotype(g).recombine()
+                  .run_records(n=40, seed=5, expose_provenance=True))
+        locus_by_allele = {r["allele"]: r["locus"] for r in genotype_truth_rows(g)}
+
+        disagreeing = [rec for rec in result
+                       if locus_by_allele.get(rec["truth_j_call"]) != rec["locus"]]
+        assert disagreeing, (
+            "premise: this cartridge is supposed to produce reads whose J "
+            "allele sits in a different locus than the read's own label")
+        # The join is on the allele, and it holds for every record regardless.
+        for rec in result:
+            for field in ("truth_v_call", "truth_d_call", "truth_j_call"):
+                allele = rec.get(field)
+                if allele:
+                    assert allele in locus_by_allele, allele
