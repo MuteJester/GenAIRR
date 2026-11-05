@@ -390,12 +390,47 @@ A genotype experiment emits, by construction, everything an evaluation needs:
   (`homozygous` / `heterozygous` / `hemizygous` / `deleted`), the carried alleles
   per haplotype, and per-haplotype `allele:copies:weight` detail. This is the
   reference a genotype-inference benchmark compares against.
+- **`result.to_genotype_tsv(path)`:** the same truth in **long** form, written
+  as a sidecar beside the records: one row per carried allele, with
+  `subject_id`, `locus`, `segment`, `gene`, `allele`, `chromosome` (`0`/`1`),
+  `novel` and `gene_state`. A gene deleted on a chromosome keeps its row with
+  the literal allele `(none)`, so an absence is distinguishable from a missing
+  value. `CohortResult.to_genotype_tsv(path)` writes every subject into one
+  table, which joins to the concatenated records file on `subject_id`. A run
+  with no genotype raises rather than writing an empty file.
 
 ```python
 for row in result.genotypes[0].to_table():
     if row["zygosity"] != "homozygous":      # show the interesting genes
         print(row["gene"], row["zygosity"], row["haplotype_0"], row["haplotype_1"])
 ```
+
+### Was this read's allele novel?
+
+There is deliberately no per-read novelty column. The question is a join: the
+record names the allele it was generated from, and the sidecar says whether
+that allele is novel in that subject. Keeping it a join is what stops the
+record carrying a field derived from two others it already has.
+
+```python
+import csv
+
+result.to_tsv("repertoire.tsv")
+result.to_genotype_tsv("truth_genotype.tsv")
+
+with open("truth_genotype.tsv", encoding="utf-8") as fh:
+    novel = {(row["subject_id"], row["allele"])
+             for row in csv.DictReader(fh, delimiter="\t")
+             if row["novel"] == "True"}
+
+# `truth_v_call` needs expose_provenance=True; prefer it over `v_call`, which
+# may be a comma-separated tie list.
+for rec in result.records:
+    drew_novel_v = (rec["subject_id"], rec["truth_v_call"]) in novel
+```
+
+The same join answers the deletion question (`allele == "(none)"`) and the
+zygosity question (`gene_state`) per read.
 
 ## More genotype topics
 

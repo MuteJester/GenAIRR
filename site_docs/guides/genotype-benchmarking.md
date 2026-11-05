@@ -9,7 +9,9 @@ The recipe is the same for any tool:
 
 1. Build a `Genotype`, simulate a repertoire, write the AIRR table
    (`result.to_tsv(...)`) and/or reads FASTA, and the ground truth
-   (`genotype.to_tsv(...)`).
+   (`genotype.to_tsv(...)` for the wide per-gene table, or
+   `result.to_genotype_tsv(...)` for one row per carried allele, keyed on
+   `subject_id` so it joins to the records).
 2. Run the inference tool to recover the per-individual allele set.
 3. Compare recovered vs planted: presence/absence, zygosity, and (for
    discovery tools) any novel alleles.
@@ -106,6 +108,8 @@ res = (
 
 res.to_tsv("repertoire.tsv")                    # AIRR table → TIgGER
 g.to_tsv("truth_genotype.tsv")                  # ground truth to score against
+res.to_genotype_tsv("truth_long.tsv")           # same truth, long form, joins
+                                                # to the records on subject_id
 
 with open("reads.fasta", "w") as fh:            # raw reads → IgDiscover / partis
     for r in res:
@@ -162,8 +166,9 @@ deletion calls.
 
 ## Where to go next
 
-- [Genotypes (overview)](genotype.md) - building genotypes, novel alleles, and
-  the `to_table()` / `to_tsv()` ground truth you score against.
+- [Genotypes (overview)](genotype.md) - building genotypes, novel alleles, the
+  `to_table()` / `to_tsv()` ground truth you score against, and the
+  per-record join that answers whether a given read drew a novel allele.
 - [Genotype cohorts](genotype-cohorts.md) - scale this recipe to many donors in
   one `run_cohort` call.
 
