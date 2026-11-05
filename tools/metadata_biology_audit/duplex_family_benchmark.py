@@ -34,6 +34,8 @@ def _relative_extension_path() -> str:
     An absolute path identifies the author's filesystem, not the artifact; the
     sha256 beside this field is what identifies the binary.
     """
+    from GenAIRR import _engine
+
     extension = Path(_engine.__file__).resolve()
     try:
         return str(extension.relative_to(ROOT))
