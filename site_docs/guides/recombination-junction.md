@@ -199,9 +199,14 @@ which equal the standard generating calls.
 ### Controlling the allele universe
 
 The cartridge defines which alleles exist - bundled cartridges
-ship 100+ V alleles per locus, and the recombination pass
-samples uniformly across them by default. Two surfaces narrow
-the universe:
+ship 100+ V alleles per locus. Three surfaces decide which of
+them a run actually draws, and they do not compose:
+
+| Surface | Scope | Effect |
+|---|---|---|
+| `.restrict_alleles(v=[...])` | per experiment | Hard subset. Only the listed alleles can be drawn, uniformly among them. |
+| `.recombine(v_allele_weights={...})` | per experiment | Relative sampling weights over the **whole** catalogue. |
+| `cfg.reference_models.allele_usage` | per cartridge | An empirical usage plane carried by the reference itself. |
 
 ```python
 # Per-experiment subset:
@@ -219,6 +224,62 @@ cfg.reference_models = ReferenceEmpiricalModels(
 allele-usage weights are an empirical bias from the cartridge.
 See [Reference cartridge](../concepts/reference-cartridge.md)
 for the full surface.
+
+!!! warning "`v_allele_weights` is relative to every allele, not just the ones you list"
+    An allele you do not mention keeps its **default weight of 1.0** -
+    it is not excluded and it is not set to zero. So handing the
+    shares straight from a usage table does close to the opposite of
+    what it reads like. Measured on `"human_igh"` (198 V alleles) over
+    2,000 records:
+
+    ```python
+    weights = {"IGHVF6-G23*01": 0.30, "IGHVF3-G10*01": 0.20}
+    ga.Experiment.on("human_igh").recombine(v_allele_weights=weights)
+    # -> 6 of 2000 records (0.300%) land on those two alleles, not 50%.
+    ```
+
+    At weight 0.2-0.3 against 196 alleles at 1.0, the two you asked
+    for become *rarer* than the ones you never mentioned. And `0.0`
+    raises `ValueError` ("must be a finite positive number"), so
+    "exclude this allele" has no spelling on this surface - use
+    `.restrict_alleles(...)` for exclusion.
+
+To reproduce a usage distribution, give weights **full support**: one
+entry per allele in the catalogue, with a negligible weight for the
+tail you are not modelling. `.restrict_alleles(...)` cannot help here -
+passing both raises `ValueError: pass either allowed_ids OR weights,
+not both`.
+
+```python
+import GenAIRR as ga
+from GenAIRR.data import HUMAN_IGH_OGRDB
+
+target = {"IGHVF6-G23*01": 0.5, "IGHVF3-G10*01": 0.3, "IGHVF10-G38*04": 0.2}
+catalogue = sorted(
+    a.name for group in HUMAN_IGH_OGRDB.v_alleles.values() for a in group
+)
+weights = {name: target.get(name, 1e-9) for name in catalogue}
+
+result = (
+    ga.Experiment.on("human_igh")
+      .recombine(v_allele_weights=weights)
+      .run_records(n=2000, seed=1)
+)
+# observed: 0.501 / 0.299 / 0.200, and zero records outside the three.
+```
+
+The same applies to `d_allele_weights` and `j_allele_weights`.
+
+!!! note "The bundled cartridges do not ship an allele-usage plane"
+    `cartridge_manifest()["models"]["allele_usage"]["available"]` is
+    `False` on `HUMAN_IGH_OGRDB`, `HUMAN_IGK_OGRDB`, `HUMAN_IGL_OGRDB`
+    and `HUMAN_TCRB_IMGT`. A legacy `gene_use_dict` is present on the
+    cartridge but is not read by the recombination pass
+    (`legacy_fallback: False`). So the default V usage is **uniform
+    over the whole catalogue** - 198 alleles on human IGH. If your
+    benchmark is sensitive to gene usage, set it explicitly with the
+    recipe above, or fit a usage plane from your own data with
+    [Estimate models from data](estimate-cartridge-models.md).
 
 ## Trims
 

@@ -175,8 +175,13 @@ ship typed defaults that users override per-experiment.
 !!! warning "Which bundled cartridges carry *real* data-derived distributions"
     Only the human **IGH**, **IGK**, **IGL**, and **TCRB** cartridges
     ship with empirical distributions fitted from **real repertoire
-    data** — trim lengths, NP-region lengths, the NP base / Markov
-    model, and allele usage.
+    data** — trim lengths, NP-region lengths, and the NP base / Markov
+    model.
+
+    Allele usage is **not** among them. No bundled cartridge ships an
+    `allele_usage` plane, so allele draws are uniform over the
+    catalogue until you weight them yourself — see
+    [Controlling the allele universe](../guides/recombination-junction.md#controlling-the-allele-universe).
 
     Every **other** bundled species/locus cartridge carries a real
     germline **allele catalogue** (from IMGT), but its data-derived
@@ -417,10 +422,10 @@ legacy fields are sitting on the cartridge unused.
 
 For the original design audit and the engine-side
 `RefDataConfig` bridge, see
-[`docs/reference_cartridge.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/reference_cartridge.md)
+[`audit-docs/reference_cartridge.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/reference_cartridge.md)
 and
-[`docs/reference_cartridge_authoring_audit.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/reference_cartridge_authoring_audit.md).
+[`audit-docs/reference_cartridge_authoring_audit.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/reference_cartridge_authoring_audit.md).
 For per-estimator audits (allele usage, trims, NP length, NP base,
-P-nucleotide length), see the matching design docs in `docs/`. For
+P-nucleotide length), see the matching design docs in `audit-docs/`. For
 the full engine-wide validation matrix, see
-[`docs/validation_matrix.md`](https://github.com/MuteJester/GenAIRR/blob/master/docs/validation_matrix.md).
+[`audit-docs/validation_matrix.md`](https://github.com/MuteJester/GenAIRR/blob/master/audit-docs/validation_matrix.md).
