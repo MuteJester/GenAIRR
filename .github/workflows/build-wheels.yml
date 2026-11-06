@@ -108,21 +108,31 @@ jobs:
               print(f'Patched {path} -> $VERSION')
           "
 
-      - name: Install maturin + test deps
+      - name: Install maturin
         run: |
           python -m pip install --upgrade pip
-          pip install "maturin>=1.5,<2.0" pytest pandas
+          pip install "maturin>=1.5,<2.0"
 
       - name: Build & install GenAIRR wheel
         run: maturin build --release --out dist
-      - name: Install built wheel (with [mcp] extra for the test suite)
+      - name: Install built wheel (with the [test,mcp] extras)
         shell: bash
         run: |
-          # Install the wheel with the [mcp] extra so the MCP test file
-          # gets fastmcp and runs in CI. Without this, tests/components/mcp/test_mcp_server.py
-          # would call pytest.importorskip('fastmcp') and silently skip.
+          # The extras are the single source of truth for what the suite
+          # needs: [test] carries pytest, pandas, hypothesis, pytest-xdist
+          # and airr, and [mcp] carries fastmcp so the MCP test file runs
+          # here instead of calling pytest.importorskip('fastmcp') and
+          # silently skipping.
+          #
+          # This step used to hand-list `pytest pandas` and then install the
+          # wheel with [mcp] alone. The list drifted the moment a test
+          # module imported anything else: `hypothesis` arrived on
+          # 2026-10-31 and every release job from then on died at collection
+          # with ModuleNotFoundError, which `-x` turns into a one-line
+          # failure 0.85s in. Install the extras and the drift cannot recur.
+          # `test.yml` installs the same way.
           WHEEL=$(ls dist/genairr-*.whl)
-          pip install "${WHEEL}[mcp]"
+          pip install "${WHEEL}[test,mcp]"
 
       - name: Run pytest
         run: pytest tests/ -x -q
