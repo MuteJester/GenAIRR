@@ -190,6 +190,28 @@ Two further counter changes to know about:
   A genotype run with novel alleles must be validated against
   `compiled.refdata`.
 
+## 7. What you may now want to use
+
+Everything above is about breakage. These are the 2.4.0 additions most
+likely to change how you work, in case the migration is the only part of
+the release you read:
+
+- **Pin a published germline release, and ship the evidence.**
+  `GenAIRR.reference_sources` locks one named OGRDB release and writes a
+  dossier a reviewer can verify offline, with no network and no trust in
+  you. `ReferenceBuild.bundled("human_igh_ogrdb_10_observed_v1")` needs
+  no network at all. See
+  [Published germline sources](https://mutejester.github.io/GenAIRR/guides/published-references.html).
+- **Real clonal genealogies.** `clonal_lineage()` replaces the star
+  topology with a birth-death process and hands back the ground-truth
+  tree per clone; `clonal_repertoire()` covers TCR and flat-BCR
+  abundance. Both are the intended replacements for `expand_clones()`
+  (§3).
+- **Per-individual diploid genotypes**, with population priors, cohorts
+  and a genotype truth sidecar for scoring inference.
+- The full list is the `### Added` section of
+  [CHANGELOG.md](CHANGELOG.md).
+
 ---
 
 # Migrating from GenAIRR 1.x to 2.0

@@ -148,6 +148,28 @@ have.
 
 ### Added
 
+- **Published germline sources, and dossiers anyone can verify offline.** The
+  new public module `GenAIRR.reference_sources` locks one *named* published
+  germline release and keeps the evidence. `OgrdbSource` acquires an explicit
+  OGRDB germline-set release -- an integer release, never "latest" -- and pins
+  its exact bytes in a lock; `fetch` is the only operation in GenAIRR that uses
+  the network, and `from_files` and `read` cover the offline and
+  behind-a-proxy cases. `source.build(recipe)` projects an explicit recipe into
+  a `ReferenceBuild`: a runtime `Reference` you pass straight to
+  `Experiment.on(...)`, plus the lock, the recipe, the build report and a
+  manifest recording the GenAIRR version that produced it.
+  `build.write_dossier(directory)` writes the whole thing as a portable
+  dossier, and `ReferenceBuild.read_dossier(directory)` checks one with no
+  network and no trust in its author: it regenerates every derived file from
+  the locked bytes and the recipe and compares, so a single tampered byte comes
+  back as `ReferenceSourceError(kind='digest_mismatch', path=...)` naming the
+  member. Failures on this surface all carry a stable `kind` and a `path`.
+  One build ships inside the wheel --
+  `ReferenceBuild.bundled("human_igh_ogrdb_10_observed_v1")` -- so the workflow
+  is available with no network at all; it also reports IMGT allele names, where
+  `"human_igh"` reports ASC cluster names. See
+  [Published germline sources](https://mutejester.github.io/GenAIRR/guides/published-references.html).
+
 - **Two clonal models beside the deprecated star.**
   `Experiment.clonal_lineage(...)` grows a real BCR genealogy per clone: a
   generation-synchronous birth-death process with per-division S5F

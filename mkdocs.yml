@@ -214,6 +214,7 @@ nav:
       - Corruption + sequencing artefacts: guides/corruption-sequencing.md
       - Paired-end reads and FASTQ: guides/paired-end-fastq.md
       - Portable local references: guides/portable-references.md
+      - Published germline sources: guides/published-references.md
   - Reference Cartridge Authoring:
       - cartridges/index.md
       - Reference evidence and quarantine: cartridges/reference-evidence.md
