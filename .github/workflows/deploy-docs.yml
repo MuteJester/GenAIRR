@@ -44,15 +44,36 @@ jobs:
       - name: Install docs dependencies
         run: pip install -r requirements-docs.txt
 
-      - name: Install GenAIRR from PyPI (mkdocstrings needs to import it)
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            engine_rs/target
+          key: ${{ runner.os }}-docs-cargo-${{ hashFiles('engine_rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-docs-cargo-
+
+      - name: Install GenAIRR from this checkout (mkdocstrings needs to import it)
         # The reference pages use `:::` mkdocstrings directives to render
         # signatures + docstrings from real classes (Experiment,
-        # SimulationResult, ReferenceCartridgeBuilder, etc.). For those
-        # to resolve, GenAIRR must be importable in the build environment.
-        # Installing from PyPI is fast (precompiled wheels) and means the
-        # rendered API reference matches the latest released version,
-        # which is what published docs should reflect.
-        run: pip install GenAIRR
+        # SimulationResult, ReferenceCartridgeBuilder, etc.). For those to
+        # resolve, GenAIRR must be importable in the build environment.
+        #
+        # This used to install from PyPI, on the reasoning that published
+        # docs should reflect the published release. That inverts the
+        # dependency: `site_docs/` is versioned with the source, so a page
+        # documenting anything newer than the last release cannot build. It
+        # broke on `GenAIRR._reference.artifact.Reference` and the deploy
+        # then failed on every merge to master from 2026-10-21 until the
+        # 2.4.0 release work, which is why the live site served
+        # pre-release text for a fortnight. Building the checkout keeps the
+        # rendered reference and the prose describing it in step by
+        # construction.
+        run: pip install .
 
       - name: Build site with mkdocs build --strict
         run: make docs-build
