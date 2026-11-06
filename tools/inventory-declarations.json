@@ -1,8 +1,5 @@
 {
-  "revised": {
-    "MANIFEST_PIN": "the packaged reference dossier was regenerated for the 2.4.0 release, so its manifest hash moved from 9ab6ba63 to 101abcebe. The manifest records the GenAIRR version that generated the dossier, which is why a version bump alone retargets this pin; tools/build_published_reference.py prints the new value and names every pin site, and test_the_packaged_dossier_was_generated_by_the_version_this_checkout_declares fails if the two disagree. The same value is pinned once more in src/GenAIRR/_reference_sources/bundled.py's REGISTRY and was updated there in the same change. Nothing about the reference build itself changed: the runtime execution, catalogue and models hashes and the source lock all came back byte-identical, which is the evidence that only the recorded builder version moved.",
-    "ARCHIVE_PIN": "the raw sha256 of the regenerated archive, 52df85b3 to d8d82abc. The archive holds the manifest, so it changes with the version for the same reason MANIFEST_PIN does -- the comment above this constant already said so before this change. The archive is byte-identical in length (20110025 bytes both times), which is consistent with a change confined to the recorded version string rather than to any packaged member."
-  },
+  "revised": {},
   "replaced": {},
   "allow": {}
 }
