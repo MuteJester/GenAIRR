@@ -57,7 +57,7 @@ Writes one record per sequence with the `sequence_id` plus
 `v_call` and `j_call` in the header:
 
 ```text
->seq0 IGHVF10-G38*04 IGHJ2*01
+>seq0|v_call=IGHVF6-G23*03|j_call=IGHJ1*01
 gaggtgcagctggtg...
 ```
 
@@ -65,14 +65,42 @@ Pass `prefix="myseq"` to change the per-record ID prefix.
 
 ### Blinded handoff - strip truth columns
 
-FASTA is the natural format when the next stage is an aligner
-that should NOT see the ground-truth columns - e.g. an aligner
-benchmark or a tool comparison where leaking `v_call` /
-`truth_v_call` would defeat the point. `to_fasta` already
-emits only `sequence_id` + the assembled sequence, so it's
-implicitly blinded.
+When the next stage is a tool you are scoring, it must not see the
+generating calls. The exporters differ in what they carry:
 
-For a blinded TSV, two options:
+| Exporter | Carries truth? | What ends up in the header / row |
+|---|---|---|
+| `to_paired_fastq(r1, r2)` | No | `@seq0/1` and `@seq0/2` - `sequence_id` only |
+| `to_fasta(path)` | **Yes** | `>seq0|v_call=...|j_call=...` |
+| `to_fastq(path)` | **Yes** | `@seq0|v_call=...|j_call=...` |
+| `to_tsv` / `to_csv` / `to_dataframe` | **Yes** | `v_call`, `d_call`, `j_call`, every counter, plus `truth_*` under `expose_provenance=True` |
+
+`to_fasta` and `to_fastq` annotate their headers on purpose, which is
+convenient when you are the consumer and wrong when the consumer is a
+tool under test. For a blinded panel, write the records yourself -
+`sequence_id` is all the downstream join needs:
+
+```python
+import GenAIRR as ga
+
+result = (
+    ga.Experiment.on("human_igh")
+      .recombine()
+      .productive_only()
+      .run_records(n=10_000, seed=42)
+)
+
+# Blinded FASTA - sequence_id and bases, nothing else.
+with open("panel_blinded.fasta", "w") as fh:
+    for rec in result:
+        fh.write(f">{rec['sequence_id']}\n{rec['sequence'].upper()}\n")
+```
+
+`.upper()` is deliberate: the corruption passes lowercase the bases
+they touch, and some aligners read case as a soft-mask. Normalise on
+the way out and keep the original `sequence` in your truth table.
+
+For the truth side, two options:
 
 ```python
 # Option A - write a regular TSV, then drop truth columns
@@ -95,10 +123,70 @@ result = (
 result.to_tsv("panel_blinded.tsv")
 ```
 
-Option B is the default - `truth_*` columns are only emitted
-when you pass `expose_provenance=True` to `run_records(...)`.
-Option A is the recipe for *post hoc* blinding when the same
-batch needs to be shared in both forms.
+Option B is the default - `truth_*` columns are only emitted when you
+pass `expose_provenance=True` to `run_records(...)`. Option A is the
+recipe for *post hoc* blinding when the same run has to produce both
+the panel and the answer key.
+
+Either way, note what Option B does not do: it blinds the `truth_*`
+aliases, not the record. `v_call`, `d_call` and `j_call` are always the
+generating alleles. A panel for a tool you are scoring should be FASTA
+or FASTQ written as above, not a TSV with columns removed one at a
+time.
+
+### Keeping the truth table beside the panel
+
+The usual shape is two files joined on `sequence_id`:
+
+```python
+result = (
+    ga.Experiment.on("human_igh")
+      .recombine()
+      .productive_only()
+      .mutate(model="s5f", rate=0.03)
+      .run_records(n=10_000, seed=42, expose_provenance=True)
+)
+
+# 1. the blinded input the tool sees
+with open("panel.fasta", "w") as fh:
+    for rec in result:
+        fh.write(f">{rec['sequence_id']}\n{rec['sequence'].upper()}\n")
+
+# 2. the answer key you keep
+result.to_tsv("panel_truth.tsv")
+```
+
+Run the tool on `panel.fasta`, then join its output back on
+`sequence_id` - see
+[How `sequence_id` joins everything](#how-sequence_id-joins-everything).
+Two things to settle before you score:
+
+- **Allele naming.** On `"human_igh"` the truth calls are ASC cluster
+  names (`IGHVF6-G23*03`), while an aligner against an IMGT reference
+  emits IMGT names (`IGHV4-31*10`). Translate one side using
+  `cfg.asc_tables["V"]`, or simulate on an IMGT-named cartridge
+  instead:
+
+    ```python
+    from GenAIRR.data import HUMAN_IGH_IMGT
+
+    result = (
+        ga.Experiment.on(HUMAN_IGH_IMGT)
+          .curate_refdata("functional_anchors_only")
+          .recombine()
+          .run_records(n=10_000, seed=42)
+    )
+    ```
+
+- **Which truth column.** `v_call` is the allele the engine
+  *generated*. `recalled_v_call` is what GenAIRR's own walker infers
+  from the mutated sequence, and it may be a comma-separated tie.
+  Score against `v_call` to ask "did the tool recover the generating
+  allele"; against `recalled_v_call` to ask "did it agree with an
+  independent caller on the same evidence". The two diverge exactly
+  where mutation has made the generating allele unrecoverable, which
+  is the interesting part of the benchmark. See
+  [Truth and evidence-based re-calls](first-airr-record.md#truth-and-evidence-based-re-calls).
 
 ## FASTQ
 
