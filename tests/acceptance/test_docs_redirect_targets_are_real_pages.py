@@ -17,14 +17,14 @@ absent from every clone and skips that whole module in CI.
 
 from __future__ import annotations
 
-import pathlib
 import re
 
 import pytest
 
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_MKDOCS_YML = _REPO_ROOT / "mkdocs.yml"
-_SITE_DOCS = _REPO_ROOT / "site_docs"
+from tests.support.paths import repo_root
+
+_MKDOCS_YML = repo_root() / "mkdocs.yml"
+_SITE_DOCS = repo_root() / "site_docs"
 
 # Phrases a placeholder page uses to admit it is one. Matched
 # case-insensitively against the whole page body.
